@@ -142,10 +142,12 @@ errorLiteral = checkPrefix >> fmap Err errorValue <?> "error value"
         parseError err = reserved (show err) >> return err
 
 expression :: MOOParser Expr
-expression = try scatterAssign <|> valueOrAssign <?> "expression"
+expression = scatterAssign <|> valueOrAssign <?> "expression"
   where scatterAssign = do
-          s <- braces scatList
-          symbol "="
+          s <- try $ do
+            s <- braces scatList
+            symbol "="
+            return s
           e <- expression
           checkScatter s
           return $ ScatterAssign s e
