@@ -1,5 +1,5 @@
 
-module MOO.Parser ( ) where
+module MOO.Parser ( parse ) where
 
 import           Text.Parsec hiding (parse)
 import           Text.Parsec.Text
@@ -228,7 +228,7 @@ unary = primary >>= modifiers
 
 primary :: MOOParser Expr
 primary = subexpression <|> dollarThing <|> identThing <|>
-          list <|> catch <|> literal
+          list <|> catchExpr <|> literal
   where subexpression = parens expression
 
         dollarThing = do
@@ -251,7 +251,7 @@ primary = subexpression <|> dollarThing <|> identThing <|>
 
         list = fmap List $ braces argList
 
-        catch = do
+        catchExpr = do
           symbol "`"
           e <- expression
           symbol "!"
@@ -373,17 +373,13 @@ forStatement = do
   forList ident <|> forRange ident
   where forList ident = do
           e <- parens expression
-          pushLoopName (Just ident)
-          body <- statements
-          popLoopName
+          body <- loopBody ident
           reserved "endfor"
           return $ ForList ident e body
 
         forRange ident = do
           (start, end) <- brackets range
-          pushLoopName (Just ident)
-          body <- statements
-          popLoopName
+          body <- loopBody ident
           reserved "endfor"
           return $ ForRange ident start end body
         range = do
@@ -391,6 +387,12 @@ forStatement = do
           symbol ".."
           end <- expression
           return (start, end)
+
+        loopBody ident = do
+          pushLoopName (Just ident)
+          body <- statements
+          popLoopName
+          return body
 
 whileStatement :: MOOParser Statement
 whileStatement = do
@@ -442,7 +444,7 @@ checkLoopName kind ident = do
                fail $ "No enclosing loop for `" ++ kind ++ "' statement"
     Just name -> when (fmap toCaseFold ident `notElem` stack) $
                  fail $ "Invalid loop name in `" ++ kind ++ "' statement: " ++
-                 (unpack name)
+                 unpack name
 
 returnStatement :: MOOParser Statement
 returnStatement = do

@@ -6,6 +6,7 @@ module MOO.Types ( IntT
                  , StrT
                  , ObjT
                  , ErrT
+                 , LstT
                  , ObjId
                  , Id
                  , Type(..)
@@ -31,6 +32,7 @@ type FltT = Double
 type StrT = Text
 type ObjT = Int
 type ErrT = Error
+type LstT = Vector Value
 
 type ObjId = ObjT
 type Id    = StrT
@@ -40,7 +42,7 @@ data Value = Int !IntT
            | Str !StrT
            | Obj !ObjT
            | Err !ErrT
-           | Lst !(Vector Value)
+           | Lst !LstT
            deriving (Eq, Show)
 
 data Type = TAny
