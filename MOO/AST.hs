@@ -1,0 +1,91 @@
+
+module MOO.AST ( Program(..)
+               , Statement(..)
+               , ElseIf(..)
+               , Else(..)
+               , Except(..)
+               , Expr(..)
+               , Codes(..)
+               , Arg(..)
+               , ScatItem(..)
+               , isLValue
+               ) where
+
+import MOO.Types
+
+newtype Program = Program [Statement]
+                deriving Show
+
+data Statement = Expression Expr
+               | If Expr [Statement] [ElseIf] Else
+               | ForList Id Expr [Statement]
+               | ForRange Id Expr Expr [Statement]
+               | While (Maybe Id) Expr [Statement]
+               | Fork (Maybe Id) Expr [Statement]
+               | Break (Maybe Id)
+               | Continue (Maybe Id)
+               | Return (Maybe Expr)
+               | TryExcept [Statement] [Except]
+               | TryFinally [Statement] [Statement]
+               deriving Show
+
+data ElseIf = ElseIf Expr [Statement]
+            deriving Show
+newtype Else = Else [Statement]
+             deriving Show
+
+data Except = Except (Maybe Id) Codes [Statement]
+            deriving Show
+
+data Expr = Literal Value
+          | List [Arg]
+          | Variable Id
+          | PropRef Expr Expr
+          | VerbCall Expr Expr [Arg]
+          | Index Expr Expr
+          | Range Expr Expr Expr
+          | Length
+          | Assign Expr Expr
+          | ScatterAssign [ScatItem] Expr
+          | BuiltinFunc Id [Arg]
+          | Plus Expr Expr
+          | Minus Expr Expr
+          | Times Expr Expr
+          | Divide Expr Expr
+          | Mod Expr Expr
+          | Power Expr Expr
+          | And Expr Expr
+          | Or Expr Expr
+          | Equal Expr Expr
+          | NotEqual Expr Expr
+          | LessThan Expr Expr
+          | LessEqual Expr Expr
+          | GreaterThan Expr Expr
+          | GreaterEqual Expr Expr
+          | In Expr Expr
+          | UnaryMinus Expr
+          | Not Expr
+          | Conditional Expr Expr Expr
+          | Catch Expr Codes (Maybe Expr)
+          deriving Show
+
+data Codes = ANY | Codes [Arg]
+           deriving Show
+
+data Arg = ArgNormal Expr
+         | ArgSplice Expr
+         deriving Show
+
+data ScatItem = ScatRequired Id
+              | ScatOptional Id (Maybe Expr)
+              | ScatRest Id
+              deriving Show
+
+isLValue :: Expr -> Bool
+isLValue (Range e _ _) = isLValue' e
+isLValue e             = isLValue' e
+
+isLValue' Variable{}   = True
+isLValue' PropRef{}    = True
+isLValue' (Index e _)  = isLValue' e
+isLValue' _            = False
