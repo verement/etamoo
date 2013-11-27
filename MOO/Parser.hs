@@ -1,5 +1,5 @@
 
-module MOO.Parser ( parse ) where
+module MOO.Parser ( parse, runParser, initParserState, expression ) where
 
 import           Text.Parsec hiding (parse)
 import           Text.Parsec.Text
@@ -108,9 +108,9 @@ floatLiteral = try (lexeme $ signed real) >>= checkRange >>= return . Flt
           pre <- many1 digit
           exp <- exponent
           mkFloat pre "" (Just exp)
-        exponent = (<?> "exponent") $ do
-          char 'e' <|> char 'E'
-          plusMinus decimal
+
+        exponent = oneOf "eE" >> plusMinus decimal <?> "exponent"
+
         mkFloat pre post exp =
           let whole = if null pre  then 0 else read pre  % 1
               frac  = if null post then 0 else read post % (10 ^ length post)
@@ -121,6 +121,7 @@ floatLiteral = try (lexeme $ signed real) >>= checkRange >>= return . Flt
                      e >  500  -> fromRational   mantissa *      (10 ^^  e)
                    | e <    0  -> fromRational $ mantissa * (1 % (10 ^ (-e)))
                    | otherwise -> fromRational $ mantissa *      (10 ^   e)
+
         checkRange flt =
           if isInfinite flt
           then fail "Floating-point literal out of range"
@@ -211,7 +212,7 @@ term = chainl1 factor (try op)
   where op = times <|> divide <|> mod
         times  = symbol "*" >> return Times
         divide = symbol "/" >> return Divide
-        mod    = symbol "%" >> return Mod
+        mod    = symbol "%" >> return Remain
 
 factor :: MOOParser Expr
 factor = chainr1 base power
@@ -222,7 +223,7 @@ base = bangThing <|> minusThing <|> unary
   where bangThing = symbol "!" >> fmap Not base
         minusThing = do
           try $ lexeme $ char '-' >> notFollowedBy (digit <|> char '.')
-          fmap UnaryMinus base
+          fmap Negate base
 
 unary :: MOOParser Expr
 unary = primary >>= modifiers

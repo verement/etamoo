@@ -14,8 +14,10 @@ module MOO.Types ( IntT
                  , Error(..)
                  , truthOf
                  , truthValue
+                 , typeOf
                  , typeCode
                  , toText
+                 , error2text
                  , text2binary
                  ) where
 
@@ -43,7 +45,24 @@ data Value = Int !IntT
            | Obj !ObjT
            | Err !ErrT
            | Lst !LstT
-           deriving (Eq, Show)
+           deriving Show
+
+instance Eq Value where
+  (Int a) == (Int b) = a == b
+  (Flt a) == (Flt b) = a == b
+  (Str a) == (Str b) = T.toCaseFold a == T.toCaseFold b
+  (Obj a) == (Obj b) = a == b
+  (Err a) == (Err b) = a == b
+  (Lst a) == (Lst b) = a == b
+  _       == _       = False
+
+instance Ord Value where
+  (Int a) `compare` (Int b) = a `compare` b
+  (Flt a) `compare` (Flt b) = a `compare` b
+  (Str a) `compare` (Str b) = T.toCaseFold a `compare` T.toCaseFold b
+  (Obj a) `compare` (Obj b) = a `compare` b
+  (Err a) `compare` (Err b) = a `compare` b
+  _       `compare` _       = error "Illegal comparison"
 
 data Type = TAny
           | TInt
@@ -53,6 +72,7 @@ data Type = TAny
           | TObj
           | TErr
           | TLst
+          deriving Eq
 
 data Error = E_NONE
            | E_TYPE
@@ -70,7 +90,7 @@ data Error = E_NONE
            | E_INVARG
            | E_QUOTA
            | E_FLOAT
-           deriving (Eq, Enum, Bounded, Show)
+           deriving (Eq, Ord, Enum, Bounded, Show)
 
 truthOf :: Value -> Bool
 truthOf (Int x)  = case x of 0   -> False; _ -> True
@@ -83,13 +103,23 @@ truthValue :: Bool -> Value
 truthValue False = Int 0
 truthValue True  = Int 1
 
-typeCode :: Value -> IntT
-typeCode (Int _) = 0
-typeCode (Obj _) = 1
-typeCode (Str _) = 2
-typeCode (Err _) = 3
-typeCode (Lst _) = 4
-typeCode (Flt _) = 9
+typeOf :: Value -> Type
+typeOf Int{} = TInt
+typeOf Flt{} = TFlt
+typeOf Str{} = TStr
+typeOf Obj{} = TObj
+typeOf Err{} = TErr
+typeOf Lst{} = TLst
+
+typeCode :: Type -> IntT
+typeCode TNum = -2
+typeCode TAny = -1
+typeCode TInt =  0
+typeCode TObj =  1
+typeCode TStr =  2
+typeCode TErr =  3
+typeCode TLst =  4
+typeCode TFlt =  9
 
 toText :: Value -> Text
 toText (Int x) = T.pack $ show x

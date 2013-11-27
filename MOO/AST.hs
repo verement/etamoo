@@ -40,34 +40,44 @@ newtype Finally = Finally [Statement]                 deriving Show
 
 data Expr = Literal Value
           | List [Arg]
+
           | Variable Id
           | PropRef Expr Expr
+
           | VerbCall Expr Expr [Arg]
+          | BuiltinFunc Id [Arg]
+
           | Index Expr Expr
           | Range Expr (Expr, Expr)
           | Length
+
           | Assign Expr Expr
           | ScatterAssign [ScatItem] Expr
-          | BuiltinFunc Id [Arg]
+
           | Plus Expr Expr
           | Minus Expr Expr
           | Times Expr Expr
           | Divide Expr Expr
-          | Mod Expr Expr
+          | Remain Expr Expr
           | Power Expr Expr
+          | Negate Expr
+
+          | Conditional Expr Expr Expr
           | And Expr Expr
           | Or Expr Expr
+          | Not Expr
+
           | Equal Expr Expr
           | NotEqual Expr Expr
           | LessThan Expr Expr
           | LessEqual Expr Expr
           | GreaterThan Expr Expr
           | GreaterEqual Expr Expr
+
           | In Expr Expr
-          | UnaryMinus Expr
-          | Not Expr
-          | Conditional Expr Expr Expr
+
           | Catch Expr Codes Default
+
           deriving Show
 
 data    Codes   = ANY | Codes [Arg]    deriving Show
