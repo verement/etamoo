@@ -80,6 +80,8 @@ semiSep        = T.semiSep        lexer
 semiSep1       = T.semiSep1       lexer
 -}
 
+-- Literal values
+
 signed :: (Num a) => MOOParser a -> MOOParser a
 signed parser = negative <|> parser
   where negative = char '-' >> fmap negate parser
@@ -106,8 +108,8 @@ floatLiteral = try (lexeme $ signed real) >>= checkRange >>= return . Flt
           pre <- many1 digit
           exp <- exponent
           mkFloat pre "" (Just exp)
-        exponent = do
-          char 'e' <|> char 'E' <?> "exponent"
+        exponent = (<?> "exponent") $ do
+          char 'e' <|> char 'E'
           plusMinus decimal
         mkFloat pre post exp =
           let whole = if null pre  then 0 else read pre  % 1
@@ -138,45 +140,44 @@ objectLiteral = lexeme (char '#' >> signed decimal) >>=
 errorLiteral :: MOOParser Value
 errorLiteral = checkPrefix >> fmap Err errorValue <?> "error value"
   where checkPrefix = try $ lookAhead $ (char 'E' <|> char 'e') >> char '_'
-        errorValue = choice $ map parseError [minBound..maxBound]
-        parseError err = reserved (show err) >> return err
+        errorValue = choice $ map literal [minBound..maxBound]
+        literal err = reserved (show err) >> return err
+
+-- Expressions
 
 expression :: MOOParser Expr
 expression = scatterAssign <|> valueOrAssign <?> "expression"
   where scatterAssign = do
-          s <- try $ do
+          scat <- try $ do
             s <- braces scatList
             symbol "="
             return s
-          e <- expression
-          checkScatter s
-          return $ ScatterAssign s e
+          expr <- expression
+          mkScatter scat expr
 
         valueOrAssign = do
-          v <- value
-          assign v <|> return v
-        assign v = do
+          val <- value
+          assign val <|> return val
+        assign val = do
           try $ lexeme $ char '=' >> notFollowedBy (char '>')
-          e <- expression
-          case v of
-            List [] -> fail "Empty list in scattering assignment."
+          expr <- expression
+          case val of
             List args -> do
-              s <- scatFromArgList args
-              checkScatter s
-              return $ ScatterAssign s e
-            v | isLValue v -> return $ Assign v e
+              scat <- scatFromArgList args
+              mkScatter scat expr
+            val | isLValue val -> return $ Assign val expr
             _ -> fail "Illegal expression on left side of assignment."
 
 value :: MOOParser Expr
 value = do
-  c <- conditional
-  question c <|> return c
+  cond <- conditional
+  question cond <|> return cond
   where question cond = do
           symbol "?"
-          case1 <- expression
+          t <- expression
           symbol "|"
-          case2 <- conditional
-          return $ Conditional cond case1 case2
+          f <- conditional
+          return $ Conditional cond t f
 
 conditional :: MOOParser Expr
 conditional = chainl1 logical (try op)
@@ -186,10 +187,8 @@ conditional = chainl1 logical (try op)
 
 logical :: MOOParser Expr
 logical = chainl1 relational (try op)
-  where op = equal <|> notEqual <|>
-             lessThan <|> lessEqual <|>
-             greaterThan <|> greaterEqual <|>
-             inOp
+  where op = equal <|> notEqual <|> lessThan <|> lessEqual <|>
+             greaterThan <|> greaterEqual <|> inOp
         equal        = symbol "=="   >> return Equal
         notEqual     = symbol "!="   >> return NotEqual
         lessThan     = lt            >> return LessThan
@@ -255,19 +254,15 @@ primary = subexpression <|> dollarThing <|> identThing <|>
 
         catchExpr = do
           symbol "`"
-          e <- expression
+          expr <- expression
           symbol "!"
           cs <- codes
-          defaultValue <- optionMaybe $ symbol "=>" >> expression
+          dv <- optionMaybe $ symbol "=>" >> expression
           symbol "'"
-          return $ Catch e cs defaultValue
+          return $ Catch expr cs (Default dv)
 
         literal = fmap Literal $ stringLiteral <|> objectLiteral <|>
                   floatLiteral <|> integerLiteral <|> errorLiteral
-
-codes :: MOOParser Codes
-codes = any <|> fmap Codes nonEmptyArgList <?> "codes"
-  where any = reserved "ANY" >> return ANY
 
 modifiers :: Expr -> MOOParser Expr
 modifiers expr = (propRef  >>= modifiers) <|>
@@ -289,9 +284,13 @@ modifiers expr = (propRef  >>= modifiers) <|>
         range start = do
           try $ symbol ".."
           end <- expression
-          return $ Range expr start end
+          return $ Range expr (start, end)
         dollars f = modifyState $
                     \st -> st { dollarContext = f $ dollarContext st }
+
+codes :: MOOParser Codes
+codes = any <|> fmap Codes nonEmptyArgList <?> "codes"
+  where any = reserved "ANY" >> return ANY
 
 nonEmptyArgList :: MOOParser [Arg]
 nonEmptyArgList = arguments False
@@ -313,33 +312,33 @@ scatList = commaSep1 scat
         optional = do
           symbol "?"
           ident <- identifier
-          defaultValue <- defaultExpr <|> return Nothing
-          return $ ScatOptional ident defaultValue
-        defaultExpr = symbol "=" >> fmap Just expression
+          dv <- optionMaybe $ symbol "=" >> expression
+          return $ ScatOptional ident dv
         rest = symbol "@" >> fmap ScatRest identifier
         required = fmap ScatRequired identifier
 
 scatFromArgList :: [Arg] -> MOOParser [ScatItem]
-scatFromArgList (a:as) = do
-  a' <- case a of
-    ArgNormal (Variable v) -> return $ ScatRequired v
-    ArgSplice (Variable v) -> return $ ScatRest v
-    _ -> fail "Scattering assignment targets must be simple variables."
-  as' <- scatFromArgList as
-  return (a':as')
-scatFromArgList [] = return []
+scatFromArgList [] = fail "Empty list in scattering assignment."
+scatFromArgList args = go args
+  where go (a:as) = do
+          a' <- case a of
+            ArgNormal (Variable v) -> return $ ScatRequired v
+            ArgSplice (Variable v) -> return $ ScatRest v
+            _ -> fail "Scattering assignment targets must be simple variables."
+          as' <- go as
+          return (a':as')
+        go [] = return []
 
-checkScatter :: [ScatItem] -> MOOParser ()
-checkScatter = checkScatter' True
-  where checkScatter' restValid (s:ss) = case s of
-          ScatRest{} | restValid -> checkScatter' False ss
+mkScatter :: [ScatItem] -> Expr -> MOOParser Expr
+mkScatter scat expr = checkScatter True scat
+  where checkScatter restValid (s:ss) = case s of
+          ScatRest{} | restValid -> checkScatter False ss
                      | otherwise -> fail tooMany
-          _ -> checkScatter' restValid ss
-        checkScatter' _ [] = return ()
+          _ -> checkScatter restValid ss
+        checkScatter _ [] = return $ ScatterAssign scat expr
         tooMany = "More than one `@' target in scattering assignment."
 
-program :: MOOParser Program
-program = whiteSpace >> fmap Program statements
+-- Statements
 
 statements :: MOOParser [Statement]
 statements = fmap catMaybes (many statement) <?> "statements"
@@ -358,9 +357,9 @@ ifStatement = do
   cond <- parens expression
   body <- statements
   elseIfs <- many elseIf
-  elsePart <- option (Else []) $ reserved "else" >> fmap Else statements
+  elsePart <- option [] $ reserved "else" >> statements
   reserved "endif"
-  return $ If cond body elseIfs elsePart
+  return $ If cond (Then body) elseIfs (Else elsePart)
   where elseIf = do
           reserved "elseif"
           cond <- parens expression
@@ -374,38 +373,32 @@ forStatement = do
   reserved "in"
   forList ident <|> forRange ident
   where forList ident = do
-          e <- parens expression
+          expr <- parens expression
           body <- loopBody ident
           reserved "endfor"
-          return $ ForList ident e body
+          return $ ForList ident expr body
 
         forRange ident = do
-          (start, end) <- brackets range
+          range <- brackets $ do
+            start <- expression
+            symbol ".."
+            end <- expression
+            return (start, end)
           body <- loopBody ident
           reserved "endfor"
-          return $ ForRange ident start end body
-        range = do
-          start <- expression
-          symbol ".."
-          end <- expression
-          return (start, end)
+          return $ ForRange ident range body
 
-        loopBody ident = do
-          pushLoopName (Just ident)
-          body <- statements
-          popLoopName
-          return body
+        loopBody ident = between (pushLoopName $ Just ident) popLoopName
+                         statements
 
 whileStatement :: MOOParser Statement
 whileStatement = do
   reserved "while"
   ident <- optionMaybe identifier
-  e <- parens expression
-  pushLoopName ident
-  body <- statements
-  popLoopName
+  expr <- parens expression
+  body <- between (pushLoopName ident) popLoopName statements
   reserved "endwhile"
-  return $ While ident e body
+  return $ While ident expr body
 
 modifyLoopStack :: ([[Maybe Id]] -> [[Maybe Id]]) -> MOOParser ()
 modifyLoopStack f = modifyState $ \st -> st { loopStack = f $ loopStack st }
@@ -422,22 +415,6 @@ suspendLoopScope = modifyLoopStack $ \ss -> [] : ss
 resumeLoopScope :: MOOParser ()
 resumeLoopScope = modifyLoopStack tail
 
-breakStatement :: MOOParser Statement
-breakStatement = do
-  reserved "break"
-  ident <- optionMaybe identifier
-  semi
-  checkLoopName "break" ident
-  return $ Break ident
-
-continueStatement :: MOOParser Statement
-continueStatement = do
-  reserved "continue"
-  ident <- optionMaybe identifier
-  semi
-  checkLoopName "continue" ident
-  return $ Continue ident
-
 checkLoopName :: String -> Maybe Id -> MOOParser ()
 checkLoopName kind ident = do
   stack <- fmap (head . loopStack) getState
@@ -448,12 +425,25 @@ checkLoopName kind ident = do
                  fail $ "Invalid loop name in `" ++ kind ++ "' statement: " ++
                  unpack name
 
+breakStatement :: MOOParser Statement
+breakStatement = do
+  reserved "break"
+  ident <- optionMaybe identifier
+  checkLoopName "break" ident
+  semi >> return (Break ident)
+
+continueStatement :: MOOParser Statement
+continueStatement = do
+  reserved "continue"
+  ident <- optionMaybe identifier
+  checkLoopName "continue" ident
+  semi >> return (Continue ident)
+
 returnStatement :: MOOParser Statement
 returnStatement = do
   reserved "return"
-  e <- optionMaybe expression
-  semi
-  return $ Return e
+  expr <- optionMaybe expression
+  semi >> return (Return expr)
 
 tryStatement :: MOOParser Statement
 tryStatement = do
@@ -475,36 +465,38 @@ tryStatement = do
           reserved "finally"
           cleanup <- statements
           reserved "endtry"
-          return $ TryFinally body cleanup
+          return $ TryFinally body (Finally cleanup)
 
 forkStatement :: MOOParser Statement
 forkStatement = do
   reserved "fork"
   ident <- optionMaybe identifier
-  e <- parens expression
-  suspendLoopScope
-  body <- statements
-  resumeLoopScope
+  expr <- parens expression
+  body <- between suspendLoopScope resumeLoopScope statements
   reserved "endfork"
-  return $ Fork ident e body
+  return $ Fork ident expr body
 
 expressionStatement :: MOOParser Statement
 expressionStatement = do
-  e <- expression
-  semi
-  return $ Expression e
+  expr <- expression
+  semi >> return (Expression expr)
+
+-- Main parser interface
+
+program :: MOOParser Program
+program = between whiteSpace eof $ fmap Program statements
 
 type Errors = [Text]
 
 parse :: Text -> Either Errors Program
 parse input = case runParser program initParserState "MOO code" input of
-  Right p -> Right p
-  Left err -> Left $ let line = sourceLine $ errorPos err
-                         msg = find message $ errorMessages err
-                         message Message{} = True
-                         message _         = False
-                     in [pack $ "Line " ++ show line ++ ":  " ++
-                         maybe "syntax error" messageString msg]
+  Right prog -> Right prog
+  Left err   -> Left $ let line = sourceLine $ errorPos err
+                           msg = find message $ errorMessages err
+                           message Message{} = True
+                           message _         = False
+                       in [pack $ "Line " ++ show line ++ ":  " ++
+                           maybe "syntax error" messageString msg]
 
 -- Testing ...
 

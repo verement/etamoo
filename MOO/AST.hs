@@ -1,11 +1,14 @@
 
 module MOO.AST ( Program(..)
                , Statement(..)
+               , Then(..)
                , ElseIf(..)
                , Else(..)
                , Except(..)
+               , Finally(..)
                , Expr(..)
                , Codes(..)
+               , Default(..)
                , Arg(..)
                , ScatItem(..)
                , isLValue
@@ -17,25 +20,23 @@ newtype Program = Program [Statement]
                 deriving Show
 
 data Statement = Expression Expr
-               | If Expr [Statement] [ElseIf] Else
+               | If Expr Then [ElseIf] Else
                | ForList Id Expr [Statement]
-               | ForRange Id Expr Expr [Statement]
+               | ForRange Id (Expr, Expr) [Statement]
                | While (Maybe Id) Expr [Statement]
                | Fork (Maybe Id) Expr [Statement]
                | Break (Maybe Id)
                | Continue (Maybe Id)
                | Return (Maybe Expr)
                | TryExcept [Statement] [Except]
-               | TryFinally [Statement] [Statement]
+               | TryFinally [Statement] Finally
                deriving Show
 
-data ElseIf = ElseIf Expr [Statement]
-            deriving Show
-newtype Else = Else [Statement]
-             deriving Show
-
-data Except = Except (Maybe Id) Codes [Statement]
-            deriving Show
+newtype Then    = Then [Statement]                    deriving Show
+data    ElseIf  = ElseIf Expr [Statement]             deriving Show
+newtype Else    = Else [Statement]                    deriving Show
+data    Except  = Except (Maybe Id) Codes [Statement] deriving Show
+newtype Finally = Finally [Statement]                 deriving Show
 
 data Expr = Literal Value
           | List [Arg]
@@ -43,7 +44,7 @@ data Expr = Literal Value
           | PropRef Expr Expr
           | VerbCall Expr Expr [Arg]
           | Index Expr Expr
-          | Range Expr Expr Expr
+          | Range Expr (Expr, Expr)
           | Length
           | Assign Expr Expr
           | ScatterAssign [ScatItem] Expr
@@ -66,11 +67,11 @@ data Expr = Literal Value
           | UnaryMinus Expr
           | Not Expr
           | Conditional Expr Expr Expr
-          | Catch Expr Codes (Maybe Expr)
+          | Catch Expr Codes Default
           deriving Show
 
-data Codes = ANY | Codes [Arg]
-           deriving Show
+data    Codes   = ANY | Codes [Arg]    deriving Show
+newtype Default = Default (Maybe Expr) deriving Show
 
 data Arg = ArgNormal Expr
          | ArgSplice Expr
@@ -82,10 +83,10 @@ data ScatItem = ScatRequired Id
               deriving Show
 
 isLValue :: Expr -> Bool
-isLValue (Range e _ _) = isLValue' e
-isLValue e             = isLValue' e
+isLValue (Range e _)  = isLValue' e
+isLValue e            = isLValue' e
 
-isLValue' Variable{}   = True
-isLValue' PropRef{}    = True
-isLValue' (Index e _)  = isLValue' e
-isLValue' _            = False
+isLValue' Variable{}  = True
+isLValue' PropRef{}   = True
+isLValue' (Index e _) = isLValue' e
+isLValue' _           = False
