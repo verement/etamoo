@@ -198,8 +198,8 @@ logical = chainl1 relational (try op)
         greaterEqual = symbol ">="   >> return GreaterEqual
         inOp         = reserved "in" >> return In
 
-        lt = lexeme $ char '<' >> notFollowedBy (char '=')
-        gt = lexeme $ char '>' >> notFollowedBy (char '=')
+        lt = try $ lexeme $ char '<' >> notFollowedBy (char '=')
+        gt = try $ lexeme $ char '>' >> notFollowedBy (char '=')
 
 relational :: MOOParser Expr
 relational = chainl1 term (try op)
