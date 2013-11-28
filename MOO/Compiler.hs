@@ -1,15 +1,60 @@
 
-module MOO.Compiler ( compileExpr, catchException, initEnvironment
+{-# LANGUAGE OverloadedStrings #-}
+
+module MOO.Compiler ( compileExpr, catchException, initEnvironment, initStack
                     , ExceptionHandler(..), Exception(..) ) where
 
 import Control.Monad.Cont
+import Control.Monad.State
 import Control.Monad.Reader
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import Data.Map (Map)
+import qualified Data.Map as Map
 import MOO.Types
 import MOO.AST
 
-type MOO = ReaderT Environment (ContT Value IO)
+type MOO = ReaderT Environment (StateT CallStack (ContT Value IO))
+
+newtype CallStack = Stack [StackFrame]
+
+data StackFrame =
+  Frame { variables :: Map Id Value
+        }
+
+frames :: CallStack -> [StackFrame]
+frames (Stack xs) = xs
+
+initStack :: CallStack
+initStack = Stack [Frame { variables = mkInitVars }]
+
+mkInitVars = Map.fromList $ map (\(k, v) -> (T.toCaseFold k, v)) initVars
+
+initVars = [
+    ("player" , Obj (-1))
+  , ("this"   , Obj (-1))
+  , ("caller" , Obj (-1))
+
+  , ("args"   , Lst V.empty)
+  , ("argstr" , Str T.empty)
+
+  , ("verb"   , Str T.empty)
+  , ("dobjstr", Str T.empty)
+  , ("dobj"   , Obj (-1))
+  , ("prepstr", Str T.empty)
+  , ("iobjstr", Str T.empty)
+  , ("iobj"   , Obj (-1))
+  ] ++ typeVars
+
+typeVars = [
+    ("INT"  , Int $ typeCode TInt)
+  , ("NUM"  , Int $ typeCode TInt)
+  , ("FLOAT", Int $ typeCode TFlt)
+  , ("LIST" , Int $ typeCode TLst)
+  , ("STR"  , Int $ typeCode TStr)
+  , ("OBJ"  , Int $ typeCode TObj)
+  , ("ERR"  , Int $ typeCode TErr)
+  ]
 
 data Environment =
   Env { exceptionHandler :: ExceptionHandler
@@ -42,10 +87,35 @@ raiseException except = do
 raise :: Error -> MOO a
 raise err = raiseException $ Exception (Err err) (error2text err) (Int 0)
 
+notimp :: MOO a
+notimp = raiseException $ Exception (Str notyet) notyet (Int 0)
+  where notyet = "Not yet implemented"
+
 compileExpr :: Expr -> MOO Value
 compileExpr expr = case expr of
   Literal v -> liftIO (putStrLn $ "-- " ++ show v) >> return v
   List args -> mkList args
+
+  Variable var -> do
+    vars <- gets (variables . head . frames)
+    maybe (raise E_VARNF) return $ Map.lookup (T.toCaseFold var) vars
+
+  PropRef _ _ -> notimp
+
+  Assign (Variable var) expr -> do
+    value <- compileExpr expr
+    Stack (frame:stack) <- get
+    let frame' = frame {
+          variables = Map.insert (T.toCaseFold var) value (variables frame)
+          }
+    put $ Stack (frame':stack)
+    return value
+
+  Assign _ _        -> notimp
+  ScatterAssign _ _ -> notimp
+
+  VerbCall _ _ _    -> notimp
+  BuiltinFunc _ _   -> notimp
 
   a `Plus`   b -> binary plus   a b
   a `Minus`  b -> binary minus  a b
