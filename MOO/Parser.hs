@@ -151,7 +151,7 @@ expression = scatterAssign <|> valueOrAssign <?> "expression"
   where scatterAssign = do
           scat <- try $ do
             s <- braces scatList
-            symbol "="
+            lexeme $ char '=' >> notFollowedBy (oneOf "=>")
             return s
           expr <- expression
           mkScatter scat expr
@@ -160,7 +160,7 @@ expression = scatterAssign <|> valueOrAssign <?> "expression"
           val <- value
           assign val <|> return val
         assign val = do
-          try $ lexeme $ char '=' >> notFollowedBy (char '>')
+          try $ lexeme $ char '=' >> notFollowedBy (oneOf "=>")
           expr <- expression
           case val of
             List args -> do
