@@ -1,14 +1,13 @@
 
 module Main where
 
+import System.Console.Readline
+import Control.Monad.IO.Class (liftIO)
+import Data.Text
+
 import MOO.Parser
 import MOO.Compiler
-import MOO.Types
-import System.Console.Readline
-import Data.Text
-import Control.Monad.Cont
-import Control.Monad.State
-import Control.Monad.Reader
+import MOO.Execution
 
 main :: IO ()
 main = do

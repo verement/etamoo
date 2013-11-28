@@ -1,102 +1,19 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Compiler ( compileExpr, catchException, initEnvironment, initStack
-                    , ExceptionHandler(..), Exception(..) ) where
+module MOO.Compiler ( compileExpr ) where
 
-import Control.Monad.Cont
-import Control.Monad.State
-import Control.Monad.Reader
-import Control.Arrow (first)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad (when, void)
+
 import qualified Data.Text as T
 import qualified Data.Vector as V
-import Data.Map (Map)
 import qualified Data.Map as Map
+
 import MOO.Types
 import MOO.AST
-
-type MOO = ReaderT Environment (StateT CallStack (ContT Value IO))
-
-newtype CallStack = Stack [StackFrame]
-
-data StackFrame =
-  Frame { variables :: Map Id Value
-        , debugBit  :: Bool
-        }
-
-currentFrame :: CallStack -> StackFrame
-currentFrame (Stack (x:_)) = x
-currentFrame (Stack  [])   = error "Empty call stack"
-
-frame :: (StackFrame -> a) -> MOO a
-frame f = gets (f . currentFrame)
-
-modifyFrame :: (StackFrame -> StackFrame) -> MOO ()
-modifyFrame f = modify $ \(Stack (frame:stack)) -> Stack (f frame : stack)
-
-initStack :: CallStack
-initStack = Stack [Frame { variables = mkInitVars
-                         , debugBit  = True
-                         }]
-
-mkInitVars = Map.fromList $ map (first T.toCaseFold) initVars
-
-initVars = [
-    ("player" , Obj (-1))
-  , ("this"   , Obj (-1))
-  , ("caller" , Obj (-1))
-
-  , ("args"   , Lst V.empty)
-  , ("argstr" , Str T.empty)
-
-  , ("verb"   , Str T.empty)
-  , ("dobjstr", Str T.empty)
-  , ("dobj"   , Obj (-1))
-  , ("prepstr", Str T.empty)
-  , ("iobjstr", Str T.empty)
-  , ("iobj"   , Obj (-1))
-  ] ++ typeVars
-
-typeVars = [
-    ("INT"  , Int $ typeCode TInt)
-  , ("NUM"  , Int $ typeCode TInt)
-  , ("FLOAT", Int $ typeCode TFlt)
-  , ("LIST" , Int $ typeCode TLst)
-  , ("STR"  , Int $ typeCode TStr)
-  , ("OBJ"  , Int $ typeCode TObj)
-  , ("ERR"  , Int $ typeCode TErr)
-  ]
-
-data Environment =
-  Env { exceptionHandler :: ExceptionHandler
-      , indexLength      :: MOO Int
-      }
-
-initEnvironment :: Environment
-initEnvironment = Env {
-    exceptionHandler = Handler $ \(Exception _ m _) -> error (T.unpack m)
-  , indexLength      = error "invalid index context"
-  }
-
-newtype ExceptionHandler = Handler (Exception -> MOO Value)
-
-data Exception = Exception Code Message Value
-type Code = Value
-type Message = StrT
-
-catchException :: MOO a -> (Exception -> MOO a) -> MOO a
-catchException action handler = callCC $ \k -> local (mkHandler k) action
-  where mkHandler k r = r { exceptionHandler = Handler $ \e ->
-                             local (const r) $ handler e >>= k }
-
-raiseException :: Exception -> MOO a
-raiseException except = do
-  Handler handler <- reader exceptionHandler
-  handler except
-  error "Returned from exception handler"
-
-raise :: Error -> MOO a
-raise err = raiseException $ Exception (Err err) (error2text err) (Int 0)
+import MOO.Execution
+import MOO.Builtins
 
 notimp :: MOO a
 notimp = raiseException $ Exception (Str notyet) notyet (Int 0)
@@ -130,8 +47,9 @@ compileExpr expr = catchDebug $ case expr of
       Lst v -> scatterAssign items v
       _     -> raise E_TYPE
 
-  VerbCall{}    -> notimp
-  BuiltinFunc{} -> notimp
+  VerbCall{} -> notimp
+
+  BuiltinFunc func args -> expand args >>= callBuiltin (T.toCaseFold func)
 
   a `Plus`   b -> binary plus   a b
   a `Minus`  b -> binary minus  a b
