@@ -54,28 +54,24 @@ compileExpr expr = case expr of
   a `Remain` b -> binary remain a b
   a `Power`  b -> binary power  a b
 
-  Negate a -> compileExpr a >>= negation
+  Negate a -> do a' <- compileExpr a
+                 case a' of
+                   (Int x) -> return $ Int (-x)
+                   (Flt x) -> return $ Flt (-x)
+                   _       -> raise E_TYPE
 
-  Conditional c x y -> do
-    c' <- compileExpr c
-    compileExpr $ if truthOf c' then x else y
+  Conditional c x y -> do c' <- compileExpr c
+                          compileExpr $ if truthOf c' then x else y
 
-  x `And` y -> do
-    x' <- compileExpr x
-    if truthOf x'
-      then compileExpr y
-      else return x'
-  x `Or` y -> do
-    x' <- compileExpr x
-    if truthOf x'
-      then return x'
-      else compileExpr y
+  x `And` y -> do x' <- compileExpr x
+                  if truthOf x' then compileExpr y else return x'
+  x `Or`  y -> do x' <- compileExpr x
+                  if truthOf x' then return x' else compileExpr y
 
   Not x -> fmap (truthValue . not . truthOf) $ compileExpr x
 
-  x `Equal`    y -> binary (\a b -> return $ truthValue $ a == b) x y
-  x `NotEqual` y -> binary (\a b -> return $ truthValue $ a /= b) x y
-
+  x `Equal`        y -> equality   (==) x y
+  x `NotEqual`     y -> equality   (/=) x y
   x `LessThan`     y -> comparison (<)  x y
   x `LessEqual`    y -> comparison (<=) x y
   x `GreaterThan`  y -> comparison (>)  x y
@@ -106,8 +102,8 @@ compileExpr expr = case expr of
         _     -> raise E_TYPE
     if low > high
       then case expr' of
-        Lst{} -> return $ Lst $ V.empty
-        Str{} -> return $ Str $ T.empty
+        Lst{} -> return $ Lst V.empty
+        Str{} -> return $ Str T.empty
         _     -> raise E_TYPE
       else let len = high - low + 1 in case expr' of
         Lst v -> do checkLstRange v low >> checkLstRange v high
@@ -139,12 +135,13 @@ compileExpr expr = case expr of
           a' <- compileExpr a
           b' <- compileExpr b
           a' `op` b'
-        comparison op a b = do
-          a' <- compileExpr a
-          b' <- compileExpr b
-          when (typeOf a' /= typeOf b') $ raise E_TYPE
-          case a' of Lst{} -> raise E_TYPE
-                     _     -> return $ truthValue (a' `op` b')
+        equality op = binary test
+          where test a b = return $ truthValue (a `op` b)
+        comparison op = binary test
+          where test a b = do when (typeOf a /= typeOf b) $ raise E_TYPE
+                              case a of
+                                Lst{} -> raise E_TYPE
+                                _     -> return $ truthValue (a `op` b)
         withIndexLength expr =
           local $ \r -> r { indexLength = case expr of
                                Lst v -> return $ V.length v
@@ -204,6 +201,13 @@ remain :: Value -> Value -> MOO Value
                          | otherwise = checkFloat (a `fmod` b)
 _       `remain` _                   = raise E_TYPE
 
+fmod :: FltT -> FltT -> FltT
+x `fmod` y = x - fromIntegral n * y
+  where n = roundZero (x / y)
+        roundZero q | q > 0     = floor   q
+                    | q < 0     = ceiling q
+                    | otherwise = round   q
+
 power :: Value -> Value -> MOO Value
 (Int a) `power` (Int b)
   | b >= 0    = return $ Int (a ^ b)
@@ -218,15 +222,3 @@ power :: Value -> Value -> MOO Value
                         | otherwise = checkFloat (a ** fromIntegral b)
 (Flt a) `power` (Flt b) = checkFloat (a ** b)
 _       `power` _       = raise E_TYPE
-
-fmod :: FltT -> FltT -> FltT
-x `fmod` y = x - fromIntegral n * y
-  where n = roundZero (x / y)
-        roundZero q | q > 0     = floor   q
-                    | q < 0     = ceiling q
-                    | otherwise = round   q
-
-negation :: Value -> MOO Value
-negation (Int a) = return $ Int (-a)
-negation (Flt a) = return $ Flt (-a)
-negation _       = raise E_TYPE
