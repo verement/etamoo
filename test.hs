@@ -26,6 +26,5 @@ run line = case runParser expression initParserState "" (pack line) of
     let comp = compileExpr expr `catchException` \(Exception code m _) -> do
           liftIO $ putStrLn $ "*** " ++ unpack m
           return code
-    val <- runContT (runReaderT comp $ Handler $ \(Exception _ m _) ->
-      error (unpack m)) return
+    val <- runContT (runReaderT comp initEnvironment) return
     putStrLn $ "=> " ++ show val

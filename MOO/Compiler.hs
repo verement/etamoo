@@ -1,6 +1,6 @@
 
-module MOO.Compiler ( compileExpr, catchException,
-                      ExceptionHandler(..), Exception(..) ) where
+module MOO.Compiler ( compileExpr, catchException, initEnvironment
+                    , ExceptionHandler(..), Exception(..) ) where
 
 import Control.Monad.Cont
 import Control.Monad.Reader
@@ -9,7 +9,18 @@ import qualified Data.Vector as V
 import MOO.Types
 import MOO.AST
 
-type MOO = ReaderT ExceptionHandler (ContT Value IO)
+type MOO = ReaderT Environment (ContT Value IO)
+
+data Environment =
+  Env { exceptionHandler :: ExceptionHandler
+      , indexLength      :: MOO Int
+      }
+
+initEnvironment :: Environment
+initEnvironment = Env {
+    exceptionHandler = Handler $ \(Exception _ m _) -> error (T.unpack m)
+  , indexLength      = error "invalid index context"
+  }
 
 newtype ExceptionHandler = Handler (Exception -> MOO Value)
 
@@ -19,11 +30,12 @@ type Message = StrT
 
 catchException :: MOO a -> (Exception -> MOO a) -> MOO a
 catchException action handler = callCC $ \k -> local (mkHandler k) action
-  where mkHandler k r = Handler $ \e -> local (const r) $ handler e >>= k
+  where mkHandler k r = r { exceptionHandler = Handler $ \e ->
+                             local (const r) $ handler e >>= k }
 
 raiseException :: Exception -> MOO a
 raiseException except = do
-  Handler handler <- ask
+  Handler handler <- reader exceptionHandler
   handler except
   error "Returned from exception handler"
 
@@ -35,42 +47,83 @@ compileExpr expr = case expr of
   Literal v -> liftIO (putStrLn $ "-- " ++ show v) >> return v
   List args -> mkList args
 
-  Plus   a b -> binary plus   a b
-  Minus  a b -> binary minus  a b
-  Times  a b -> binary times  a b
-  Divide a b -> binary divide a b
-  Remain a b -> binary remain a b
-  Power  a b -> binary power  a b
-  Negate a   -> compileExpr a >>= negation
+  a `Plus`   b -> binary plus   a b
+  a `Minus`  b -> binary minus  a b
+  a `Times`  b -> binary times  a b
+  a `Divide` b -> binary divide a b
+  a `Remain` b -> binary remain a b
+  a `Power`  b -> binary power  a b
+
+  Negate a -> compileExpr a >>= negation
 
   Conditional c x y -> do
     c' <- compileExpr c
     compileExpr $ if truthOf c' then x else y
-  And x y -> do
+
+  x `And` y -> do
     x' <- compileExpr x
     if truthOf x'
       then compileExpr y
       else return x'
-  Or x y -> do
+  x `Or` y -> do
     x' <- compileExpr x
     if truthOf x'
       then return x'
       else compileExpr y
+
   Not x -> fmap (truthValue . not . truthOf) $ compileExpr x
 
-  Equal    x y -> binary (\a b -> return $ truthValue $ a == b) x y
-  NotEqual x y -> binary (\a b -> return $ truthValue $ a /= b) x y
+  x `Equal`    y -> binary (\a b -> return $ truthValue $ a == b) x y
+  x `NotEqual` y -> binary (\a b -> return $ truthValue $ a /= b) x y
 
-  LessThan     x y -> comparison (<)  x y
-  LessEqual    x y -> comparison (<=) x y
-  GreaterThan  x y -> comparison (>)  x y
-  GreaterEqual x y -> comparison (>=) x y
+  x `LessThan`     y -> comparison (<)  x y
+  x `LessEqual`    y -> comparison (<=) x y
+  x `GreaterThan`  y -> comparison (>)  x y
+  x `GreaterEqual` y -> comparison (>=) x y
 
-  In m l -> do
-    m' <- compileExpr m
-    l' <- compileExpr l
-    case l' of
-      Lst v -> return $ Int $ maybe 0 (fromIntegral . succ) (V.elemIndex m' v)
+  Index expr index -> do
+    expr'  <- compileExpr expr
+    index' <- withIndexLength expr' $ compileExpr index
+    case index' of
+      Int i' -> let i = fromIntegral i' in
+        case expr' of
+          Lst v -> do checkLstRange v i
+                      return $ v V.! pred i
+          Str t -> do checkStrRange t i
+                      return $ Str $ T.singleton $ t `T.index` pred i
+          _     -> raise E_TYPE
+      _      -> raise E_TYPE
+
+  Range expr (start, end) -> do
+    expr' <- compileExpr expr
+    (low, high) <- withIndexLength expr' $ do
+      start' <- compileExpr start
+      end'   <- compileExpr end
+      case start' of
+        Int s -> case end' of
+          Int e -> return (fromIntegral s, fromIntegral e)
+          _     -> raise E_TYPE
+        _     -> raise E_TYPE
+    if low > high
+      then case expr' of
+        Lst{} -> return $ Lst $ V.empty
+        Str{} -> return $ Str $ T.empty
+        _     -> raise E_TYPE
+      else let len = high - low + 1 in case expr' of
+        Lst v -> do checkLstRange v low >> checkLstRange v high
+                    return $ Lst $ V.slice (pred low) len v
+        Str t -> do checkStrRange t low >> checkStrRange t high
+                    return $ Str $ T.take len $ T.drop (pred low) t
+        _ -> raise E_TYPE
+
+  Length -> reader indexLength >>= fmap (Int . fromIntegral)
+
+  item `In` list -> do
+    item' <- compileExpr item
+    list' <- compileExpr list
+    case list' of
+      Lst v -> return $ Int $ maybe 0 (fromIntegral . succ) $
+               V.elemIndex item' v
       _     -> raise E_TYPE
 
   Catch expr codes (Default dv) -> do
@@ -92,6 +145,16 @@ compileExpr expr = case expr of
           when (typeOf a' /= typeOf b') $ raise E_TYPE
           case a' of Lst{} -> raise E_TYPE
                      _     -> return $ truthValue (a' `op` b')
+        withIndexLength expr =
+          local $ \r -> r { indexLength = case expr of
+                               Lst v -> return $ V.length v
+                               Str t -> return $ T.length t
+                               _     -> raise E_TYPE
+                          }
+        checkLstRange v i =
+          when (i < 1 || i > V.length v)            $ raise E_RANGE
+        checkStrRange t i =
+          when (i < 1 || T.compareLength t i == LT) $ raise E_RANGE
 
 mkList :: [Arg] -> MOO Value
 mkList args = fmap (Lst . V.fromList) $ expand args

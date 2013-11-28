@@ -44,37 +44,37 @@ data Expr = Literal Value
           | Variable Id
           | PropRef Expr Expr
 
-          | VerbCall Expr Expr [Arg]
-          | BuiltinFunc Id [Arg]
-
-          | Index Expr Expr
-          | Range Expr (Expr, Expr)
-          | Length
-
           | Assign Expr Expr
           | ScatterAssign [ScatItem] Expr
 
-          | Plus Expr Expr
-          | Minus Expr Expr
-          | Times Expr Expr
-          | Divide Expr Expr
-          | Remain Expr Expr
-          | Power Expr Expr
+          | VerbCall Expr Expr [Arg]
+          | BuiltinFunc Id [Arg]
+
+          | Expr `Index`  Expr
+          | Expr `Range` (Expr, Expr)
+          | Length
+
+          | Expr `In` Expr
+
+          | Expr `Plus`   Expr
+          | Expr `Minus`  Expr
+          | Expr `Times`  Expr
+          | Expr `Divide` Expr
+          | Expr `Remain` Expr
+          | Expr `Power`  Expr
           | Negate Expr
 
           | Conditional Expr Expr Expr
-          | And Expr Expr
-          | Or Expr Expr
+          | Expr `And` Expr
+          | Expr `Or`  Expr
           | Not Expr
 
-          | Equal Expr Expr
-          | NotEqual Expr Expr
-          | LessThan Expr Expr
-          | LessEqual Expr Expr
-          | GreaterThan Expr Expr
-          | GreaterEqual Expr Expr
-
-          | In Expr Expr
+          | Expr `Equal`        Expr
+          | Expr `NotEqual`     Expr
+          | Expr `LessThan`     Expr
+          | Expr `LessEqual`    Expr
+          | Expr `GreaterThan`  Expr
+          | Expr `GreaterEqual` Expr
 
           | Catch Expr Codes Default
 
