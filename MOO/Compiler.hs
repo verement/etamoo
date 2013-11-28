@@ -20,13 +20,23 @@ newtype CallStack = Stack [StackFrame]
 
 data StackFrame =
   Frame { variables :: Map Id Value
+        , debugBit  :: Bool
         }
 
-frames :: CallStack -> [StackFrame]
-frames (Stack xs) = xs
+currentFrame :: CallStack -> StackFrame
+currentFrame (Stack (x:_)) = x
+currentFrame (Stack  [])   = error "Empty call stack"
+
+frame :: (StackFrame -> a) -> MOO a
+frame f = gets (f . currentFrame)
+
+modifyFrame :: (StackFrame -> StackFrame) -> MOO ()
+modifyFrame f = modify $ \(Stack (frame:stack)) -> Stack (f frame : stack)
 
 initStack :: CallStack
-initStack = Stack [Frame { variables = mkInitVars }]
+initStack = Stack [Frame { variables = mkInitVars
+                         , debugBit  = True
+                         }]
 
 mkInitVars = Map.fromList $ map (\(k, v) -> (T.toCaseFold k, v)) initVars
 
@@ -91,24 +101,27 @@ notimp :: MOO a
 notimp = raiseException $ Exception (Str notyet) notyet (Int 0)
   where notyet = "Not yet implemented"
 
+catchDebug :: MOO Value -> MOO Value
+catchDebug action = action `catchException` \except@(Exception code _ _) -> do
+  debug <- frame debugBit
+  if debug then raiseException except else return code
+
 compileExpr :: Expr -> MOO Value
-compileExpr expr = case expr of
+compileExpr expr = catchDebug $ case expr of
   Literal v -> liftIO (putStrLn $ "-- " ++ show v) >> return v
   List args -> mkList args
 
   Variable var -> do
-    vars <- gets (variables . head . frames)
+    vars <- frame variables
     maybe (raise E_VARNF) return $ Map.lookup (T.toCaseFold var) vars
 
   PropRef _ _ -> notimp
 
   Assign (Variable var) expr -> do
     value <- compileExpr expr
-    Stack (frame:stack) <- get
-    let frame' = frame {
-          variables = Map.insert (T.toCaseFold var) value (variables frame)
-          }
-    put $ Stack (frame':stack)
+    modifyFrame $ \frame -> frame {
+      variables = Map.insert (T.toCaseFold var) value (variables frame)
+      }
     return value
 
   Assign _ _        -> notimp
