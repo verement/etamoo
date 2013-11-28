@@ -12,6 +12,7 @@ module MOO.Types ( IntT
                  , Type(..)
                  , Value(..)
                  , Error(..)
+                 , equal
                  , truthOf
                  , truthValue
                  , typeOf
@@ -55,6 +56,12 @@ instance Eq Value where
   (Err a) == (Err b) = a == b
   (Lst a) == (Lst b) = a == b
   _       == _       = False
+
+equal :: Value -> Value -> Bool
+(Str a) `equal` (Str b) = a == b
+(Lst a) `equal` (Lst b) = V.length a == V.length b &&
+                          V.and (V.zipWith equal a b)
+x       `equal` y       = x == y
 
 instance Ord Value where
   (Int a) `compare` (Int b) = a `compare` b

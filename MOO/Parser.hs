@@ -1,5 +1,6 @@
 
-module MOO.Parser ( parse, runParser, initParserState, expression ) where
+module MOO.Parser ( parse, runParser, initParserState, expression
+                  , parseInt, parseFlt, parseNum, parseObj ) where
 
 import           Text.Parsec hiding (parse)
 import           Text.Parsec.Text
@@ -11,8 +12,9 @@ import           Data.Text (Text, pack, unpack, toCaseFold)
 import           Data.Ratio
 import           Data.Maybe
 import           Data.List
-import           MOO.Types
-import           MOO.AST
+
+import MOO.Types
+import MOO.AST
 
 data ParserState = ParserState { dollarContext :: Int
                                , loopStack :: [[Maybe Id]]
@@ -498,6 +500,26 @@ parse input = case runParser program initParserState "MOO code" input of
                            message _         = False
                        in [pack $ "Line " ++ show line ++ ":  " ++
                            maybe "syntax error" messageString msg]
+
+-- Auxiliary parser interface
+
+standalone :: MOOParser Value -> Text -> Maybe Value
+standalone parser input = case runParser parser' initParserState "" input of
+  Right v -> Just v
+  Left  _ -> Nothing
+  where parser' = between whiteSpace eof parser
+
+parseInt :: Text -> Maybe Value
+parseInt = standalone integerLiteral
+
+parseFlt :: Text -> Maybe Value
+parseFlt = standalone floatLiteral
+
+parseNum :: Text -> Maybe Value
+parseNum str = parseInt str `mplus` parseFlt str
+
+parseObj :: Text -> Maybe Value
+parseObj = standalone objectLiteral
 
 -- Testing ...
 

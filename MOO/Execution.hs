@@ -13,7 +13,9 @@ module MOO.Execution ( MOO
                      , modifyFrame
                      , catchException
                      , raiseException
+                     , notyet
                      , raise
+                     , checkFloat
                      , runContT
                      , evalStateT
                      , runReaderT
@@ -110,5 +112,13 @@ raiseException except = do
   handler except
   error "Returned from exception handler"
 
+notyet = raiseException $
+         Exception (Err E_INVARG) "Not yet implemented" (Int 0)
+
 raise :: Error -> MOO a
 raise err = raiseException $ Exception (Err err) (error2text err) (Int 0)
+
+checkFloat :: FltT -> MOO Value
+checkFloat flt | isInfinite flt = raise E_FLOAT
+               | isNaN      flt = raise E_INVARG
+               | otherwise      = return (Flt flt)

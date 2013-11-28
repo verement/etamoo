@@ -15,10 +15,6 @@ import MOO.AST
 import MOO.Execution
 import MOO.Builtins
 
-notimp :: MOO a
-notimp = raiseException $ Exception (Str notyet) notyet (Int 0)
-  where notyet = "Not yet implemented"
-
 catchDebug :: MOO Value -> MOO Value
 catchDebug action = action `catchException` \except@(Exception code _ _) -> do
   debug <- frame debugBit
@@ -33,13 +29,13 @@ compileExpr expr = catchDebug $ case expr of
     vars <- frame variables
     maybe (raise E_VARNF) return $ Map.lookup (T.toCaseFold var) vars
 
-  PropRef{} -> notimp
+  PropRef{} -> notyet
 
   Assign (Variable var) expr -> do
     value <- compileExpr expr
     assign var value
 
-  Assign _ _ -> notimp
+  Assign _ _ -> notyet
 
   ScatterAssign items expr -> do
     expr' <- compileExpr expr
@@ -47,7 +43,7 @@ compileExpr expr = catchDebug $ case expr of
       Lst v -> scatterAssign items v
       _     -> raise E_TYPE
 
-  VerbCall{} -> notimp
+  VerbCall{} -> notyet
 
   BuiltinFunc func args -> expand args >>= callBuiltin (T.toCaseFold func)
 
@@ -217,11 +213,6 @@ expand (a:as) = case a of
                          Lst v -> fmap (V.toList v ++) $ expand as
                          _     -> raise E_TYPE
 expand [] = return []
-
-checkFloat :: FltT -> MOO Value
-checkFloat flt | isInfinite flt = raise E_FLOAT
-               | isNaN      flt = raise E_INVARG
-               | otherwise      = return (Flt flt)
 
 plus :: Value -> Value -> MOO Value
 (Int a) `plus` (Int b) = return $ Int (a + b)
