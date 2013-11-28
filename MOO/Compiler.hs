@@ -7,6 +7,7 @@ module MOO.Compiler ( compileExpr, catchException, initEnvironment, initStack
 import Control.Monad.Cont
 import Control.Monad.State
 import Control.Monad.Reader
+import Control.Arrow (first)
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import Data.Map (Map)
@@ -38,7 +39,7 @@ initStack = Stack [Frame { variables = mkInitVars
                          , debugBit  = True
                          }]
 
-mkInitVars = Map.fromList $ map (\(k, v) -> (T.toCaseFold k, v)) initVars
+mkInitVars = Map.fromList $ map (first T.toCaseFold) initVars
 
 initVars = [
     ("player" , Obj (-1))
@@ -115,20 +116,22 @@ compileExpr expr = catchDebug $ case expr of
     vars <- frame variables
     maybe (raise E_VARNF) return $ Map.lookup (T.toCaseFold var) vars
 
-  PropRef _ _ -> notimp
+  PropRef{} -> notimp
 
   Assign (Variable var) expr -> do
     value <- compileExpr expr
-    modifyFrame $ \frame -> frame {
-      variables = Map.insert (T.toCaseFold var) value (variables frame)
-      }
-    return value
+    assign var value
 
-  Assign _ _        -> notimp
-  ScatterAssign _ _ -> notimp
+  Assign _ _ -> notimp
 
-  VerbCall _ _ _    -> notimp
-  BuiltinFunc _ _   -> notimp
+  ScatterAssign items expr -> do
+    expr' <- compileExpr expr
+    case expr' of
+      Lst v -> scatterAssign items v
+      _     -> raise E_TYPE
+
+  VerbCall{}    -> notimp
+  BuiltinFunc{} -> notimp
 
   a `Plus`   b -> binary plus   a b
   a `Minus`  b -> binary minus  a b
@@ -235,6 +238,54 @@ compileExpr expr = catchDebug $ case expr of
           when (i < 1 || i > V.length v)            $ raise E_RANGE
         checkStrRange t i =
           when (i < 1 || T.compareLength t i == LT) $ raise E_RANGE
+
+assign :: Id -> Value -> MOO Value
+assign var value = do
+  modifyFrame $ \frame -> frame {
+    variables = Map.insert (T.toCaseFold var) value (variables frame)
+    }
+  return value
+
+scatterAssign :: [ScatItem] -> LstT -> MOO Value
+scatterAssign items args =
+  if nargs < nreqs || (not haveRest && nargs > ntarg) then raise E_ARGS
+  else do walk items args (nargs - nreqs)
+          return (Lst args)
+
+  where nargs = V.length args
+        nreqs = count required items
+        nopts = count optional items
+        ntarg = nreqs + nopts
+        nrest = if haveRest && nargs >= ntarg then nargs - ntarg else 0
+
+        haveRest = any rest items
+        count p = length . filter p
+
+        required ScatRequired{} = True
+        required _              = False
+        optional ScatOptional{} = True
+        optional _              = False
+        rest     ScatRest{}     = True
+        rest     _              = False
+
+        walk (item:items) args noptAvail =
+          case item of
+            ScatRequired var -> do
+              assign var (V.head args)
+              walk items (V.tail args) noptAvail
+            ScatOptional var opt
+              | noptAvail > 0 -> do assign var (V.head args)
+                                    walk items (V.tail args) (noptAvail - 1)
+              | otherwise     -> do
+                case opt of Nothing   -> return ()
+                            Just expr -> do expr' <- compileExpr expr
+                                            void $ assign var expr'
+                walk items args noptAvail
+            ScatRest var -> do
+              let (s, r) = V.splitAt nrest args
+              assign var (Lst s)
+              walk items r noptAvail
+        walk [] _ _ = return ()
 
 mkList :: [Arg] -> MOO Value
 mkList args = fmap (Lst . V.fromList) $ expand args
