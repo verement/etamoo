@@ -325,15 +325,16 @@ bf_rmatch (Str subject : Str pattern : optional) = notyet
 
 bf_substitute [Str template, Lst subs] = notyet
 
--- Use OS crypt
-foreign import ccall "crypt" c_crypt :: CString -> CString -> IO CString
+foreign import ccall unsafe "static unistd.h crypt"
+  c_crypt :: CString -> CString -> IO CString
 
 crypt :: String -> String -> String
 crypt key salt =
-  unsafePerformIO $ bracket (takeMVar lock) (putMVar lock) $ \_ ->
+  unsafePerformIO $ bracket (takeMVar cryptLock) (putMVar cryptLock) $ \_ ->
     withCString key $ \c_key -> withCString salt $ \c_salt ->
       c_crypt c_key c_salt >>= peekCString
-  where lock = unsafePerformIO $ newMVar ()
+
+cryptLock = unsafePerformIO $ newMVar ()
 
 bf_crypt (Str text : optional)
   | maybe True invalidSalt saltArg = generateSalt >>= go
@@ -345,7 +346,7 @@ bf_crypt (Str text : optional)
           c2 <- randSaltChar
           return $ T.pack [c1, c2]
         randSaltChar = fmap (saltStuff !!) $
-                       liftIO $ randomRIO (0, length saltStuff)
+                       liftIO $ randomRIO (0, length saltStuff - 1)
         saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
         go salt = return $ Str $ T.pack $ crypt (T.unpack text) (T.unpack salt)
 
