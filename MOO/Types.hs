@@ -12,6 +12,12 @@ module MOO.Types ( IntT
                  , Type(..)
                  , Value(..)
                  , Error(..)
+                 , fromInt
+                 , fromFlt
+                 , fromStr
+                 , fromObj
+                 , fromErr
+                 , fromLst
                  , equal
                  , truthOf
                  , truthValue
@@ -48,6 +54,25 @@ data Value = Int !IntT
            | Lst !LstT
            deriving Show
 
+fromInt :: Value -> IntT
+fromInt (Int x) = x
+
+fromFlt :: Value -> FltT
+fromFlt (Flt x) = x
+
+fromStr :: Value -> StrT
+fromStr (Str x) = x
+
+fromObj :: Value -> ObjT
+fromObj (Obj x) = x
+
+fromErr :: Value -> ErrT
+fromErr (Err x) = x
+
+fromLst :: Value -> LstT
+fromLst (Lst x) = x
+
+-- Case-insensitive equality
 instance Eq Value where
   (Int a) == (Int b) = a == b
   (Flt a) == (Flt b) = a == b
@@ -57,12 +82,14 @@ instance Eq Value where
   (Lst a) == (Lst b) = a == b
   _       == _       = False
 
+-- Case-sensitive equality
 equal :: Value -> Value -> Bool
 (Str a) `equal` (Str b) = a == b
 (Lst a) `equal` (Lst b) = V.length a == V.length b &&
                           V.and (V.zipWith equal a b)
 x       `equal` y       = x == y
 
+-- Case-insensitive ordering
 instance Ord Value where
   (Int a) `compare` (Int b) = a `compare` b
   (Flt a) `compare` (Flt b) = a `compare` b

@@ -228,8 +228,8 @@ bf_trunc [Flt x] | x < 0     = checkFloat $ fromIntegral $ ceiling x
 
 -- 4.4.2.3 Operations on Strings
 
-bf_length [Str string] = return (Int $ fromIntegral $ T.length string)
-bf_length [Lst list]   = return (Int $ fromIntegral $ V.length list)
+bf_length [Str string] = return $ Int $ fromIntegral $ T.length string
+bf_length [Lst list]   = return $ Int $ fromIntegral $ V.length list
 bf_length _            = raise E_TYPE
 
 bf_strsub (Str subject : Str what : Str with : optional) = notyet
@@ -244,15 +244,19 @@ bf_strcmp [Str str1, Str str2] =
     GT ->  1
 
 bf_decode_binary (Str bin_string : optional) = notyet
+  where [fully] = booleanDefaults optional [False]
+
 bf_encode_binary args = notyet
 
 bf_match  (Str subject : Str pattern : optional) = notyet
+  where [case_matters] = booleanDefaults optional [False]
+
 bf_rmatch (Str subject : Str pattern : optional) = notyet
+  where [case_matters] = booleanDefaults optional [False]
 
 bf_substitute [Str template, Lst subs] = notyet
 
--- [Use OS crypt]
-
+-- Use OS crypt
 foreign import ccall "crypt" c_crypt :: CString -> CString -> IO CString
 
 crypt :: String -> String -> String
@@ -263,9 +267,10 @@ crypt key salt =
   where lock = unsafePerformIO $ newMVar ()
 
 bf_crypt (Str text : optional)
-  | T.length salt < 2 = generateSalt >>= go
-  | otherwise         = go salt
-  where [Str salt] = defaults optional [Str ""]
+  | maybe 0 saltLen saltArg < 2 = generateSalt >>= go
+  | otherwise                   = go $ fromStr $ fromJust saltArg
+  where (saltArg : _) = maybeDefaults optional
+        saltLen (Str salt) = T.length salt
         generateSalt = do
           c1 <- randSaltChar
           c2 <- randSaltChar
@@ -275,13 +280,11 @@ bf_crypt (Str text : optional)
         saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
         go salt = return $ Str $ T.pack $ crypt (T.unpack text) (T.unpack salt)
 
--- [End crypt]
-
 hash :: ByteString -> MOO Value
 hash bs = return $ Str $ T.pack $ show md5hash
   where md5hash = MD5.hash' bs :: MD5Digest
 
-bf_string_hash [Str text] = hash (encodeUtf8 text)
+bf_string_hash [Str text] = hash $ encodeUtf8 text
 
 bf_binary_hash [Str bin_string] = binaryString bin_string >>= hash
 
@@ -293,17 +296,45 @@ bf_is_member [value, Lst list] =
   return $ Int $ maybe 0 (fromIntegral . succ) $
   V.findIndex (`equal` value) list
 
-bf_listinsert [Lst list, value, Int index] = notyet
-bf_listinsert [Lst list, value] = return $ Lst $ V.cons value list
+listInsert :: LstT -> Int -> Value -> LstT
+listInsert list index value
+  | index <= 0      = V.cons value list
+  | index > listLen = V.snoc list value
+  | otherwise       = V.create $ do
+    list' <- V.thaw list >>= flip VM.grow 1
+    let moveLen = listLen - index
+        s = VM.slice  index      moveLen list'
+        t = VM.slice (index + 1) moveLen list'
+    VM.move t s
+    VM.write list' index value
+    return list'
+  where listLen = V.length list
 
-bf_listappend [Lst list, value, Int index] = notyet
-bf_listappend [Lst list, value] = return $ Lst $ V.snoc list value
+listDelete :: LstT -> Int -> LstT
+listDelete list index
+  | index == 0           = V.create $ fmap VM.tail $ V.thaw list
+  | index == listLen - 1 = V.create $ fmap VM.init $ V.thaw list
+  | otherwise            = V.create $ do
+    list' <- V.thaw list
+    let moveLen = listLen - index - 1
+        s = VM.slice  index      moveLen list'
+        t = VM.slice (index + 1) moveLen list'
+    VM.move s t
+    return $ VM.init list'
+  where listLen = V.length list
+
+bf_listinsert (Lst list : value : optional) =
+  return $ Lst $ listInsert list (fromIntegral index - 1) value
+  where [Int index] = defaults optional [Int 1]
+
+bf_listappend (Lst list : value : optional) =
+  return $ Lst $ listInsert list (fromIntegral index) value
+  where [Int index] = defaults optional [Int $ fromIntegral $ V.length list]
 
 bf_listdelete [Lst list, Int index]
   | index' < 1 || index' > V.length list = raise E_RANGE
-  | otherwise = return $ Lst $ s V.++ V.tail r
+  | otherwise = return $ Lst $ listDelete list (index' - 1)
   where index' = fromIntegral index
-        (s, r) = V.splitAt (index' - 1) list
 
 bf_listset [Lst list, value, Int index]
   | index' < 1 || index' > V.length list = raise E_RANGE
@@ -317,5 +348,4 @@ bf_setadd [Lst list, value] =
 bf_setremove [Lst list, value] =
   return $ Lst $ case V.elemIndex value list of
     Nothing    -> list
-    Just index -> s V.++ V.tail r
-      where (s, r) = V.splitAt index list
+    Just index -> listDelete list (fromIntegral index)
