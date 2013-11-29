@@ -31,6 +31,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import qualified Data.ByteString as BS
 
 import MOO.Types
 
@@ -126,4 +127,4 @@ checkFloat flt | isInfinite flt = raise E_FLOAT
                | otherwise      = return (Flt flt)
 
 binaryString :: StrT -> MOO ByteString
-binaryString = maybe (raise E_INVARG) return . text2binary
+binaryString = maybe (raise E_INVARG) (return . BS.pack) . text2binary

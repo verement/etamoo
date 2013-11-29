@@ -15,6 +15,7 @@ import Foreign.C (CString, withCString, peekCString)
 import Data.Maybe (fromJust)
 import Data.Text.Encoding (encodeUtf8)
 import Data.ByteString (ByteString)
+import Data.Char (intToDigit)
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -232,10 +233,41 @@ bf_length [Str string] = return $ Int $ fromIntegral $ T.length string
 bf_length [Lst list]   = return $ Int $ fromIntegral $ V.length list
 bf_length _            = raise E_TYPE
 
-bf_strsub (Str subject : Str what : Str with : optional) = notyet
+bf_strsub (Str subject : Str what : Str with : optional)
+  | T.null what = raise E_INVARG
+  | otherwise   = return $ Str $ T.concat $ subs subject
+  where [case_matters] = booleanDefaults optional [False]
+        caseFold str = if case_matters then str else T.toCaseFold str
+                       -- this won't work for Unicode in general
+        subs "" = []
+        subs subject = case T.breakOn what' (caseFold subject) of
+          (_, "")     -> [subject]
+          (prefix, _) -> let (s, r) = T.splitAt (T.length prefix) subject
+                         in s : with : subs (T.drop whatLen r)
+        what' = caseFold what
+        whatLen = T.length what
 
-bf_index  (Str str1 : Str str2 : optional) = notyet
-bf_rindex (Str str1 : Str str2 : optional) = notyet
+bf_index  (Str str1 : Str str2 : optional)
+  | T.null str2 = return (Int 1)
+  | otherwise   =
+    return $ Int $ case T.breakOn (caseFold str2) (caseFold str1) of
+      (_, "")     -> 0
+      (prefix, _) -> fromIntegral $ 1 + T.length prefix
+  where [case_matters] = booleanDefaults optional [False]
+        caseFold str = if case_matters then str else T.toCaseFold str
+                       -- this won't work for Unicode in general
+
+bf_rindex (Str str1 : Str str2 : optional)
+  | T.null str2 = return (Int $ fromIntegral $ T.length str1 + 1)
+  | otherwise   =
+    return $ Int $ case T.breakOnEnd needle haystack of
+      ("", _)     -> 0
+      (prefix, _) -> fromIntegral $ 1 + T.length prefix - T.length needle
+  where [case_matters] = booleanDefaults optional [False]
+        needle   = caseFold str2
+        haystack = caseFold str1
+        caseFold str = if case_matters then str else T.toCaseFold str
+                       -- this won't work for Unicode in general
 
 bf_strcmp [Str str1, Str str2] =
   return $ Int $ case compare str1 str2 of
@@ -243,10 +275,47 @@ bf_strcmp [Str str1, Str str2] =
     EQ ->  0
     GT ->  1
 
-bf_decode_binary (Str bin_string : optional) = notyet
+bf_decode_binary (Str bin_string : optional) =
+  maybe (raise E_INVARG) (return . mkResult) $ text2binary bin_string
   where [fully] = booleanDefaults optional [False]
+        mkResult | fully     = Lst . V.fromList . map (Int . fromIntegral)
+                 | otherwise = Lst . V.fromList . groupPrinting ("" ++)
+        groupPrinting g (w:ws)
+          | validStrChar c = groupPrinting (g [c] ++) ws
+          | null group     = Int (fromIntegral w) : groupPrinting g ws
+          | otherwise      = Str (T.pack group) : Int (fromIntegral w) :
+                             groupPrinting ("" ++) ws
+          where c = toEnum (fromIntegral w)
+                group = g ""
+        groupPrinting g []
+          | null group = []
+          | otherwise  = Str (T.pack group) : []
+          where group = g ""
 
-bf_encode_binary args = notyet
+bf_encode_binary = fmap (Str . T.pack) . encodeBinary
+
+encodeBinary :: [Value] -> MOO String
+encodeBinary (Int n : args)
+  | n >= 0 && n <= 255 = fmap prepend $ encodeBinary args
+  | otherwise          = raise E_INVARG
+  where c = toEnum n'
+        n' = fromIntegral n
+        prepend | validStrChar c &&
+                  c /= '\t'      = (c :)
+                | otherwise      = \r -> '~' : hex (n' `div` 16)
+                                             : hex (n' `mod` 16) : r
+        hex = intToDigit  -- N.B. not uppercase
+encodeBinary (Str str : args) = fmap (encodeStr (T.unpack str) ++) $
+                                encodeBinary args
+  where encodeStr ('~' :cs) = "~7e" ++ encodeStr cs
+        encodeStr ('\t':cs) = "~09" ++ encodeStr cs
+        encodeStr (c   :cs) = c     :  encodeStr cs
+        encodeStr "" = ""
+encodeBinary (Lst list : args) = do
+  listEncoding <- encodeBinary (V.toList list)
+  fmap (listEncoding ++) $ encodeBinary args
+encodeBinary (_:_) = raise E_INVARG
+encodeBinary []    = return ""
 
 bf_match  (Str subject : Str pattern : optional) = notyet
   where [case_matters] = booleanDefaults optional [False]
@@ -267,10 +336,10 @@ crypt key salt =
   where lock = unsafePerformIO $ newMVar ()
 
 bf_crypt (Str text : optional)
-  | maybe 0 saltLen saltArg < 2 = generateSalt >>= go
-  | otherwise                   = go $ fromStr $ fromJust saltArg
+  | maybe True invalidSalt saltArg = generateSalt >>= go
+  | otherwise                      = go $ fromStr $ fromJust saltArg
   where (saltArg : _) = maybeDefaults optional
-        saltLen (Str salt) = T.length salt
+        invalidSalt (Str salt) = salt `T.compareLength` 2 == LT
         generateSalt = do
           c1 <- randSaltChar
           c2 <- randSaltChar

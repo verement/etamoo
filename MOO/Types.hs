@@ -26,15 +26,17 @@ module MOO.Types ( IntT
                  , toText
                  , error2text
                  , text2binary
+                 , validStrChar
                  ) where
 
-import           Data.Int
+import Data.Int
+import Data.Word
+import Data.Text (Text)
+import Data.Vector (Vector)
+import Data.Char (isAscii, isPrint)
+
 import qualified Data.Text as T
-import           Data.Text (Text)
 import qualified Data.Vector as V
-import           Data.Vector (Vector)
-import qualified Data.ByteString as BS
-import           Data.ByteString (ByteString)
 
 type IntT = Int32
 type FltT = Double
@@ -127,11 +129,11 @@ data Error = E_NONE
            deriving (Eq, Ord, Enum, Bounded, Show)
 
 truthOf :: Value -> Bool
-truthOf (Int x)  = case x of 0   -> False; _ -> True
-truthOf (Flt x)  = case x of 0.0 -> False; _ -> True
-truthOf (Str x)  = case x of ""  -> False; _ -> True
-truthOf (Lst vs) = not (V.null vs)
-truthOf _        = False
+truthOf (Int x) = case x of 0   -> False; _ -> True
+truthOf (Flt x) = case x of 0.0 -> False; _ -> True
+truthOf (Str t) = not (T.null t)
+truthOf (Lst v) = not (V.null v)
+truthOf _       = False
 
 truthValue :: Bool -> Value
 truthValue False = Int 0
@@ -181,10 +183,8 @@ error2text E_INVARG  = "Invalid argument"
 error2text E_QUOTA   = "Resource limit exceeded"
 error2text E_FLOAT   = "Floating-point arithmetic error"
 
-text2binary :: Text -> Maybe ByteString
-text2binary t = do
-  w8s <- translate $ T.unpack t
-  return $ BS.pack w8s
+text2binary :: Text -> Maybe [Word8]
+text2binary = translate . T.unpack
   where translate ('~':x:y:rs) = do
           xv <- hexValue x
           yv <- hexValue y
@@ -203,3 +203,6 @@ text2binary t = do
           | x >= 'A' && x <= 'F' = Just $ 10 + distance 'A' x
           | otherwise            = Nothing
           where distance c0 c1 = fromIntegral $ fromEnum c1 - fromEnum c0
+
+validStrChar :: Char -> Bool
+validStrChar c = isAscii c && (isPrint c || c == '\t')
