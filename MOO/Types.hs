@@ -72,14 +72,14 @@ instance Ord Value where
   _       `compare` _       = error "Illegal comparison"
 
 data Type = TAny
+          | TNum
           | TInt
           | TFlt
-          | TNum
           | TStr
           | TObj
           | TErr
           | TLst
-          deriving Eq
+          deriving (Eq, Show)
 
 data Error = E_NONE
            | E_TYPE

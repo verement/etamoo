@@ -3,10 +3,11 @@
 
 module MOO.Builtins ( builtinFunctions, callBuiltin ) where
 
-import Control.Monad (when)
+import Control.Monad (when, foldM)
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe)
 import Data.Map (Map)
+import Data.List (transpose, inits)
 import System.Time
 import System.Locale (defaultTimeLocale)
 
@@ -23,10 +24,74 @@ import MOO.Builtins.Objects as Objects
 import MOO.Builtins.Network as Network
 import MOO.Builtins.Task    as Task
 
+builtinFunctions :: Map Id (Builtin, Info)
+builtinFunctions =
+  Map.fromList $ miscBuiltins ++
+  Values.builtins ++ Objects.builtins ++ Network.builtins ++ Task.builtins
+
+callBuiltin :: Id -> [Value] -> MOO Value
+callBuiltin func args = case Map.lookup func builtinFunctions of
+  Just (bf, info) -> checkArgs info args >> bf args
+  Nothing -> raiseException $
+             Exception (Err E_INVARG) "Unknown built-in function" (Str func)
+
+  where checkArgs (Info min max types _) args = do
+          let nargs = length args
+            in when (nargs < min || nargs > fromMaybe nargs max) $ raise E_ARGS
+          checkTypes types args
+
+        checkTypes (t:ts) (a:as) = do
+          when (typeMismatch t $ typeOf a) $ raise E_TYPE
+          checkTypes ts as
+        checkTypes _ _ = return ()
+
+        typeMismatch x    y    | x == y = False
+        typeMismatch TAny _             = False
+        typeMismatch TNum TInt          = False
+        typeMismatch TNum TFlt          = False
+        typeMismatch _    _             = True
+
+-- Internal consistency verification
+
+verifyBuiltins :: Either String Int
+verifyBuiltins = foldM accum 0 $ Map.assocs builtinFunctions
+  where accum a b = valid b >>= Right . (+ a)
+        valid (name, (func, Info min max types _))
+          | name /= T.toCaseFold name         = invalid "name not case-folded"
+          | min < 0                           = invalid "arg min < 0"
+          | maybe False (< min) max           = invalid "arg max < min"
+          | length types /= fromMaybe min max = invalid "incorrect # types"
+          | testArgs func min max types       = ok
+          where invalid msg = Left $ T.unpack name ++ ": " ++ msg
+                ok = Right 1
+
+        testArgs func min max types = and $ map test argSpecs
+          where argSpecs = drop min $ inits $ map mkArgs augmentedTypes
+                augmentedTypes = maybe (types ++ [TAny]) (const types) max
+                test argSpec = and $ map (\args -> func args `seq` True) $
+                               enumerateArgs argSpec
+
+enumerateArgs :: [[Value]] -> [[Value]]
+enumerateArgs (a:[]) = transpose [a]
+enumerateArgs (a:as) = concatMap (combine a) (enumerateArgs as)
+  where combine ps rs = map (: rs) ps
+enumerateArgs []     = [[]]
+
+mkArgs :: Type -> [Value]
+mkArgs TAny = mkArgs TNum ++ mkArgs TStr ++ mkArgs TObj ++
+              mkArgs TErr ++ mkArgs TLst
+mkArgs TNum = mkArgs TInt ++ mkArgs TFlt
+mkArgs TInt = [Int 0]
+mkArgs TFlt = [Flt 0]
+mkArgs TStr = [Str T.empty]
+mkArgs TObj = [Obj 0]
+mkArgs TErr = [Err E_NONE]
+mkArgs TLst = [Lst V.empty]
+
 -- 4.4 Built-in Functions
 
-builtinFunctions :: Map Id (Builtin, Info)
-builtinFunctions = Map.fromList $ [
+miscBuiltins :: [BuiltinSpec]
+miscBuiltins = [
     -- 4.4.1 Object-Oriented Programming
     ("pass"          , (bf_pass          , Info 0 Nothing  []           TAny))
 
@@ -52,29 +117,7 @@ builtinFunctions = Map.fromList $ [
                      (bf_verb_cache_stats, Info 0 (Just 0) []           TLst))
   , ("log_cache_stats",
                      (bf_log_cache_stats , Info 0 (Just 0) []           TAny))
-  ] ++ Values.builtins ++ Objects.builtins ++ Network.builtins ++ Task.builtins
-
-callBuiltin :: Id -> [Value] -> MOO Value
-callBuiltin func args = case Map.lookup func builtinFunctions of
-  Just (bf, info) -> checkArgs info args >> bf args
-  Nothing -> raiseException $
-             Exception (Err E_INVARG) "Unknown built-in function" (Str func)
-
-  where checkArgs (Info min max types _) args = do
-          let nargs = length args
-            in when (nargs < min || nargs > fromMaybe nargs max) $ raise E_ARGS
-          checkTypes types args
-
-        checkTypes (t:ts) (a:as) = do
-          when (typeMismatch t $ typeOf a) $ raise E_TYPE
-          checkTypes ts as
-        checkTypes _ _ = return ()
-
-        typeMismatch x    y    | x == y = False
-        typeMismatch TAny _             = False
-        typeMismatch TNum TInt          = False
-        typeMismatch TNum TFlt          = False
-        typeMismatch _    _             = True
+  ]
 
 -- 4.4.1 Object-Oriented Programming
 
