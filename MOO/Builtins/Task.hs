@@ -35,12 +35,8 @@ builtins = [
   , ("task_stack"    , (bf_task_stack    , Info 1 (Just 2) [TInt, TAny] TLst))
   ]
 
-bf_raise [code] =
-  raiseException $ Exception code (toText code) (Int 0)
-bf_raise [code, Str message] =
-  raiseException $ Exception code message (Int 0)
-bf_raise [code, Str message, value] =
-  raiseException $ Exception code message value
+bf_raise (code : optional) = raiseException $ Exception code message value
+  where [Str message, value] = defaults optional [Str (toText code), Int 0]
 
 bf_call_function (Str func_name : args) =
   callBuiltin (T.toCaseFold func_name) args
@@ -69,13 +65,18 @@ bf_seconds_left [] = notyet
 
 bf_task_id [] = notyet
 
-bf_suspend seconds = notyet
-bf_resume (Int task_id : value) = notyet
+bf_suspend optional = notyet
+bf_resume (Int task_id : optional) = notyet
+  where [value] = defaults optional [Int 0]
 
-bf_queue_info player = notyet
+bf_queue_info [] = notyet
+bf_queue_info [Obj player] = notyet
+
 bf_queued_tasks [] = notyet
 bf_kill_task [Int task_id] = notyet
 
-bf_callers include_line_numbers = notyet
+bf_callers optional = notyet
+  where [include_line_numbers] = booleanDefaults optional [False]
 
-bf_task_stack (Int task_id : include_line_numbers) = notyet
+bf_task_stack (Int task_id : optional) = notyet
+  where [include_line_numbers] = booleanDefaults optional [False]

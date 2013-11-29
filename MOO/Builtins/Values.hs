@@ -99,11 +99,11 @@ builtins = [
 
 -- 4.4.2.1 General Operations Applicable to all Values
 
-bf_typeof = return . Int . typeCode . typeOf . head
+bf_typeof [value] = return $ Int $ typeCode $ typeOf value
 
-bf_tostr = return . Str . T.concat . map toText
+bf_tostr values = return $ Str $ T.concat $ map toText values
 
-bf_toliteral = return . Str . toliteral . head
+bf_toliteral [value] = return $ Str $ toliteral value
   where toliteral (Lst vs) = T.concat
                              ["{"
                              , T.intercalate ", " $ map toliteral (V.toList vs)
@@ -116,9 +116,9 @@ bf_toliteral = return . Str . toliteral . head
         toliteral v = toText v
 
 -- XXX toint(" - 34  ") does not parse as -34
-bf_toint [v] = toint v
-  where toint v = case v of
-          Int _ -> return v
+bf_toint [value] = toint value
+  where toint value = case value of
+          Int _ -> return value
           Flt x | x >= 0    -> if x > fromIntegral (maxBound :: IntT)
                                then raise E_FLOAT else return (Int $ floor   x)
                 | otherwise -> if x < fromIntegral (minBound :: IntT)
@@ -128,28 +128,28 @@ bf_toint [v] = toint v
           Err x -> return (Int $ fromIntegral $ fromEnum x)
           Lst _ -> raise E_TYPE
 
-bf_toobj [v] = toobj v
-  where toobj v = case v of
+bf_toobj [value] = toobj value
+  where toobj value = case value of
           Int x -> return (Obj $ fromIntegral x)
           Flt x | x >= 0    -> if x > fromIntegral (maxBound :: ObjT)
                                then raise E_FLOAT else return (Obj $ floor   x)
                 | otherwise -> if x < fromIntegral (minBound :: ObjT)
                                then raise E_FLOAT else return (Obj $ ceiling x)
-          Obj _ -> return v
+          Obj _ -> return value
           Str x -> maybe (return $ Obj 0) toobj $ parseNum x `mplus` parseObj x
           Err x -> return (Obj $ fromIntegral $ fromEnum x)
           Lst _ -> raise E_TYPE
 
-bf_tofloat [v] = tofloat v
-  where tofloat v = case v of
+bf_tofloat [value] = tofloat value
+  where tofloat value = case value of
           Int x -> return (Flt $ fromIntegral x)
-          Flt _ -> return v
+          Flt _ -> return value
           Obj x -> return (Flt $ fromIntegral x)
           Str x -> maybe (return $ Flt 0) tofloat (parseNum x)
           Err x -> return (Flt $ fromIntegral $ fromEnum x)
           Lst _ -> raise E_TYPE
 
-bf_equal [v1, v2] = return $ truthValue (v1 `equal` v2)
+bf_equal [value1, value2] = return $ truthValue (value1 `equal` value2)
 
 bf_value_bytes [value] = return $ Int $ fromIntegral $ value_bytes value
   where value_bytes value = case value of
@@ -158,7 +158,7 @@ bf_value_bytes [value] = return $ Int $ fromIntegral $ value_bytes value
           Flt x -> box + sizeOf x
           Obj x -> box + sizeOf x
           Str t -> box + sizeOf 'x' * (T.length t + 1)
-          Err x -> box + sizeOf (undefined :: Int)
+          Err x -> box + sizeOf (0 :: Int)
           Lst v -> box + V.sum (V.map value_bytes v)
         box = 8
 
@@ -168,37 +168,38 @@ bf_value_hash [value] = do
 
 -- 4.4.2.2 Operations on Numbers
 
-bf_random []                    = bf_random [Int maxBound]
-bf_random [Int mod] | mod <= 0  = raise E_INVARG
-                    | otherwise = liftIO $ randomRIO (1, mod) >>= return . Int
+bf_random optional
+  | mod <= 0  = raise E_INVARG
+  | otherwise = fmap Int $ liftIO $ randomRIO (1, mod)
+  where [Int mod] = defaults optional [Int maxBound]
 
-bf_min ((Int v):xs) = minMaxInt min v xs
-bf_min ((Flt v):xs) = minMaxFlt min v xs
+bf_min ((Int x):xs) = minMaxInt min x xs
+bf_min ((Flt x):xs) = minMaxFlt min x xs
 
-bf_max ((Int v):xs) = minMaxInt max v xs
-bf_max ((Flt v):xs) = minMaxFlt max v xs
+bf_max ((Int x):xs) = minMaxInt max x xs
+bf_max ((Flt x):xs) = minMaxFlt max x xs
 
 minMaxInt :: (IntT -> IntT -> IntT) -> IntT -> [Value] -> MOO Value
 minMaxInt f = go
   where go x (Int y:rs) = go (f x y) rs
-        go v []         = return $ Int v
+        go x []         = return $ Int x
         go _ _          = raise E_TYPE
 
 minMaxFlt :: (FltT -> FltT -> FltT) -> FltT -> [Value] -> MOO Value
 minMaxFlt f = go
   where go x (Flt y:rs) = go (f x y) rs
-        go v []         = return $ Flt v
+        go x []         = return $ Flt x
         go _ _          = raise E_TYPE
 
 bf_abs [Int x] = return $ Int $ abs x
 bf_abs [Flt x] = return $ Flt $ abs x
 
-bf_floatstr (Flt x : Int precision : scientific)
+bf_floatstr (Flt x : Int precision : optional)
   | precision < 0 = raise E_INVARG
   | otherwise = return $ Str $ T.pack $ printf format x
-  where prec   = min precision 19
-        useSci = boolean scientific
-        format = printf "%%.%d%c" prec $ if useSci then 'e' else 'f'
+  where prec = min precision 19
+        [scientific] = booleanDefaults optional [False]
+        format = printf "%%.%d%c" prec $ if scientific then 'e' else 'f'
 
 bf_sqrt  [Flt x] = checkFloat $ sqrt x
 
@@ -231,10 +232,10 @@ bf_length [Str string] = return (Int $ fromIntegral $ T.length string)
 bf_length [Lst list]   = return (Int $ fromIntegral $ V.length list)
 bf_length _            = raise E_TYPE
 
-bf_strsub (Str subject : Str what : Str with : case_matters) = notyet
+bf_strsub (Str subject : Str what : Str with : optional) = notyet
 
-bf_index  (Str str1 : Str str2 : case_matters) = notyet
-bf_rindex (Str str1 : Str str2 : case_matters) = notyet
+bf_index  (Str str1 : Str str2 : optional) = notyet
+bf_rindex (Str str1 : Str str2 : optional) = notyet
 
 bf_strcmp [Str str1, Str str2] =
   return $ Int $ case compare str1 str2 of
@@ -242,11 +243,11 @@ bf_strcmp [Str str1, Str str2] =
     EQ ->  0
     GT ->  1
 
-bf_decode_binary (Str bin_string : fully) = notyet
+bf_decode_binary (Str bin_string : optional) = notyet
 bf_encode_binary args = notyet
 
-bf_match  (Str subject : Str pattern : case_matters) = notyet
-bf_rmatch (Str subject : Str pattern : case_matters) = notyet
+bf_match  (Str subject : Str pattern : optional) = notyet
+bf_rmatch (Str subject : Str pattern : optional) = notyet
 
 bf_substitute [Str template, Lst subs] = notyet
 
@@ -261,16 +262,18 @@ crypt key salt =
       c_crypt c_key c_salt >>= peekCString
   where lock = unsafePerformIO $ newMVar ()
 
-bf_crypt [Str text, Str salt] | T.length salt < 2 = bf_crypt [Str text]
-                              | otherwise =
-  return $ Str $ T.pack $ crypt (T.unpack text) (T.unpack salt)
-
-bf_crypt [Str text] = do
-  i <- liftIO $ randomRIO (0, length saltstuff)
-  j <- liftIO $ randomRIO (0, length saltstuff)
-  let salt = [saltstuff !! i, saltstuff !! j]
-  bf_crypt [Str text, Str (T.pack salt)]
-  where saltstuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
+bf_crypt (Str text : optional)
+  | T.length salt < 2 = generateSalt >>= go
+  | otherwise         = go salt
+  where [Str salt] = defaults optional [Str ""]
+        generateSalt = do
+          c1 <- randSaltChar
+          c2 <- randSaltChar
+          return $ T.pack [c1, c2]
+        randSaltChar = fmap (saltStuff !!) $
+                       liftIO $ randomRIO (0, length saltStuff)
+        saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
+        go salt = return $ Str $ T.pack $ crypt (T.unpack text) (T.unpack salt)
 
 -- [End crypt]
 

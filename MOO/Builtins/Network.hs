@@ -44,14 +44,14 @@ builtins = [
   , ("listeners"     , (bf_listeners     , Info 0 (Just 0) []           TLst))
   ]
 
-bf_connected_players include_all = notyet
+bf_connected_players optional = notyet
 bf_connected_seconds [Obj player] = notyet
 bf_idle_seconds [Obj player] = notyet
-bf_notify (Obj conn : Str string : no_flush) = notyet
-bf_buffered_output_length conn = notyet
-bf_read options = notyet
-bf_force_input (Obj conn : Str line : at_front) = notyet
-bf_flush_input (Obj conn : show_messages) = notyet
+bf_notify (Obj conn : Str string : optional) = notyet
+bf_buffered_output_length optional = notyet
+bf_read optional = notyet
+bf_force_input (Obj conn : Str line : optional) = notyet
+bf_flush_input (Obj conn : optional) = notyet
 bf_output_delimiters [Obj player] = notyet
 bf_boot_player [Obj player] = notyet
 bf_connection_name [Obj player] = notyet
@@ -60,5 +60,5 @@ bf_connection_options [Obj conn] = notyet
 bf_connection_option [Obj conn, Str name] = notyet
 bf_open_network_connection args = notyet
 bf_listen (Obj object : args) = notyet
-bf_unlisten canon = notyet
+bf_unlisten [canon] = notyet
 bf_listeners [] = notyet

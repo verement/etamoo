@@ -1,7 +1,7 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Builtins ( builtinFunctions, callBuiltin ) where
+module MOO.Builtins ( builtinFunctions, callBuiltin, verifyBuiltins ) where
 
 import Control.Monad (when, foldM)
 import Control.Monad.IO.Class (liftIO)
@@ -150,11 +150,13 @@ ctime time = do
 
 bf_dump_database [] = notyet
 
-bf_shutdown message = notyet
+bf_shutdown optional = notyet
+  where (message : _) = maybeDefaults optional
 
 bf_load_server_options [] = notyet
 
-bf_server_log (Str message : is_error) = notyet
+bf_server_log (Str message : optional) = notyet
+  where [is_error] = booleanDefaults optional [False]
 
 bf_renumber [Obj object] = notyet
 
