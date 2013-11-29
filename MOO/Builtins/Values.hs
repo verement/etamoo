@@ -7,16 +7,21 @@ import Control.Monad (mplus)
 import Control.Monad.IO.Class (liftIO)
 import Control.Exception (bracket)
 import Control.Concurrent.MVar (newMVar, takeMVar, putMVar)
-import Foreign.Storable (sizeOf)
 import System.Random (randomRIO)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf (printf)
+import Foreign.Storable (sizeOf)
 import Foreign.C (CString, withCString, peekCString)
 import Data.Maybe (fromJust)
+import Data.Text.Encoding (encodeUtf8)
+import Data.ByteString (ByteString)
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
+
+import Data.Digest.Pure.MD5 (MD5Digest)
+import qualified Data.Digest.Pure.MD5 as MD5
 
 import MOO.Types
 import MOO.Execution
@@ -146,21 +151,20 @@ bf_tofloat [v] = tofloat v
 
 bf_equal [v1, v2] = return $ truthValue (v1 `equal` v2)
 
-bf_value_bytes [v] = guessSize $ value_bytes v
-  where value_bytes v = case v of
+bf_value_bytes [value] = return $ Int $ fromIntegral $ value_bytes value
+  where value_bytes value = case value of
           -- Make stuff up ...
-          Int x -> sizeOf x
-          Flt x -> sizeOf x
-          Obj x -> sizeOf x
-          Str x -> sizeOf 'x' * (T.length x + 1)
-          Err x -> sizeOf (undefined :: Int)
-          Lst x -> box + V.sum (V.map value_bytes x)
-        guessSize base = return (Int $ fromIntegral $ box + base)
+          Int x -> box + sizeOf x
+          Flt x -> box + sizeOf x
+          Obj x -> box + sizeOf x
+          Str t -> box + sizeOf 'x' * (T.length t + 1)
+          Err x -> box + sizeOf (undefined :: Int)
+          Lst v -> box + V.sum (V.map value_bytes v)
         box = 8
 
-bf_value_hash [v] = do
-  lit <- bf_toliteral [v]
-  bf_string_hash [lit]
+bf_value_hash [value] = do
+  literal <- bf_toliteral [value]
+  bf_string_hash [literal]
 
 -- 4.4.2.2 Operations on Numbers
 
@@ -270,8 +274,13 @@ bf_crypt [Str text] = do
 
 -- [End crypt]
 
-bf_string_hash [Str text] = notyet
-bf_binary_hash [Str bin_string] = notyet
+hash :: ByteString -> MOO Value
+hash bs = return $ Str $ T.pack $ show md5hash
+  where md5hash = MD5.hash' bs :: MD5Digest
+
+bf_string_hash [Str text] = hash (encodeUtf8 text)
+
+bf_binary_hash [Str bin_string] = binaryString bin_string >>= hash
 
 -- 4.4.2.4 Operations on Lists
 

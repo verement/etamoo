@@ -16,16 +16,18 @@ module MOO.Execution ( MOO
                      , notyet
                      , raise
                      , checkFloat
+                     , binaryString
                      , runContT
                      , evalStateT
                      , runReaderT
                      ) where
 
-import           Control.Monad.Cont
-import           Control.Monad.State
-import           Control.Monad.Reader
-import           Control.Arrow (first)
-import           Data.Map (Map)
+import Control.Monad.Cont
+import Control.Monad.State
+import Control.Monad.Reader
+import Control.Arrow (first)
+import Data.ByteString (ByteString)
+import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -122,3 +124,6 @@ checkFloat :: FltT -> MOO Value
 checkFloat flt | isInfinite flt = raise E_FLOAT
                | isNaN      flt = raise E_INVARG
                | otherwise      = return (Flt flt)
+
+binaryString :: StrT -> MOO ByteString
+binaryString = maybe (raise E_INVARG) return . text2binary
