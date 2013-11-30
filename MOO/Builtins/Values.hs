@@ -466,8 +466,7 @@ bf_listdelete [Lst list, Int index]
 
 bf_listset [Lst list, value, Int index]
   | index' < 1 || index' > V.length list = raise E_RANGE
-  | otherwise = return $ Lst $
-                V.modify (\v -> VM.write v (index' - 1) value) list
+  | otherwise = return $ Lst $ listSet list index' value
   where index' = fromIntegral index
 
 bf_setadd [Lst list, value] =

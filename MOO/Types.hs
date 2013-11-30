@@ -28,6 +28,7 @@ module MOO.Types ( IntT
                  , error2text
                  , text2binary
                  , validStrChar
+                 , listSet
                  ) where
 
 import Data.Int
@@ -38,6 +39,7 @@ import Data.Char (isAscii, isPrint)
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as VM
 
 type IntT = Int32
 type FltT = Double
@@ -219,3 +221,6 @@ text2binary = translate . T.unpack
 
 validStrChar :: Char -> Bool
 validStrChar c = isAscii c && (isPrint c || c == '\t')
+
+listSet :: LstT -> Int -> Value -> LstT
+listSet v i value = V.modify (\m -> VM.write m (i - 1) value) v

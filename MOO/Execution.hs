@@ -109,8 +109,8 @@ type Message = StrT
 
 catchException :: MOO a -> (Exception -> MOO a) -> MOO a
 catchException action handler = callCC $ \k -> local (mkHandler k) action
-  where mkHandler k r = r { exceptionHandler = Handler $ \e ->
-                             local (const r) $ handler e >>= k }
+  where mkHandler k env = env { exceptionHandler = Handler $ \e ->
+                                 local (const env) $ handler e >>= k }
 
 raiseException :: Exception -> MOO a
 raiseException except = do

@@ -15,6 +15,11 @@ import MOO.AST
 import MOO.Execution
 import MOO.Builtins
 
+data LValue = LValue {
+    fetch :: MOO Value
+  , store :: Value -> MOO Value
+  }
+
 catchDebug :: MOO Value -> MOO Value
 catchDebug action = action `catchException` \except@(Exception code _ _) -> do
   debug <- frame debugBit
@@ -25,17 +30,10 @@ compileExpr expr = catchDebug $ case expr of
   Literal v -> return v
   List args -> mkList args
 
-  Variable var -> do
-    vars <- frame variables
-    maybe (raise E_VARNF) return $ Map.lookup (T.toCaseFold var) vars
+  Variable{} -> fetch (lValue expr)
+  PropRef{}  -> fetch (lValue expr)
 
-  PropRef{} -> notyet
-
-  Assign (Variable var) expr -> do
-    value <- compileExpr expr
-    assign var value
-
-  Assign _ _ -> notyet
+  Assign what expr -> compileExpr expr >>= store (lValue what)
 
   ScatterAssign items expr -> do
     expr' <- compileExpr expr
@@ -77,40 +75,8 @@ compileExpr expr = catchDebug $ case expr of
   x `GreaterThan`  y -> comparison (>)  x y
   x `GreaterEqual` y -> comparison (>=) x y
 
-  Index expr index -> do
-    expr'  <- compileExpr expr
-    index' <- withIndexLength expr' $ compileExpr index
-    case index' of
-      Int i' -> let i = fromIntegral i' in
-        case expr' of
-          Lst v -> do checkLstRange v i
-                      return $ v V.! pred i
-          Str t -> do checkStrRange t i
-                      return $ Str $ T.singleton $ t `T.index` pred i
-          _     -> raise E_TYPE
-      _      -> raise E_TYPE
-
-  Range expr (start, end) -> do
-    expr' <- compileExpr expr
-    (low, high) <- withIndexLength expr' $ do
-      start' <- compileExpr start
-      end'   <- compileExpr end
-      case start' of
-        Int s -> case end' of
-          Int e -> return (fromIntegral s, fromIntegral e)
-          _     -> raise E_TYPE
-        _     -> raise E_TYPE
-    if low > high
-      then case expr' of
-        Lst{} -> return $ Lst V.empty
-        Str{} -> return $ Str T.empty
-        _     -> raise E_TYPE
-      else let len = high - low + 1 in case expr' of
-        Lst v -> do checkLstRange v low >> checkLstRange v high
-                    return $ Lst $ V.slice (pred low) len v
-        Str t -> do checkStrRange t low >> checkStrRange t high
-                    return $ Str $ T.take len $ T.drop (pred low) t
-        _ -> raise E_TYPE
+  Index{} -> fetch (lValue expr)
+  Range{} -> fetch (lValue expr)
 
   Length -> reader indexLength >>= fmap (Int . fromIntegral)
 
@@ -142,29 +108,102 @@ compileExpr expr = catchDebug $ case expr of
                               case a of
                                 Lst{} -> raise E_TYPE
                                 _     -> return $ truthValue (a `op` b)
-        withIndexLength expr =
-          local $ \r -> r { indexLength = case expr of
-                               Lst v -> return $ V.length v
-                               Str t -> return $ T.length t
-                               _     -> raise E_TYPE
-                          }
-        checkLstRange v i =
-          when (i < 1 || i > V.length v)            $ raise E_RANGE
-        checkStrRange t i =
-          when (i < 1 || T.compareLength t i == LT) $ raise E_RANGE
 
-assign :: Id -> Value -> MOO Value
-assign var value = do
+getVariable :: Id -> MOO Value
+getVariable var = do
+  vars <- frame variables
+  maybe (raise E_VARNF) return $ Map.lookup var vars
+
+putVariable :: Id -> Value -> MOO Value
+putVariable var value = do
   modifyFrame $ \frame -> frame {
-    variables = Map.insert (T.toCaseFold var) value (variables frame)
+    variables = Map.insert var value (variables frame)
     }
   return value
 
+withIndexLength :: Value -> MOO a -> MOO a
+withIndexLength expr =
+  local $ \env -> env { indexLength = case expr of
+                           Lst v -> return (V.length v)
+                           Str t -> return (T.length t)
+                           _     -> raise E_TYPE
+                      }
+
+checkLstRange :: LstT -> Int -> MOO ()
+checkLstRange v i = when (i < 1 || i > V.length v) $ raise E_RANGE
+
+checkStrRange :: StrT -> Int -> MOO ()
+checkStrRange t i = when (i < 1 || t `T.compareLength` i == LT) $ raise E_RANGE
+
+checkIndex :: Value -> MOO Int
+checkIndex (Int i) = return (fromIntegral i)
+checkIndex _       = raise E_TYPE
+
+lValue :: Expr -> LValue
+
+lValue (Variable var) = LValue fetch store
+  where var'  = T.toCaseFold var
+        fetch = getVariable var'
+        store = putVariable var'
+
+lValue PropRef{} = LValue notyet (const notyet)
+
+lValue (expr `Index` index) = LValue fetch store
+  where fetch = do
+          expr' <- compileExpr expr
+          i     <- withIndexLength expr' (compileExpr index) >>= checkIndex
+          case expr' of
+            Lst v -> do checkLstRange v i
+                        return $ v V.! (i - 1)
+            Str t -> do checkStrRange t i
+                        return $ Str $ T.singleton $ t `T.index` (i - 1)
+            _     -> raise E_TYPE
+
+        store value = do
+          let LValue fetchExpr storeExpr = lValue expr
+          expr'  <- fetchExpr
+          i      <- withIndexLength expr' (compileExpr index) >>= checkIndex
+          expr'' <- case expr' of
+            Lst v -> checkLstRange v i >> return (Lst $ listSet v i value)
+            Str t -> do
+              checkStrRange t i
+              case value of
+                Str c -> do when (T.length c /= 1) $ raise E_INVARG
+                            let (s, r) = T.splitAt (i - 1) t
+                            return $ Str $ T.concat [s, c, T.tail r]
+                _     -> raise E_TYPE
+            _ -> raise E_TYPE
+          storeExpr expr''
+          return value
+
+lValue (expr `Range` (start, end)) = LValue fetch store
+  where fetch = do
+          expr' <- compileExpr expr
+          (low, high) <- withIndexLength expr' $ do
+            start' <- compileExpr start
+            end'   <- compileExpr end
+            case (start', end') of
+              (Int s, Int e) -> return (fromIntegral s, fromIntegral e)
+              _              -> raise E_TYPE
+          if low > high
+            then case expr' of
+              Lst{} -> return $ Lst V.empty
+              Str{} -> return $ Str T.empty
+              _     -> raise E_TYPE
+            else let len = high - low + 1 in case expr' of
+              Lst v -> do checkLstRange v low >> checkLstRange v high
+                          return $ Lst $ V.slice (low - 1) len v
+              Str t -> do checkStrRange t low >> checkStrRange t high
+                          return $ Str $ T.take len $ T.drop (low - 1) t
+              _     -> raise E_TYPE
+
+        store value = notyet
+
 scatterAssign :: [ScatItem] -> LstT -> MOO Value
-scatterAssign items args =
-  if nargs < nreqs || (not haveRest && nargs > ntarg) then raise E_ARGS
-  else do walk items args (nargs - nreqs)
-          return (Lst args)
+scatterAssign items args = do
+  when (nargs < nreqs || (not haveRest && nargs > ntarg)) $ raise E_ARGS
+  walk items args (nargs - nreqs)
+  return (Lst args)
 
   where nargs = V.length args
         nreqs = count required items
@@ -192,14 +231,15 @@ scatterAssign items args =
                                     walk items (V.tail args) (noptAvail - 1)
               | otherwise     -> do
                 case opt of Nothing   -> return ()
-                            Just expr -> do expr' <- compileExpr expr
-                                            void $ assign var expr'
+                            Just expr -> void $ compileExpr expr >>= assign var
                 walk items args noptAvail
             ScatRest var -> do
               let (s, r) = V.splitAt nrest args
               assign var (Lst s)
               walk items r noptAvail
         walk [] _ _ = return ()
+
+        assign var = putVariable (T.toCaseFold var)
 
 mkList :: [Arg] -> MOO Value
 mkList args = fmap (Lst . V.fromList) $ expand args
