@@ -3,7 +3,7 @@
 
 module MOO.Builtins.Values ( builtins ) where
 
-import Control.Monad (mplus, when, unless)
+import Control.Monad (mplus, unless)
 import Control.Monad.IO.Class (liftIO)
 import Control.Exception (bracket)
 import Control.Concurrent.MVar (newMVar, takeMVar, putMVar)
@@ -346,14 +346,17 @@ runMatch match subject pattern case_matters = do
 bf_substitute [Str template, Lst subs] =
   case V.toList subs of
     [Int start', Int end', Lst replacements', Str subject'] -> do
-      let start        = fromIntegral start'
-          end          = fromIntegral end'
-          subject      = T.unpack subject'
-          subjectLen   = T.length subject'
+      let start      = fromIntegral start'
+          end        = fromIntegral end'
+          subject    = T.unpack subject'
+          subjectLen = T.length subject'
 
-          valid s e    = (s >= 1     && s <  subjectLen &&
-                          e >= s - 1 && e <= subjectLen) ||
-                         (s == 0 && e == -1)
+          valid s e  = (s == 0 && e == -1) ||
+                       (s >  0 && e >= s - 1 && e <= subjectLen)
+
+          substr start end =
+            let len = end - start + 1
+            in take len $ drop (start - 1) subject
 
           substitution (Lst sub) = case V.toList sub of
             [Int start', Int end'] -> do
@@ -364,12 +367,7 @@ bf_substitute [Str template, Lst subs] =
             _ -> raise E_INVARG
           substitution _ = raise E_INVARG
 
-          substr start end =
-            let len = end - start + 1
-            in take len $ drop (start - 1) subject
-
-      when (start < 1 || end >= subjectLen || end < start - 1
-            || V.length replacements' /= 9) $ raise E_INVARG
+      unless (valid start end && V.length replacements' == 9) $ raise E_INVARG
       replacements <- fmap (substr start end :) $
                       mapM substitution $ V.toList replacements'
 
