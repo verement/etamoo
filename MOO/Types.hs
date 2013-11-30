@@ -24,6 +24,7 @@ module MOO.Types ( IntT
                  , typeOf
                  , typeCode
                  , toText
+                 , toLiteral
                  , error2text
                  , text2binary
                  , validStrChar
@@ -164,6 +165,18 @@ toText (Str x) = x
 toText (Obj x) = T.pack $ '#' : show x
 toText (Err x) = error2text x
 toText (Lst _) = "{list}"
+
+toLiteral :: Value -> Text
+toLiteral (Lst vs) = T.concat
+                     ["{"
+                     , T.intercalate ", " $ map toLiteral (V.toList vs)
+                     , "}"]
+toLiteral (Str x) = T.concat ["\"", T.concatMap escape x, "\""]
+  where escape '"'  = "\\\""
+        escape '\\' = "\\\\"
+        escape c    = T.singleton c
+toLiteral (Err x) = T.pack $ show x
+toLiteral v = toText v
 
 error2text :: Error -> Text
 error2text E_NONE    = "No error"

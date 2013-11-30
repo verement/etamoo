@@ -28,6 +28,7 @@ import MOO.Types
 import MOO.Execution
 import MOO.Parser (parseNum, parseObj)
 import MOO.Builtins.Common
+import MOO.Builtins.Match
 
 -- 4.4.2 Manipulating MOO Values
 
@@ -104,17 +105,7 @@ bf_typeof [value] = return $ Int $ typeCode $ typeOf value
 
 bf_tostr values = return $ Str $ T.concat $ map toText values
 
-bf_toliteral [value] = return $ Str $ toliteral value
-  where toliteral (Lst vs) = T.concat
-                             ["{"
-                             , T.intercalate ", " $ map toliteral (V.toList vs)
-                             , "}"]
-        toliteral (Str x) = T.concat ["\"", T.concatMap escape x, "\""]
-          where escape '"'  = "\\\""
-                escape '\\' = "\\\\"
-                escape c    = T.singleton c
-        toliteral (Err x) = T.pack $ show x
-        toliteral v = toText v
+bf_toliteral [value] = return $ Str $ toLiteral value
 
 -- XXX toint(" - 34  ") does not parse as -34
 bf_toint [value] = toint value
@@ -317,11 +308,40 @@ encodeBinary (Lst list : args) = do
 encodeBinary (_:_) = raise E_INVARG
 encodeBinary []    = return ""
 
-bf_match  (Str subject : Str pattern : optional) = notyet
+bf_match  (Str subject : Str pattern : optional) =
+  runMatch match subject pattern case_matters
   where [case_matters] = booleanDefaults optional [False]
 
-bf_rmatch (Str subject : Str pattern : optional) = notyet
+bf_rmatch (Str subject : Str pattern : optional) =
+  runMatch rmatch subject pattern case_matters
   where [case_matters] = booleanDefaults optional [False]
+
+runMatch match subject pattern case_matters = do
+  compiled <- liftIO $ newRegexp pattern case_matters
+  case compiled of
+    Left  (err, at) -> raiseException $ Exception (Err E_INVARG)
+                       (T.pack $ "Invalid pattern: " ++ err)
+                       (Int $ fromIntegral at)
+    Right regexp -> do
+      result <- liftIO $ match regexp (encodeUtf8 subject)  -- *
+      -- * This will need revisiting to support arbitrary Unicode
+      case result of
+        MatchFailed            -> return (Lst V.empty)
+        MatchAborted           -> raise E_QUOTA
+        MatchSucceeded offsets ->
+          let (m : offs)   = offsets
+              (start, end) = convert m
+              replacements = repls 9 offs
+          in return $ Lst $ V.fromList
+             [Int start, Int end, Lst $ V.fromList replacements, Str subject]
+
+  where -- convert from 0-based open interval to 1-based closed one
+        convert (s,e) = (1 + fromIntegral s, fromIntegral e)
+        repls n (r:rs) = let (s,e) = convert r
+                         in Lst (V.fromList [Int s, Int e]) : repls (n - 1) rs
+        repls n []
+          | n > 0      = Lst (V.fromList [Int 0, Int (-1)]) : repls (n - 1) []
+          | otherwise  = []
 
 bf_substitute [Str template, Lst subs] = notyet
 

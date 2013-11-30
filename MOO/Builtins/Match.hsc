@@ -53,10 +53,16 @@ foreign import ccall "wrapper"
 data Regexp = Regexp {
     pattern     :: Text
   , caseMatters :: Bool
+
   , code        :: ForeignPtr PCRE
   , extra       :: ForeignPtr PCREExtra
   }
             deriving Show
+
+instance Eq Regexp where
+  Regexp { pattern = p1, caseMatters = cm1 } ==
+    Regexp { pattern = p2, caseMatters = cm2 } =
+      cm1 == cm2 && p1 == p2
 
 data RewriteState = StateBase
                   | StateEsc
@@ -138,7 +144,7 @@ newRegexp regexp caseMatters =
       if code == nullPtr
         then do error <- peek errorPtr >>= peekCString
                 errorOffset <- peek errorOffsetPtr
-                return $ Left (error, errorOffset)
+                return $ Left (patchError error, errorOffset)
         else do extraFP <- mkExtra code
                 setExtraFlags extraFP
                 codeFP <- peek pcre_free >>= flip newForeignPtr code
@@ -167,6 +173,12 @@ newRegexp regexp caseMatters =
 
     matchLimit          = 100000 :: CULong
     matchLimitRecursion =   5000 :: CULong
+
+    patchError = concatMap patch
+      where patch '\\' = "%"
+            patch '('  = "%("
+            patch ')'  = "%)"
+            patch  c   = [c]
 
     options = #{const PCRE_UTF8 | PCRE_NO_UTF8_CHECK}
       -- allow PCRE to optimize .* at beginning of pattern by implicit anchor

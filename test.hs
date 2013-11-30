@@ -8,6 +8,7 @@ import Data.Text
 import MOO.Parser
 import MOO.Compiler
 import MOO.Execution
+import MOO.Types
 
 main :: IO ()
 main = do
@@ -28,4 +29,4 @@ run line = case runParser expression initParserState "" (pack line) of
           return code
     val <- runContT (evalStateT (runReaderT comp initEnvironment) initStack)
            return
-    putStrLn $ "=> " ++ show val
+    putStrLn $ "=> " ++ unpack (toLiteral val)
