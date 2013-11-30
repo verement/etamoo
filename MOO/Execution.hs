@@ -3,6 +3,7 @@
 
 module MOO.Execution ( MOO
                      , Environment ( indexLength )
+                     , CallStack ( .. )
                      , StackFrame ( variables, debugBit )
                      , Exception ( .. )
                      , initEnvironment
@@ -35,7 +36,7 @@ import qualified Data.ByteString as BS
 
 import MOO.Types
 
-type MOO = ReaderT Environment (StateT CallStack (ContT Value IO))
+type MOO = ReaderT Environment (ContT Value (StateT CallStack IO))
 
 data Environment =
   Env { exceptionHandler :: ExceptionHandler
@@ -49,11 +50,13 @@ initEnvironment = Env {
   }
 
 newtype CallStack = Stack [StackFrame]
+                  deriving Show
 
 data StackFrame =
   Frame { variables :: Map Id Value
         , debugBit  :: Bool
         }
+  deriving Show
 
 initStack :: CallStack
 initStack = Stack [Frame { variables = mkInitVars

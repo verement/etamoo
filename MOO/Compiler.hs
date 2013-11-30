@@ -22,7 +22,7 @@ catchDebug action = action `catchException` \except@(Exception code _ _) -> do
 
 compileExpr :: Expr -> MOO Value
 compileExpr expr = catchDebug $ case expr of
-  Literal v -> liftIO (putStrLn $ "-- " ++ show v) >> return v
+  Literal v -> return v
   List args -> mkList args
 
   Variable var -> do
