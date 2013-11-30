@@ -41,9 +41,11 @@ run line stack = case runParser expression initParserState "" (pack line) of
   Left err -> putStr "Parse error " >> print err >> return stack
   Right expr -> do
     putStrLn $ "-- " ++ show expr
-    let comp = compileExpr expr `catchException` \(Exception code m _) -> do
-          liftIO $ putStrLn $ "** " ++ unpack m
+    let comp = compileExpr expr `catchException` \(Exception code m v) -> do
+          liftIO $ putStrLn $ "** " ++ unpack m ++ formatValue v
           return code
+        formatValue (Int 0) = ""
+        formatValue v = " [" ++ unpack (toLiteral v) ++ "]"
         cont  = runReaderT comp initEnvironment
         state = runContT cont return
         io    = runStateT state stack
