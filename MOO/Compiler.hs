@@ -179,25 +179,59 @@ lValue (expr `Index` index) = LValue fetch store
 lValue (expr `Range` (start, end)) = LValue fetch store
   where fetch = do
           expr' <- compileExpr expr
-          (low, high) <- withIndexLength expr' $ do
+          (start', end') <- withIndexLength expr' $ do
             start' <- compileExpr start
             end'   <- compileExpr end
             case (start', end') of
               (Int s, Int e) -> return (fromIntegral s, fromIntegral e)
               _              -> raise E_TYPE
-          if low > high
+          if start' > end'
             then case expr' of
               Lst{} -> return $ Lst V.empty
               Str{} -> return $ Str T.empty
               _     -> raise E_TYPE
-            else let len = high - low + 1 in case expr' of
-              Lst v -> do checkLstRange v low >> checkLstRange v high
-                          return $ Lst $ V.slice (low - 1) len v
-              Str t -> do checkStrRange t low >> checkStrRange t high
-                          return $ Str $ T.take len $ T.drop (low - 1) t
+            else let len = end' - start' + 1 in case expr' of
+              Lst v -> do checkLstRange v start' >> checkLstRange v end'
+                          return $ Lst $ V.slice (start' - 1) len v
+              Str t -> do checkStrRange t start' >> checkStrRange t end'
+                          return $ Str $ T.take len $ T.drop (start' - 1) t
               _     -> raise E_TYPE
 
-        store value = notyet
+        store value = do
+          let LValue fetchExpr storeExpr = lValue expr
+          expr' <- fetchExpr
+          (start', end') <- withIndexLength expr' $ do
+            start' <- compileExpr start
+            end'   <- compileExpr end
+            case (start', end') of
+              (Int s, Int e) -> return (fromIntegral s, fromIntegral e)
+              _              -> raise E_TYPE
+          expr'' <- case expr' of
+            Lst v -> case value of
+              Lst r -> do
+                let len = V.length v
+                when (end' < 0 || start' > len + 1) $ raise E_RANGE
+                let pre  = sublist v 1 (start' - 1)
+                    post = sublist v (end' + 1) len
+                    sublist v s e
+                      | e < s     = V.empty
+                      | otherwise = V.slice (s - 1) (e - s + 1) v
+                return $ Lst $ V.concat [pre, r, post]
+              _ -> raise E_TYPE
+            Str t -> case value of
+              Str r -> do
+                when (end' < 0 ||
+                      t `T.compareLength` (start' - 1) == LT) $ raise E_RANGE
+                let pre  = substr t 1 (start' - 1)
+                    post = substr t (end' + 1) (T.length t)
+                    substr t s e
+                      | e < s     = T.empty
+                      | otherwise = T.take (e - s + 1) $ T.drop (s - 1) t
+                return $ Str $ T.concat [pre, r, post]
+              _ -> raise E_TYPE
+            _ -> raise E_TYPE
+          storeExpr expr''
+          return value
 
 scatterAssign :: [ScatItem] -> LstT -> MOO Value
 scatterAssign items args = do
