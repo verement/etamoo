@@ -10,9 +10,15 @@ import MOO.Parser
 import MOO.Compiler
 import MOO.Execution
 import MOO.Types
+import MOO.Builtins
 
 main :: IO ()
-main = repLoop initStack
+main = do
+  case verifyBuiltins of
+    Left  err -> putStrLn $ "Built-in function verification failed: " ++ err
+    Right n   -> do
+      putStrLn $ show n ++ " built-in functions verified"
+      repLoop initStack
 
 repLoop stack = do
   maybeLine <- readline ">> "
