@@ -1,6 +1,6 @@
 
-test: MOO/Builtins/Match.hs FORCE
-	ghc --make test.hs -lcrypt -lpcre
+repl: MOO/Builtins/Match.hs FORCE
+	ghc --make repl.hs -lcrypt -lpcre
 
 FORCE:
 
