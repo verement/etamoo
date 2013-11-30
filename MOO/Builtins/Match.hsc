@@ -5,15 +5,17 @@ module MOO.Builtins.Match ( MatchResult(..)
                           , rmatch
                           ) where
 
-import Foreign
+import Foreign hiding (unsafePerformIO)
 import Foreign.C
 import Control.Monad
 import Control.Exception
+import Control.Concurrent.MVar
 import Data.Text (Text)
 import Data.Text.Encoding
 import Data.ByteString (ByteString, useAsCString, useAsCStringLen)
 import Data.Bits
 import Data.IORef
+import System.IO.Unsafe (unsafePerformIO)
 
 import qualified Data.Text as T
 import qualified Data.ByteString as BS
@@ -193,8 +195,13 @@ data MatchResult = MatchFailed
                  | MatchSucceeded [(Int, Int)]
                  deriving Show
 
+-- We need a lock to protect pcre_callout which is shared by all threads
+matchLock :: MVar ()
+matchLock = unsafePerformIO $ newMVar ()
+
 match :: Regexp -> ByteString -> IO MatchResult
 match Regexp { code = codeFP, extra = extraFP } string =
+  bracket (takeMVar matchLock) (putMVar matchLock) $ \_ ->
   withForeignPtr codeFP  $ \code           ->
   withForeignPtr extraFP $ \extra          ->
   useAsCStringLen string $ \(cstring, len) ->
@@ -217,6 +224,7 @@ match Regexp { code = codeFP, extra = extraFP } string =
 
 rmatch :: Regexp -> ByteString -> IO MatchResult
 rmatch Regexp {code = codeFP, extra = extraFP } string =
+  bracket (takeMVar matchLock) (putMVar matchLock) $ \_ ->
   withForeignPtr codeFP  $ \code           ->
   withForeignPtr extraFP $ \extra          ->
   useAsCStringLen string $ \(cstring, len) ->
