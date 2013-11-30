@@ -165,11 +165,11 @@ bf_random optional
   | otherwise = fmap Int $ liftIO $ randomRIO (1, mod)
   where [Int mod] = defaults optional [Int maxBound]
 
-bf_min ((Int x):xs) = minMaxInt min x xs
-bf_min ((Flt x):xs) = minMaxFlt min x xs
+bf_min (Int x:xs) = minMaxInt min x xs
+bf_min (Flt x:xs) = minMaxFlt min x xs
 
-bf_max ((Int x):xs) = minMaxInt max x xs
-bf_max ((Flt x):xs) = minMaxFlt max x xs
+bf_max (Int x:xs) = minMaxInt max x xs
+bf_max (Flt x:xs) = minMaxFlt max x xs
 
 minMaxInt :: (IntT -> IntT -> IntT) -> IntT -> [Value] -> MOO Value
 minMaxInt f = go
@@ -280,7 +280,7 @@ bf_decode_binary (Str bin_string : optional) =
                 group = g ""
         groupPrinting g []
           | null group = []
-          | otherwise  = Str (T.pack group) : []
+          | otherwise  = [Str $ T.pack group]
           where group = g ""
 
 bf_encode_binary = fmap (Str . T.pack) . encodeBinary
@@ -471,7 +471,7 @@ bf_listset [Lst list, value, Int index]
   where index' = fromIntegral index
 
 bf_setadd [Lst list, value] =
-  return $ Lst $ if V.elem value list then list else V.snoc list value
+  return $ Lst $ if value `V.elem` list then list else V.snoc list value
 
 bf_setremove [Lst list, value] =
   return $ Lst $ case V.elemIndex value list of

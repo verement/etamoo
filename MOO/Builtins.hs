@@ -65,10 +65,10 @@ verifyBuiltins = foldM accum 0 $ Map.assocs builtinFunctions
           where invalid msg = Left $ T.unpack name ++ ": " ++ msg
                 ok = Right 1
 
-        testArgs func min max types = and $ map test argSpecs
+        testArgs func min max types = all test argSpecs
           where argSpecs = drop min $ inits $ map mkArgs augmentedTypes
                 augmentedTypes = maybe (types ++ [TAny]) (const types) max
-                test argSpec = and $ map (\args -> func args `seq` True) $
+                test argSpec = all (\args -> func args `seq` True) $
                                enumerateArgs argSpec
 
 enumerateArgs :: [[Value]] -> [[Value]]

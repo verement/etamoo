@@ -26,7 +26,7 @@ instance Eq Object where
 
 rootObject :: Object
 rootObject = Object {
-    objNumber  = (-1)
+    objNumber  = -1
   , isPlayer   = False
   , parent     = Nothing
   , children   = []
