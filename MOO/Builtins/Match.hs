@@ -303,8 +303,8 @@ rmatchCallout block = do
   ovec0 <- peekElemOff ovec 0
   ovec1 <- peekElemOff ovec 1
 
-  when (not (valid rd) || currentPos > ovec1 ||
-        (currentPos == ovec1 && startMatch < ovec0)) $ do
+  when (not (valid rd) || startMatch > ovec0 ||
+        (startMatch == ovec0 && currentPos > ovec1)) $ do
     -- make a copy of the offsets vector so the last such vector found can
     -- be returned as the rightmost match
     pokeElemOff ovec 0 startMatch
