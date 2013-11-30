@@ -3,7 +3,7 @@
 
 module MOO.Builtins.Values ( builtins ) where
 
-import Control.Monad (mplus)
+import Control.Monad (mplus, when, unless)
 import Control.Monad.IO.Class (liftIO)
 import Control.Exception (bracket)
 import Control.Concurrent.MVar (newMVar, takeMVar, putMVar)
@@ -336,14 +336,54 @@ runMatch match subject pattern case_matters = do
              [Int start, Int end, Lst $ V.fromList replacements, Str subject]
 
   where -- convert from 0-based open interval to 1-based closed one
-        convert (s,e) = (1 + fromIntegral s, fromIntegral e)
+        convert (s,e)  = (1 + fromIntegral s, fromIntegral e)
         repls n (r:rs) = let (s,e) = convert r
                          in Lst (V.fromList [Int s, Int e]) : repls (n - 1) rs
         repls n []
           | n > 0      = Lst (V.fromList [Int 0, Int (-1)]) : repls (n - 1) []
           | otherwise  = []
 
-bf_substitute [Str template, Lst subs] = notyet
+bf_substitute [Str template, Lst subs] =
+  case V.toList subs of
+    [Int start', Int end', Lst replacements', Str subject'] -> do
+      let start        = fromIntegral start'
+          end          = fromIntegral end'
+          subject      = T.unpack subject'
+          subjectLen   = T.length subject'
+
+          valid s e    = (s >= 1     && s <  subjectLen &&
+                          e >= s - 1 && e <= subjectLen) ||
+                         (s == 0 && e == -1)
+
+          substitution (Lst sub) = case V.toList sub of
+            [Int start', Int end'] -> do
+              let start = fromIntegral start'
+                  end   = fromIntegral end'
+              unless (valid start end) $ raise E_INVARG
+              return $ substr start end
+            _ -> raise E_INVARG
+          substitution _ = raise E_INVARG
+
+          substr start end =
+            let len = end - start + 1
+            in take len $ drop (start - 1) subject
+
+      when (start < 1 || end >= subjectLen || end < start - 1
+            || V.length replacements' /= 9) $ raise E_INVARG
+      replacements <- fmap (substr start end :) $
+                      mapM substitution $ V.toList replacements'
+
+      let walk ('%':c:cs)
+            | c >= '0' && c <= '9' =
+              let i = fromEnum c - fromEnum '0'
+              in fmap (replacements !! i ++) $ walk cs
+            | c == '%'  = fmap ("%" ++) $ walk cs
+            | otherwise = raise E_INVARG
+          walk (c:cs) = fmap ([c] ++) $ walk cs
+          walk []     = return []
+
+      fmap (Str . T.pack) $ walk (T.unpack template)
+    _ -> raise E_INVARG
 
 foreign import ccall unsafe "static unistd.h crypt"
   c_crypt :: CString -> CString -> IO CString
