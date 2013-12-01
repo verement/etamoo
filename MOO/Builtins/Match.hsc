@@ -198,6 +198,7 @@ data MatchResult = MatchFailed
 -- We need a lock to protect pcre_callout which is shared by all threads
 matchLock :: MVar ()
 matchLock = unsafePerformIO $ newMVar ()
+{-# NOINLINE matchLock #-}
 
 match :: Regexp -> ByteString -> IO MatchResult
 match Regexp { code = codeFP, extra = extraFP } string =

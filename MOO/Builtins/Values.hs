@@ -6,7 +6,7 @@ module MOO.Builtins.Values ( builtins ) where
 import Control.Monad (mplus, unless)
 import Control.Monad.IO.Class (liftIO)
 import Control.Exception (bracket)
-import Control.Concurrent.MVar (newMVar, takeMVar, putMVar)
+import Control.Concurrent.MVar (MVar, newMVar, takeMVar, putMVar)
 import System.Random (randomRIO)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf (printf)
@@ -392,7 +392,9 @@ crypt key salt =
     withCString key $ \c_key -> withCString salt $ \c_salt ->
       c_crypt c_key c_salt >>= peekCString
 
+cryptLock :: MVar ()
 cryptLock = unsafePerformIO $ newMVar ()
+{-# NOINLINE cryptLock #-}
 
 bf_crypt (Str text : optional)
   | maybe True invalidSalt saltArg = generateSalt >>= go
