@@ -15,11 +15,6 @@ import MOO.AST
 import MOO.Execution
 import MOO.Builtins
 
-data LValue = LValue {
-    fetch :: MOO Value
-  , store :: Value -> MOO Value
-  }
-
 catchDebug :: MOO Value -> MOO Value
 catchDebug action = action `catchException` \except@(Exception code _ _) -> do
   debug <- frame debugBit
@@ -139,99 +134,113 @@ checkIndex :: Value -> MOO Int
 checkIndex (Int i) = return (fromIntegral i)
 checkIndex _       = raise E_TYPE
 
+data LValue = LValue {
+    fetch  :: MOO Value
+  , store  :: Value -> MOO Value
+  , change :: MOO (Value, Value -> MOO Value)
+  }
+
 lValue :: Expr -> LValue
 
-lValue (Variable var) = LValue fetch store
+lValue (Variable var) = LValue fetch store change
   where var'  = T.toCaseFold var
         fetch = getVariable var'
         store = putVariable var'
 
-lValue PropRef{} = LValue notyet (const notyet)
+        change = do
+          value <- fetch
+          return (value, store)
 
-lValue (expr `Index` index) = LValue fetch store
-  where fetch = do
-          expr' <- compileExpr expr
-          i     <- withIndexLength expr' (compileExpr index) >>= checkIndex
-          case expr' of
-            Lst v -> do checkLstRange v i
-                        return $ v V.! (i - 1)
-            Str t -> do checkStrRange t i
-                        return $ Str $ T.singleton $ t `T.index` (i - 1)
-            _     -> raise E_TYPE
+lValue PropRef{} = LValue notyet (const notyet) notyet
 
-        store value = do
-          let LValue fetchExpr storeExpr = lValue expr
-          expr'  <- fetchExpr
-          i      <- withIndexLength expr' (compileExpr index) >>= checkIndex
-          expr'' <- case expr' of
-            Lst v -> checkLstRange v i >> return (Lst $ listSet v i value)
-            Str t -> do
-              checkStrRange t i
-              case value of
-                Str c -> do when (T.length c /= 1) $ raise E_INVARG
-                            let (s, r) = T.splitAt (i - 1) t
-                            return $ Str $ T.concat [s, c, T.tail r]
-                _     -> raise E_TYPE
-            _ -> raise E_TYPE
-          storeExpr expr''
+lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
+  where fetchIndex = do
+          (value, _) <- changeIndex
           return value
 
-lValue (expr `Range` (start, end)) = LValue fetch store
-  where fetch = do
-          expr' <- compileExpr expr
-          (start', end') <- withIndexLength expr' $ do
-            start' <- compileExpr start
-            end'   <- compileExpr end
-            case (start', end') of
-              (Int s, Int e) -> return (fromIntegral s, fromIntegral e)
-              _              -> raise E_TYPE
+        storeIndex newValue = do
+          (_, change) <- changeIndex
+          change newValue
+          return newValue
+
+        changeIndex = do
+          (value, changeExpr) <- change (lValue expr)
+          index' <- checkIndex =<< withIndexLength value (compileExpr index)
+          value' <- case value of
+            Lst v -> checkLstRange v index' >> return (v V.! (index' - 1))
+            Str t -> checkStrRange t index' >>
+                     return (Str $ T.singleton $ t `T.index` (index' - 1))
+            _     -> raise E_TYPE
+          return (value', changeValue value index' changeExpr)
+
+        changeValue (Lst v) index changeExpr newValue =
+          changeExpr $ Lst $ listSet v index newValue
+
+        changeValue (Str t) index changeExpr (Str c) = do
+          when (c `T.compareLength` 1 /= EQ) $ raise E_INVARG
+          let (s, r) = T.splitAt (index - 1) t
+          changeExpr $ Str $ T.concat [s, c, T.tail r]
+
+        changeValue _ _ _ _ = raise E_TYPE
+
+lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
+  where fetchRange = do
+          value <- fetch (lValue expr)
+          (start', end') <- getIndices value
           if start' > end'
-            then case expr' of
+            then case value of
               Lst{} -> return $ Lst V.empty
               Str{} -> return $ Str T.empty
               _     -> raise E_TYPE
-            else let len = end' - start' + 1 in case expr' of
+            else let len = end' - start' + 1 in case value of
               Lst v -> do checkLstRange v start' >> checkLstRange v end'
                           return $ Lst $ V.slice (start' - 1) len v
               Str t -> do checkStrRange t start' >> checkStrRange t end'
                           return $ Str $ T.take len $ T.drop (start' - 1) t
               _     -> raise E_TYPE
 
-        store value = do
-          let LValue fetchExpr storeExpr = lValue expr
-          expr' <- fetchExpr
-          (start', end') <- withIndexLength expr' $ do
-            start' <- compileExpr start
-            end'   <- compileExpr end
-            case (start', end') of
-              (Int s, Int e) -> return (fromIntegral s, fromIntegral e)
-              _              -> raise E_TYPE
-          expr'' <- case expr' of
-            Lst v -> case value of
-              Lst r -> do
-                let len = V.length v
-                when (end' < 0 || start' > len + 1) $ raise E_RANGE
-                let pre  = sublist v 1 (start' - 1)
-                    post = sublist v (end' + 1) len
-                    sublist v s e
-                      | e < s     = V.empty
-                      | otherwise = V.slice (s - 1) (e - s + 1) v
-                return $ Lst $ V.concat [pre, r, post]
-              _ -> raise E_TYPE
-            Str t -> case value of
-              Str r -> do
-                when (end' < 0 ||
-                      t `T.compareLength` (start' - 1) == LT) $ raise E_RANGE
-                let pre  = substr t 1 (start' - 1)
-                    post = substr t (end' + 1) (T.length t)
-                    substr t s e
-                      | e < s     = T.empty
-                      | otherwise = T.take (e - s + 1) $ T.drop (s - 1) t
-                return $ Str $ T.concat [pre, r, post]
-              _ -> raise E_TYPE
-            _ -> raise E_TYPE
-          storeExpr expr''
-          return value
+        getIndices value = withIndexLength value $ do
+          start' <- checkIndex =<< compileExpr start
+          end'   <- checkIndex =<< compileExpr end
+          return (start', end')
+
+        storeRange newValue = do
+          (value, changeExpr) <- change (lValue expr)
+          (start', end') <- getIndices value
+          changeValue value start' end' changeExpr newValue
+          return newValue
+
+        changeValue (Lst v) start end changeExpr (Lst r) = do
+          let len = V.length v
+          when (end < 0 || start > len + 1) $ raise E_RANGE
+          let pre  = sublist v 1 (start - 1)
+              post = sublist v (end + 1) len
+              sublist v s e
+                | e < s     = V.empty
+                | otherwise = V.slice (s - 1) (e - s + 1) v
+          changeExpr $ Lst $ V.concat [pre, r, post]
+
+        changeValue (Str t) start end changeExpr (Str r) = do
+          when (end < 0 ||
+                t `T.compareLength` (start - 1) == LT) $ raise E_RANGE
+          let pre  = substr t 1 (start - 1)
+              post = substr t (end + 1) (T.length t)
+              substr t s e
+                | e < s     = T.empty
+                | otherwise = T.take (e - s + 1) $ T.drop (s - 1) t
+          changeExpr $ Str $ T.concat [pre, r, post]
+
+        changeValue _ _ _ _ _ = raise E_TYPE
+
+        changeRange = error "Illegal Range as lvalue subexpression"
+
+lValue expr = LValue fetch store change
+  where fetch = compileExpr expr
+        store _ = error "Unmodifiable LValue"
+
+        change = do
+          value <- fetch
+          return (value, store)
 
 scatterAssign :: [ScatItem] -> LstT -> MOO Value
 scatterAssign items args = do
