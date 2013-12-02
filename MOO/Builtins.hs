@@ -132,7 +132,7 @@ currentTime = do
 
 bf_time [] = fmap Int $ liftIO currentTime
 
-bf_ctime [] = liftIO currentTime >>= ctime
+bf_ctime []         = ctime =<< liftIO currentTime
 bf_ctime [Int time] = ctime time
 
 ctime :: IntT -> MOO Value

@@ -23,12 +23,12 @@ catchDebug action = action `catchException` \except@(Exception code _ _) -> do
 compileExpr :: Expr -> MOO Value
 compileExpr expr = catchDebug $ case expr of
   Literal v -> return v
-  List args -> mkList args
+  List args -> fmap (Lst . V.fromList) $ expand args
 
   Variable{} -> fetch (lValue expr)
   PropRef{}  -> fetch (lValue expr)
 
-  Assign what expr -> compileExpr expr >>= store (lValue what)
+  Assign what expr -> store (lValue what) =<< compileExpr expr
 
   ScatterAssign items expr -> do
     expr' <- compileExpr expr
@@ -38,7 +38,7 @@ compileExpr expr = catchDebug $ case expr of
 
   VerbCall{} -> notyet
 
-  BuiltinFunc func args -> expand args >>= callBuiltin (T.toCaseFold func)
+  BuiltinFunc func args -> callBuiltin (T.toCaseFold func) =<< expand args
 
   a `Plus`   b -> binary plus   a b
   a `Minus`  b -> binary minus  a b
@@ -49,9 +49,9 @@ compileExpr expr = catchDebug $ case expr of
 
   Negate a -> do a' <- compileExpr a
                  case a' of
-                   (Int x) -> return $ Int (-x)
-                   (Flt x) -> return $ Flt (-x)
-                   _       -> raise E_TYPE
+                   Int x -> return (Int $ negate x)
+                   Flt x -> return (Flt $ negate x)
+                   _     -> raise E_TYPE
 
   Conditional c x y -> do c' <- compileExpr c
                           compileExpr $ if truthOf c' then x else y
@@ -73,7 +73,7 @@ compileExpr expr = catchDebug $ case expr of
   Index{} -> fetch (lValue expr)
   Range{} -> fetch (lValue expr)
 
-  Length -> reader indexLength >>= fmap (Int . fromIntegral)
+  Length -> fmap (Int . fromIntegral) =<< reader indexLength
 
   item `In` list -> do
     item' <- compileExpr item
@@ -283,9 +283,6 @@ scatterAssign items args = do
         walk [] _ _ = return ()
 
         assign var = putVariable (T.toCaseFold var)
-
-mkList :: [Arg] -> MOO Value
-mkList args = fmap (Lst . V.fromList) $ expand args
 
 expand :: [Arg] -> MOO [Value]
 expand (a:as) = case a of
