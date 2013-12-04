@@ -12,7 +12,7 @@ import qualified Data.Map as Map
 
 import MOO.Types
 import MOO.AST
-import MOO.Execution
+import MOO.Task
 import MOO.Builtins
 
 catchDebug :: MOO Value -> MOO Value

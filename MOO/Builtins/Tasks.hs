@@ -1,10 +1,12 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Builtins.Task ( builtins ) where
+module MOO.Builtins.Tasks ( builtins ) where
+
+import Control.Monad.Reader (asks)
 
 import MOO.Types
-import MOO.Execution
+import MOO.Task
 import {-# SOURCE #-} MOO.Builtins
 import MOO.Builtins.Common
 
@@ -63,7 +65,7 @@ bf_caller_perms [] = notyet
 bf_ticks_left [] = notyet
 bf_seconds_left [] = notyet
 
-bf_task_id [] = notyet
+bf_task_id [] = fmap Int $ asks taskId
 
 bf_suspend optional = notyet
 bf_resume (Int task_id : optional) = notyet

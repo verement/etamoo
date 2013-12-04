@@ -4,10 +4,9 @@
 module MOO.Builtins.Values ( builtins ) where
 
 import Control.Monad (mplus, unless)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.State (gets, modify)
 import Control.Exception (bracket)
 import Control.Concurrent.MVar (MVar, newMVar, takeMVar, putMVar)
-import System.Random (randomRIO)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf (printf)
 import Foreign.Storable (sizeOf)
@@ -25,7 +24,7 @@ import Data.Digest.Pure.MD5 (MD5Digest)
 import qualified Data.Digest.Pure.MD5 as MD5
 
 import MOO.Types
-import MOO.Execution
+import MOO.Task
 import MOO.Parser (parseNum, parseObj)
 import MOO.Builtins.Common
 import MOO.Builtins.Match
@@ -162,7 +161,7 @@ bf_value_hash [value] = do
 
 bf_random optional
   | mod <= 0  = raise E_INVARG
-  | otherwise = fmap Int $ liftIO $ randomRIO (1, mod)
+  | otherwise = fmap Int $ random (1, mod)
   where [Int mod] = defaults optional [Int maxBound]
 
 bf_min (Int x:xs) = minMaxInt min x xs
@@ -317,13 +316,13 @@ bf_rmatch (Str subject : Str pattern : optional) =
   where [case_matters] = booleanDefaults optional [False]
 
 runMatch match subject pattern case_matters = do
-  compiled <- liftIO $ newRegexp pattern case_matters
+  let compiled = unsafePerformIO $ newRegexp pattern case_matters
   case compiled of
     Left  (err, at) -> raiseException $ Exception (Err E_INVARG)
                        (T.pack $ "Invalid pattern: " ++ err)
                        (Int $ fromIntegral at)
     Right regexp -> do
-      result <- liftIO $ match regexp (encodeUtf8 subject)  -- *
+      let result = unsafePerformIO $ match regexp (encodeUtf8 subject)  -- *
       -- * This will need revisiting to support arbitrary Unicode
       case result of
         MatchFailed            -> return (Lst V.empty)
@@ -405,8 +404,7 @@ bf_crypt (Str text : optional)
           c1 <- randSaltChar
           c2 <- randSaltChar
           return $ T.pack [c1, c2]
-        randSaltChar = fmap (saltStuff !!) $
-                       liftIO $ randomRIO (0, length saltStuff - 1)
+        randSaltChar = fmap (saltStuff !!) $ random (0, length saltStuff - 1)
         saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
         go salt = return $ Str $ T.pack $ crypt (T.unpack text) (T.unpack salt)
 

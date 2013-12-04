@@ -1,4 +1,6 @@
 
+{-# LANGUAGE OverloadedStrings #-}
+
 module MOO.Verb ( Verb ) where
 
 import Data.Text
@@ -14,9 +16,10 @@ data Verb = Verb {
   , directObject   :: ObjSpec
   , preposition    :: PrepSpec
   , indirectObject :: ObjSpec
-  }
+} deriving Show
 
 data ObjSpec = ObjThis | ObjAny | ObjNone
+             deriving Show
 
 data PrepSpec = PrepNone | PrepAny
               | PrepWith_Using
@@ -34,6 +37,7 @@ data PrepSpec = PrepNone | PrepAny
               | PrepIs
               | PrepAs
               | PrepOff_OffOf
+              deriving Show
 
 prep2text :: PrepSpec -> Text
 prep2text PrepNone                     = "none"

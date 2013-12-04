@@ -4,7 +4,7 @@
 module MOO.Builtins.Network ( builtins ) where
 
 import MOO.Types
-import MOO.Execution
+import MOO.Task
 import MOO.Builtins.Common
 
 -- 4.4.4 Operations on Network Connections

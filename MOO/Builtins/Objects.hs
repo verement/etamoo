@@ -3,9 +3,14 @@
 
 module MOO.Builtins.Objects ( builtins ) where
 
-import MOO.Types
-import MOO.Execution
+import Control.Monad (unless)
+
+import qualified Data.Vector as V
+
 import MOO.Builtins.Common
+import MOO.Database
+import MOO.Types
+import MOO.Task
 
 -- 4.4.3 Manipulating Objects
 
@@ -60,12 +65,15 @@ builtins = [
 
 bf_create (Obj parent : owner) = notyet
 bf_chparent [Obj object, Obj new_parent] = notyet
-bf_valid [Obj object] = notyet
+
+bf_valid [Obj object] = fmap truthValue $ isValid object =<< getDatabase
+
 bf_parent [Obj object] = notyet
 bf_children [Obj object] = notyet
 bf_recycle [Obj object] = notyet
 bf_object_bytes [Obj object] = notyet
-bf_max_object [] = notyet
+
+bf_max_object [] = fmap (Obj . maxObject) getDatabase
 
 -- 4.4.3.2 Object Movement
 
@@ -96,6 +104,12 @@ bf_disassemble [Obj object, Str verb_desc] = notyet
 
 -- 4.4.3.5 Operations on Player Objects
 
-bf_players [] = notyet
-bf_is_player [Obj object] = notyet
+bf_players [] = fmap (Lst . V.fromList . map Obj . allPlayers) getDatabase
+
+bf_is_player [Obj object] = do
+  db <- getDatabase
+  valid <- isValid object db
+  unless valid $ raise E_INVARG
+  return (truthValue $ isPlayer object db)
+
 bf_set_player_flag [Obj object, value] = notyet

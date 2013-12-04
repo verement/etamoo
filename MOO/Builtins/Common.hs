@@ -3,7 +3,7 @@ module MOO.Builtins.Common ( BuiltinSpec, Builtin, Info(..)
                            , defaults, booleanDefaults, maybeDefaults ) where
 
 import MOO.Types
-import MOO.Execution
+import MOO.Task
 
 type BuiltinSpec = (Id, (Builtin, Info))
 

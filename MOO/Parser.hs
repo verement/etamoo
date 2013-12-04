@@ -1,5 +1,5 @@
 
-module MOO.Parser ( parse, runParser, initParserState, expression
+module MOO.Parser ( Program, parse, runParser, initParserState, expression
                   , parseInt, parseFlt, parseNum, parseObj ) where
 
 import           Text.Parsec hiding (parse)
@@ -489,7 +489,7 @@ expressionStatement = do
 program :: MOOParser Program
 program = between whiteSpace eof $ fmap Program statements
 
-type Errors = [Text]
+type Errors = [String]
 
 parse :: Text -> Either Errors Program
 parse input = case runParser program initParserState "MOO code" input of
@@ -498,7 +498,7 @@ parse input = case runParser program initParserState "MOO code" input of
                            msg = find message $ errorMessages err
                            message Message{} = True
                            message _         = False
-                       in [pack $ "Line " ++ show line ++ ":  " ++
+                       in ["Line " ++ show line ++ ":  " ++
                            maybe "syntax error" messageString msg]
 
 -- Auxiliary parser interface

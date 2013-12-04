@@ -2,15 +2,20 @@
 module Main where
 
 import System.Console.Readline
+import System.Random
+import System.Environment
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
+import Control.Concurrent.STM
 import Data.Text
 
 import MOO.Parser
 import MOO.Compiler
-import MOO.Execution
+import MOO.Task
 import MOO.Types
 import MOO.Builtins
+import MOO.Database
+import MOO.Database.LambdaMOO
 
 main :: IO ()
 main = do
@@ -18,37 +23,50 @@ main = do
     Left  err -> putStrLn $ "Built-in function verification failed: " ++ err
     Right n   -> do
       putStrLn $ show n ++ " built-in functions verified"
-      repLoop initStack
+      db <- newTVarIO =<< replDatabase
+      gen <- getStdGen
+      repLoop (initState db gen)
 
-repLoop stack = do
+replDatabase :: IO Database
+replDatabase = do
+  args <- getArgs
+  case args of
+    [dbFile] -> loadLMDatabase dbFile >>= either (error . show) return
+    []       -> return initDatabase
+
+repLoop state = do
   maybeLine <- readline ">> "
   case maybeLine of
     Nothing   -> return ()
     Just line -> do
       addHistory line
-      run line stack >>= repLoop
+      run line state >>= repLoop
 
-alterFrame (Stack (x:xs)) f = Stack (f x : xs)
+alterFrame st@State { stack = Stack (frame:stack) } f =
+  st { stack = Stack (f frame : stack) }
 
-run ":+d" stack = return $ alterFrame stack $
+run ":+d" state = return $ alterFrame state $
                   \frame -> frame { debugBit = True  }
-run ":-d" stack = return $ alterFrame stack $
+run ":-d" state = return $ alterFrame state $
                   \frame -> frame { debugBit = False }
 
-run ":stack" stack = print stack >> return stack
+run ":stack" state = print (stack state) >> return state
 
-run line stack = case runParser expression initParserState "" (pack line) of
-  Left err -> putStr "Parse error " >> print err >> return stack
+run line state = case runParser expression initParserState "" (pack line) of
+  Left err -> putStr "Parse error " >> print err >> return state
   Right expr -> do
     putStrLn $ "-- " ++ show expr
+    env <- initEnvironment
     let comp = compileExpr expr `catchException` \(Exception code m v) -> do
-          liftIO $ putStrLn $ "** " ++ unpack m ++ formatValue v
+          appendIO $ putStrLn $ "** " ++ unpack m ++ formatValue v
           return code
         formatValue (Int 0) = ""
         formatValue v = " [" ++ unpack (toLiteral v) ++ "]"
-        cont  = runReaderT comp initEnvironment
-        state = runContT cont return
-        io    = runStateT state stack
-    (value, stack') <- io
+        contM  = runReaderT comp env
+        stateM = runContT contM return
+        stmM   = runStateT stateM state
+    (value, state') <- atomically stmM
+    queuedIO state'
+    let state'' = state' { queuedIO = return () }
     putStrLn $ "=> " ++ unpack (toLiteral value)
-    return stack'
+    return state''

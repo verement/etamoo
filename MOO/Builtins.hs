@@ -4,30 +4,31 @@
 module MOO.Builtins ( builtinFunctions, callBuiltin, verifyBuiltins ) where
 
 import Control.Monad (when, foldM)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (asks)
 import Data.Maybe (fromMaybe)
 import Data.Map (Map)
 import Data.List (transpose, inits)
 import System.Time
 import System.Locale (defaultTimeLocale)
+import System.IO.Unsafe (unsafePerformIO)
 
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Vector as V
 
 import MOO.Types
-import MOO.Execution
+import MOO.Task
 import MOO.Builtins.Common
 
 import MOO.Builtins.Values  as Values
 import MOO.Builtins.Objects as Objects
 import MOO.Builtins.Network as Network
-import MOO.Builtins.Task    as Task
+import MOO.Builtins.Tasks   as Tasks
 
 builtinFunctions :: Map Id (Builtin, Info)
 builtinFunctions =
   Map.fromList $ miscBuiltins ++
-  Values.builtins ++ Objects.builtins ++ Network.builtins ++ Task.builtins
+  Values.builtins ++ Objects.builtins ++ Network.builtins ++ Tasks.builtins
 
 callBuiltin :: Id -> [Value] -> MOO Value
 callBuiltin func args = case Map.lookup func builtinFunctions of
@@ -125,19 +126,19 @@ bf_pass args = notyet
 
 -- 4.4.5 Operations Involving Times and Dates
 
-currentTime :: IO IntT
+currentTime :: MOO IntT
 currentTime = do
-  TOD t _ <- getClockTime
+  TOD t _ <- asks startTime
   return (fromIntegral t)
 
-bf_time [] = fmap Int $ liftIO currentTime
+bf_time [] = fmap Int currentTime
 
-bf_ctime []         = ctime =<< liftIO currentTime
+bf_ctime []         = ctime =<< currentTime
 bf_ctime [Int time] = ctime time
 
 ctime :: IntT -> MOO Value
 ctime time = do
-  caltime <- liftIO $ toCalendarTime $ TOD (fromIntegral time) 0
+  let caltime = unsafePerformIO $ toCalendarTime $ TOD (fromIntegral time) 0
   return $ Str $ patch $ formatCalendarTime defaultTimeLocale format caltime
   where format = "%a %b %d %H:%M:%S %Y %Z"
         patch str = T.pack $

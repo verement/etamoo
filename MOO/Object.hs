@@ -1,66 +1,79 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Object ( Object
+module MOO.Object ( Object (..)
+                  , initObject
+                  , maybeObject
                   ) where
 
+import Data.HashMap.Strict (HashMap)
+import Data.Text (Text)
+import Data.Maybe
+
 import qualified Data.HashMap.Strict as HM
-import           Data.HashMap.Strict (HashMap)
-import qualified Data.Vector as V
-import           Data.Text (Text)
 import qualified Data.Text as T
-import           MOO.Types
-import           MOO.Verb
+import qualified Data.Vector as V
+
+import MOO.Types
+import MOO.Verb
 
 data Object = Object {
-    objNumber  :: ObjId
-  , isPlayer   :: Bool
-  , parent     :: Maybe Object
-  , children   :: [Object]
-  , properties :: HashMap Text Property
-  , verbs      :: [Verb]
-  }
+  -- Attributes
+    parent         :: Maybe ObjId
+  , children       :: [ObjId]
 
-instance Eq Object where
-  Object { objNumber = id1 } == Object { objNumber = id2 } = id1 == id2
+  -- Built-in properties
+  , slotName       :: StrT
+  , slotOwner      :: ObjT
+  , slotLocation   :: Maybe ObjId
+  , slotContents   :: LstT
+  , slotProgrammer :: Bool
+  , slotWizard     :: Bool
+  , slotR          :: Bool
+  , slotW          :: Bool
+  , slotF          :: Bool
 
-rootObject :: Object
-rootObject = Object {
-    objNumber  = -1
-  , isPlayer   = False
-  , parent     = Nothing
-  , children   = []
-  , properties = builtinProperties
-  , verbs      = []
-  }
+  -- Definitions
+  , properties     :: HashMap Text Property
+  , verbs          :: [Verb]
+}
+
+initObject = Object {
+    parent         = Nothing
+  , children       = []
+
+  , slotName       = T.empty
+  , slotOwner      = -1
+  , slotLocation   = Nothing
+  , slotContents   = V.empty
+  , slotProgrammer = False
+  , slotWizard     = False
+  , slotR          = False
+  , slotW          = False
+  , slotF          = False
+
+  , properties     = HM.empty
+  , verbs          = []
+}
+
+instance Show Object where
+  show _ = "<object>"
 
 data Property = Property {
-    propName      :: Text
+    propName      :: StrT
   , propValue     :: Maybe Value
   , propInherited :: Bool
-  , propOwner     :: Object
+
+  , propOwner     :: ObjT
   , propPermR     :: Bool
   , propPermW     :: Bool
   , propPermC     :: Bool
-  }
-
-builtinProperties :: HashMap Text Property
-builtinProperties = HM.fromList $ map prop [
-    ("name"      , Str "")
-  , ("owner"     , Obj (-1))
-  , ("location"  , Obj (-1))
-  , ("contents"  , List V.empty)
-  , ("programmer", Int 0)
-  , ("wizard"    , Int 0)
-  , ("r"         , Int 0)
-  , ("w"         , Int 0)
-  , ("f"         , Int 0)
-  ]
-  where prop (n, v) = (n, Property n (Just v) False rootObject True False False)
+} deriving Show
 
 getProperty :: Object -> Text -> Maybe Property
 getProperty obj pn = HM.lookup (T.toCaseFold pn) (properties obj)
 
+{-
 getPropValue :: Object -> Text -> Maybe Value
 getPropValue obj pn = get (T.toCaseFold pn) obj
   where get pn obj = do
@@ -68,3 +81,27 @@ getPropValue obj pn = get (T.toCaseFold pn) obj
           case propValue p of
             Just v  -> return v
             Nothing -> parent obj >>= get pn
+-}
+
+builtinProperty :: StrT -> Maybe (Object -> Value)
+builtinProperty "name"       = Just (Str        . slotName)
+builtinProperty "owner"      = Just (Obj        . slotOwner)
+builtinProperty "location"   = Just (Obj        . objectForMaybe . slotLocation)
+builtinProperty "contents"   = Just (Lst        . slotContents)
+builtinProperty "programmer" = Just (truthValue . slotProgrammer)
+builtinProperty "wizard"     = Just (truthValue . slotWizard)
+builtinProperty "r"          = Just (truthValue . slotR)
+builtinProperty "w"          = Just (truthValue . slotW)
+builtinProperty "f"          = Just (truthValue . slotF)
+builtinProperty _            = Nothing
+
+isBuiltinProperty = isJust . builtinProperty . T.toCaseFold
+
+objectForMaybe :: Maybe ObjId -> ObjId
+objectForMaybe (Just oid) = oid
+objectForMaybe Nothing    = -1
+
+maybeObject :: ObjId -> Maybe ObjId
+maybeObject oid
+  | oid >=  0 = Just oid
+  | otherwise = Nothing

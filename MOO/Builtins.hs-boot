@@ -5,7 +5,7 @@ module MOO.Builtins ( builtinFunctions, callBuiltin ) where
 import Data.Map (Map)
 
 import MOO.Types
-import MOO.Execution
+import MOO.Task
 import MOO.Builtins.Common
 
 builtinFunctions :: Map Id (Builtin, Info)
