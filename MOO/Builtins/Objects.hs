@@ -11,6 +11,7 @@ import MOO.Builtins.Common
 import MOO.Database
 import MOO.Types
 import MOO.Task
+import MOO.Object
 
 -- 4.4.3 Manipulating Objects
 
@@ -66,10 +67,16 @@ builtins = [
 bf_create (Obj parent : owner) = notyet
 bf_chparent [Obj object, Obj new_parent] = notyet
 
-bf_valid [Obj object] = fmap truthValue $ isValid object =<< getDatabase
+bf_valid [Obj object] =
+  fmap (truthValue . maybe False (const True)) $ getObject object
 
-bf_parent [Obj object] = notyet
-bf_children [Obj object] = notyet
+bf_parent [Obj object] =
+  fmap (Obj . getParent) $ getObject object >>= maybe (raise E_INVARG) return
+
+bf_children [Obj object] =
+  fmap (Lst . V.fromList . map Obj . getChildren) $
+  getObject object >>= maybe (raise E_INVARG) return
+
 bf_recycle [Obj object] = notyet
 bf_object_bytes [Obj object] = notyet
 
@@ -107,9 +114,8 @@ bf_disassemble [Obj object, Str verb_desc] = notyet
 bf_players [] = fmap (Lst . V.fromList . map Obj . allPlayers) getDatabase
 
 bf_is_player [Obj object] = do
-  db <- getDatabase
-  valid <- isValid object db
-  unless valid $ raise E_INVARG
-  return (truthValue $ isPlayer object db)
+  getObject object >>= maybe (raise E_INVARG) return
+  fmap (truthValue . isPlayer object) getDatabase
+  -- XXX this is not as efficient as it could be?
 
 bf_set_player_flag [Obj object, value] = notyet

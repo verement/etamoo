@@ -2,7 +2,6 @@
 module MOO.Database ( Database
                     , initDatabase
                     , dbObject
-                    , isValid
                     , maxObject
                     , setObjects
                     , isPlayer
@@ -39,9 +38,6 @@ dbObject oid db
   | oid < 0 || oid >= V.length objs = return Nothing
   | otherwise                       = readTVar (objs V.! oid)
   where objs = objects db
-
-isValid :: ObjId -> Database -> MOO Bool
-isValid oid = liftSTM . fmap isJust . dbObject oid
 
 maxObject :: Database -> ObjId
 maxObject db = V.length (objects db) - 1

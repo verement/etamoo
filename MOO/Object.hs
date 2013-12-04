@@ -3,30 +3,35 @@
 
 module MOO.Object ( Object (..)
                   , initObject
-                  , maybeObject
+                  , getParent
+                  , getChildren
+                  , builtinProperty
                   ) where
 
 import Data.HashMap.Strict (HashMap)
 import Data.Text (Text)
+import Data.IntSet (IntSet)
 import Data.Maybe
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import qualified Data.IntSet as IS
 
 import MOO.Types
 import MOO.Verb
+import MOO.Types
 
 data Object = Object {
   -- Attributes
     parent         :: Maybe ObjId
-  , children       :: [ObjId]
+  , children       :: IntSet
 
   -- Built-in properties
   , slotName       :: StrT
   , slotOwner      :: ObjT
   , slotLocation   :: Maybe ObjId
-  , slotContents   :: LstT
+  , slotContents   :: IntSet
   , slotProgrammer :: Bool
   , slotWizard     :: Bool
   , slotR          :: Bool
@@ -34,18 +39,18 @@ data Object = Object {
   , slotF          :: Bool
 
   -- Definitions
-  , properties     :: HashMap Text Property
+  , properties     :: HashMap StrT Property
   , verbs          :: [Verb]
 }
 
 initObject = Object {
     parent         = Nothing
-  , children       = []
+  , children       = IS.empty
 
   , slotName       = T.empty
   , slotOwner      = -1
   , slotLocation   = Nothing
-  , slotContents   = V.empty
+  , slotContents   = IS.empty
   , slotProgrammer = False
   , slotWizard     = False
   , slotR          = False
@@ -59,6 +64,12 @@ initObject = Object {
 instance Show Object where
   show _ = "<object>"
 
+getParent :: Object -> ObjId
+getParent = objectForMaybe . parent
+
+getChildren :: Object -> [ObjId]
+getChildren = IS.elems . children
+
 data Property = Property {
     propName      :: StrT
   , propValue     :: Maybe Value
@@ -70,10 +81,10 @@ data Property = Property {
   , propPermC     :: Bool
 } deriving Show
 
+{-
 getProperty :: Object -> Text -> Maybe Property
 getProperty obj pn = HM.lookup (T.toCaseFold pn) (properties obj)
 
-{-
 getPropValue :: Object -> Text -> Maybe Value
 getPropValue obj pn = get (T.toCaseFold pn) obj
   where get pn obj = do
@@ -87,7 +98,8 @@ builtinProperty :: StrT -> Maybe (Object -> Value)
 builtinProperty "name"       = Just (Str        . slotName)
 builtinProperty "owner"      = Just (Obj        . slotOwner)
 builtinProperty "location"   = Just (Obj        . objectForMaybe . slotLocation)
-builtinProperty "contents"   = Just (Lst        . slotContents)
+builtinProperty "contents"   = Just (Lst . V.fromList .
+                                     map Obj . IS.elems . slotContents)
 builtinProperty "programmer" = Just (truthValue . slotProgrammer)
 builtinProperty "wizard"     = Just (truthValue . slotWizard)
 builtinProperty "r"          = Just (truthValue . slotR)
@@ -100,8 +112,3 @@ isBuiltinProperty = isJust . builtinProperty . T.toCaseFold
 objectForMaybe :: Maybe ObjId -> ObjId
 objectForMaybe (Just oid) = oid
 objectForMaybe Nothing    = -1
-
-maybeObject :: ObjId -> Maybe ObjId
-maybeObject oid
-  | oid >=  0 = Just oid
-  | otherwise = Nothing

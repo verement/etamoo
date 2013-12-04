@@ -14,6 +14,7 @@ import MOO.Types
 import MOO.AST
 import MOO.Task
 import MOO.Builtins
+import MOO.Object
 
 catchDebug :: MOO Value -> MOO Value
 catchDebug action = action `catchException` \except@(Exception code _ _) -> do
@@ -104,6 +105,24 @@ compileExpr expr = catchDebug $ case expr of
                                 Lst{} -> raise E_TYPE
                                 _     -> return $ truthValue (a `op` b)
 
+getProperty :: ObjT -> StrT -> MOO Value
+getProperty oid name = do
+  obj <- getObject oid >>= maybe (raise E_INVIND) return
+  maybe (search obj) (return . ($ obj)) $ builtinProperty name'
+  where search _ = undefined
+        name' = T.toCaseFold name
+
+{-
+getPropValue obj pn = maybe (search obj)
+                      (return . Just . ($ obj)) $ builtinProperty pn'
+  where pn' = T.toCaseFold pn
+        search obj = case HM.lookup pn (properties obj) of
+          Nothing -> raise E_PROPNF
+
+maybe (search $ parent obj) (return . propValue) $
+                     HM.lookup pn (properties obj)
+-}
+
 getVariable :: Id -> MOO Value
 getVariable var = do
   vars <- frame variables
@@ -151,7 +170,13 @@ lValue (Variable var) = LValue fetch store change
           value <- fetch
           return (value, store)
 
-lValue PropRef{} = LValue notyet (const notyet) notyet
+lValue (PropRef objExpr nameExpr) = LValue fetch (const notyet) notyet
+  where fetch = do
+          objRef  <- compileExpr objExpr
+          nameRef <- compileExpr nameExpr
+          case (objRef, nameRef) of
+            (Obj oid, Str name) -> getProperty oid name
+            _                   -> raise E_TYPE
 
 lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
   where fetchIndex = do

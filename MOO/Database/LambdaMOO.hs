@@ -7,10 +7,12 @@ import Text.Parsec
 import Data.Word (Word)
 import Data.List (sort)
 import Data.Maybe (catMaybes)
+import Data.Array
 import Data.Bits
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import qualified Data.IntSet as IS
 
 import MOO.Database
 import MOO.Object
@@ -130,23 +132,41 @@ data PropVal = PropVal {
 }
 
 installObjects :: [DBObject] -> DBParser ()
-installObjects = go 0 []
-  where go next objs (dbObj:rest) = do
-          let (objId, object) = objectForDBObject dbObj
-          unless (objId == next) $
-            fail $ "Unexpected #" ++ show objId ++
-            " (expecting #" ++ show next ++ ")"
-          go (next + 1) (object:objs) rest
-        go _ objs [] = do
-          getState >>= liftIO . setObjects (reverse objs) >>= putState
+installObjects dbObjs = do
+  -- Check sequential object ordering
+  mapM_ checkObjId (zip [0..] dbObjs)
 
-objectForDBObject :: DBObject -> (ObjId, Maybe Object)
-objectForDBObject dbObj = (oid dbObj, fmap mkObject $ valid dbObj)
+  let dbArray = listArray (0, length dbObjs - 1) $ map valid dbObjs
+      objs = map (snd . objectForDBObject dbArray) dbObjs
+
+  getState >>= liftIO . setObjects objs >>= putState
+
+  where checkObjId (objId, dbObj) =
+          unless (objId == oid dbObj) $
+            fail $ "Unexpected object #" ++ show (oid dbObj) ++
+                   " (expecting #" ++ show objId ++ ")"
+
+objectTrail :: Array ObjId (Maybe ObjectDef) -> ObjectDef ->
+               (ObjectDef -> ObjId) -> (ObjectDef -> ObjId) -> [ObjId]
+objectTrail arr def first rest = follow first rest (Just def)
+  where follow f1 f2 Nothing = []
+        follow f1 f2 (Just def)
+          | inRange (bounds arr) idx = idx : follow f2 f2 (arr ! idx)
+          | otherwise                = []
+          where idx = f1 def
+
+objectForDBObject :: Array ObjId (Maybe ObjectDef) ->
+                     DBObject -> (ObjId, Maybe Object)
+objectForDBObject dbArray dbObj = (oid dbObj, fmap mkObject $ valid dbObj)
   where mkObject def = initObject {
             parent         = maybeObject (objectParent   def)
+          , children       = IS.fromList $
+                             objectTrail dbArray def objectChild objectSibling
           , slotName       = T.pack     $ objectName     def
           , slotOwner      =              objectOwner    def
           , slotLocation   = maybeObject (objectLocation def)
+          , slotContents   = IS.fromList $
+                             objectTrail dbArray def objectContents objectNext
           , slotProgrammer = flag def flag_programmer
           , slotWizard     = flag def flag_wizard
           , slotR          = flag def flag_read
@@ -156,6 +176,11 @@ objectForDBObject dbObj = (oid dbObj, fmap mkObject $ valid dbObj)
 
         flag def fl = let mask = 1 `shiftL` fl
                       in (objectFlags def .&. mask) /= 0
+
+        maybeObject :: ObjId -> Maybe ObjId
+        maybeObject oid
+          | oid >=  0 = Just oid
+          | otherwise = Nothing
 
 installPrograms :: [(Int, Int, Program)] -> DBParser ()
 installPrograms programs = return ()
