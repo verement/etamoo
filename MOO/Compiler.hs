@@ -131,7 +131,7 @@ fetchProperty (oid, name) = do
             Just value -> return value
             Nothing    -> do
               parentObj <- maybe (return Nothing) getObject (objectParent obj)
-              maybe (fail $ "No inherited value for property " ++
+              maybe (error $ "No inherited value for property " ++
                      T.unpack name) (search True) parentObj
 
 storeProperty :: (ObjT, StrT) -> Value -> MOO Value
@@ -180,9 +180,14 @@ lValue (Variable var) = LValue fetch store change
           value <- fetch
           return (value, store)
 
-lValue (PropRef objExpr nameExpr) = LValue fetch store notyet
+lValue (PropRef objExpr nameExpr) = LValue fetch store change
   where fetch = getRefs >>= fetchProperty
         store value = getRefs >>= flip storeProperty value
+
+        change = do
+          value <- fetch
+          return (value, store)
+          -- XXX improve this to avoid redundant checks?
 
         getRefs = do
           objRef  <- compileExpr objExpr
