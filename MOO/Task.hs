@@ -142,18 +142,17 @@ modifyProperty obj name f = do
 setBuiltinProperty :: ObjId -> StrT -> Value -> MOO ()
 setBuiltinProperty oid "name" (Str name) = do
   db <- getDatabase
-  if isPlayer oid db
+  obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
+  if objectIsPlayer obj
     then checkWizard
-    else do
-      obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
-      checkPermission (objectOwner obj)
+    else checkPermission (objectOwner obj)
   liftSTM $ modifyObject oid db $ \obj -> obj { objectName = name }
 setBuiltinProperty oid "owner" (Obj owner) = do
   checkWizard
   db <- getDatabase
   liftSTM $ modifyObject oid db $ \obj -> obj { objectOwner = owner }
-setBuiltinProperty _ "location" (Obj location) = raise E_PERM
-setBuiltinProperty _ "contents" (Lst contents) = raise E_PERM
+setBuiltinProperty _ "location" (Obj _) = raise E_PERM
+setBuiltinProperty _ "contents" (Lst _) = raise E_PERM
 setBuiltinProperty oid "programmer" bit = do
   checkWizard
   db <- getDatabase

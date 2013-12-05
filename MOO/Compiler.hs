@@ -130,7 +130,7 @@ fetchProperty (oid, name) = do
           case propertyValue prop of
             Just value -> return value
             Nothing    -> do
-              parentObj <- maybe (return Nothing) getObject (parent obj)
+              parentObj <- maybe (return Nothing) getObject (objectParent obj)
               maybe (fail $ "No inherited value for property " ++
                      T.unpack name) (search True) parentObj
 

@@ -6,7 +6,6 @@ module MOO.Database ( Database
                     , maxObject
                     , setObjects
                     , modifyObject
-                    , isPlayer
                     , allPlayers
                     , setPlayer
                     ) where
@@ -62,8 +61,10 @@ modifyObject oid db f = do
         Nothing  -> return ()
         Just obj -> writeTVar objTVar (Just $ f obj)
 
+{-
 isPlayer :: ObjId -> Database -> Bool
 isPlayer oid db = oid `IS.member` players db
+-}
 
 allPlayers :: Database -> [ObjId]
 allPlayers = IS.toList . players

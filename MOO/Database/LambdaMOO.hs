@@ -8,6 +8,7 @@ import Data.List (sort)
 import Data.Maybe (catMaybes)
 import Data.Array
 import Data.Bits
+import Data.IntSet (IntSet)
 import System.IO (hFlush, stdout)
 
 import qualified Data.Text as T
@@ -27,11 +28,13 @@ loadLMDatabase dbFile = do
 type DBParser = ParsecT String Database (ReaderT DBEnv IO)
 
 data DBEnv = DBEnv {
-  input_version :: Word
+    input_version :: Word
+  , users         :: IntSet
 }
 
 initDBEnv = DBEnv {
-  input_version = undefined
+    input_version = undefined
+  , users         = IS.empty
 }
 
 header_format_string = ("** LambdaMOO Database, Format Version ", " **")
@@ -62,27 +65,28 @@ lmDatabase = do
     liftIO $ putStrLn $ "Players: " ++
       T.unpack (toLiteral $ Lst $ V.fromList $ sort $ map Obj users)
 
-    liftIO $ putStrLn "Reading objects..."
-    count nobjs read_object >>= installObjects
+    local (\r -> r { users = IS.fromList users }) $ do
+      liftIO $ putStrLn "Reading objects..."
+      count nobjs read_object >>= installObjects
 
-    liftIO $ putStrLn "Reading verb programs..."
-    count nprogs program >>= installPrograms
+      liftIO $ putStrLn "Reading verb programs..."
+      count nprogs program >>= installPrograms
 
-    liftIO $ putStrLn "Reading forked and suspended tasks..."
-    read_task_queue
+      liftIO $ putStrLn "Reading forked and suspended tasks..."
+      read_task_queue
 
-    liftIO $ putStrLn "Reading list of formerly active connections..."
-    read_active_connections
+      liftIO $ putStrLn "Reading list of formerly active connections..."
+      read_active_connections
 
-    eof
-    liftIO $ putStrLn "Database loaded!"
+  eof
+  liftIO $ putStrLn "Database loaded!"
 
   getState
 
 installUsers :: [ObjId] -> DBParser ()
-installUsers players = do
+installUsers users = do
   db <- getState
-  putState $ foldr (setPlayer True) db players
+  putState $ foldr (setPlayer True) db users
 
 data DBObject = DBObject {
     oid   :: ObjId
@@ -128,7 +132,7 @@ installObjects dbObjs = do
   -- Check sequential object ordering
   mapM_ checkObjId (zip [0..] dbObjs)
 
-  objs <- liftIO $ mapM installProperties preObjs
+  objs <- liftIO (mapM installProperties preObjs) >>= setPlayerFlags
   getState >>= liftIO . setObjects objs >>= putState
 
   where dbArray = listArray (0, length dbObjs - 1) $ map valid dbObjs
@@ -169,7 +173,14 @@ installObjects dbObjs = do
           , propertyPermR     = (propPerms propval) .&. pf_read  /= 0
           , propertyPermW     = (propPerms propval) .&. pf_write /= 0
           , propertyPermC     = (propPerms propval) .&. pf_chown /= 0
-        }
+          }
+
+        setPlayerFlags objs = do
+          players <- asks users
+          return $ map (setPlayerFlag players) $ zip [0..] objs
+        setPlayerFlag players (oid, Just obj) = Just $
+          obj { objectIsPlayer = oid `IS.member` players }
+        setPlayerFlag players _ = Nothing
 
 objectTrail :: Array ObjId (Maybe ObjectDef) -> ObjectDef ->
                (ObjectDef -> ObjId) -> (ObjectDef -> ObjId) -> [ObjId]
@@ -184,8 +195,8 @@ objectForDBObject :: Array ObjId (Maybe ObjectDef) ->
                      DBObject -> (ObjId, Maybe Object)
 objectForDBObject dbArray dbObj = (oid dbObj, fmap mkObject $ valid dbObj)
   where mkObject def = initObject {
-            parent           = maybeObject (objParent   def)
-          , children         = IS.fromList $
+            objectParent     = maybeObject (objParent   def)
+          , objectChildren   = IS.fromList $
                                objectTrail dbArray def objChild objSibling
           , objectName       = T.pack     $ objName     def
           , objectOwner      =              objOwner    def

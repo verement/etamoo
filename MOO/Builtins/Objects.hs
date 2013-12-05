@@ -14,6 +14,7 @@ import MOO.Database
 import MOO.Types
 import MOO.Task
 import MOO.Object
+import MOO.Network
 
 -- 4.4.3 Manipulating Objects
 
@@ -137,8 +138,16 @@ bf_disassemble [Obj object, Str verb_desc] = notyet
 bf_players [] = fmap (Lst . V.fromList . map Obj . allPlayers) getDatabase
 
 bf_is_player [Obj object] = do
-  getObject object >>= maybe (raise E_INVARG) return
-  fmap (truthValue . isPlayer object) getDatabase
-  -- XXX this is not as efficient as it could be?
+  obj <- getObject object >>= maybe (raise E_INVARG) return
+  return $ truthValue (objectIsPlayer obj)
 
-bf_set_player_flag [Obj object, value] = notyet
+bf_set_player_flag [Obj object, value] = do
+  getObject object >>= maybe (raise E_INVARG) return
+  checkWizard
+  db <- getDatabase
+  liftSTM $ modifyObject object db $
+    \obj -> obj { objectIsPlayer = isPlayer }
+  putDatabase $ setPlayer isPlayer object db
+  unless isPlayer $ bootPlayer object
+  return nothing
+  where isPlayer = truthOf value

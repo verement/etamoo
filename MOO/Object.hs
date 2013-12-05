@@ -32,8 +32,9 @@ import MOO.Verb
 
 data Object = Object {
   -- Attributes
-    parent         :: Maybe ObjId
-  , children       :: IntSet
+    objectIsPlayer   :: Bool
+  , objectParent     :: Maybe ObjId
+  , objectChildren   :: IntSet
 
   -- Built-in properties
   , objectName       :: StrT
@@ -47,13 +48,14 @@ data Object = Object {
   , objectPermF      :: Bool
 
   -- Definitions
-  , properties     :: HashMap StrT (TVar Property)
-  , verbs          :: [Verb]
+  , objectProperties :: HashMap StrT (TVar Property)
+  , objectVerbs      :: [Verb]
 }
 
 initObject = Object {
-    parent         = Nothing
-  , children       = IS.empty
+    objectIsPlayer   = False
+  , objectParent     = Nothing
+  , objectChildren   = IS.empty
 
   , objectName       = T.empty
   , objectOwner      = -1
@@ -65,18 +67,18 @@ initObject = Object {
   , objectPermW      = False
   , objectPermF      = False
 
-  , properties     = HM.empty
-  , verbs          = []
+  , objectProperties = HM.empty
+  , objectVerbs      = []
 }
 
 instance Show Object where
   show _ = "<object>"
 
 getParent :: Object -> ObjId
-getParent = objectForMaybe . parent
+getParent = objectForMaybe . objectParent
 
 getChildren :: Object -> [ObjId]
-getChildren = IS.elems . children
+getChildren = IS.elems . objectChildren
 
 data Property = Property {
     propertyName      :: StrT
@@ -122,14 +124,14 @@ objectForMaybe Nothing    = -1
 setProperties :: [Property] -> Object -> IO Object
 setProperties props obj = do
   propHash <- mkHash props
-  return obj { properties = propHash }
+  return obj { objectProperties = propHash }
   where mkHash = fmap HM.fromList . mapM mkAssoc
         mkAssoc prop = do
           tvarProp <- newTVarIO prop
           return (T.toCaseFold $ propertyName prop, tvarProp)
 
 lookupPropertyRef :: Object -> StrT -> Maybe (TVar Property)
-lookupPropertyRef obj name = HM.lookup name (properties obj)
+lookupPropertyRef obj name = HM.lookup name (objectProperties obj)
 
 lookupProperty :: Object -> StrT -> STM (Maybe Property)
 lookupProperty obj name = maybe (return Nothing) (fmap Just . readTVar) $
@@ -137,5 +139,5 @@ lookupProperty obj name = maybe (return Nothing) (fmap Just . readTVar) $
 
 definedProperties :: Object -> STM [StrT]
 definedProperties obj = do
-  props <- mapM readTVar $ HM.elems (properties obj)
+  props <- mapM readTVar $ HM.elems (objectProperties obj)
   return $ map propertyName $ filter (not . propertyInherited) props
