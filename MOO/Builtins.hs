@@ -16,9 +16,10 @@ import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Vector as V
 
+import MOO.Builtins.Common
 import MOO.Types
 import MOO.Task
-import MOO.Builtins.Common
+import MOO.Database
 
 import MOO.Builtins.Values  as Values
 import MOO.Builtins.Objects as Objects
@@ -161,7 +162,10 @@ bf_server_log (Str message : optional) = notyet
 
 bf_renumber [Obj object] = notyet
 
-bf_reset_max_object [] = notyet
+bf_reset_max_object [] = do
+  checkWizard
+  getDatabase >>= liftSTM . resetMaxObject >>= putDatabase
+  return nothing
 
 -- 4.4.8 Server Statistics and Miscellaneous Information
 

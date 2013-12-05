@@ -4,6 +4,7 @@ module MOO.Database ( Database
                     , dbObjectRef
                     , dbObject
                     , maxObject
+                    , resetMaxObject
                     , setObjects
                     , modifyObject
                     , allPlayers
@@ -46,6 +47,15 @@ dbObject oid db = maybe (return Nothing) readTVar $ dbObjectRef oid db
 
 maxObject :: Database -> ObjId
 maxObject db = V.length (objects db) - 1
+
+resetMaxObject :: Database -> STM Database
+resetMaxObject db = do
+  newMaxObject <- findLastValid (maxObject db)
+  return db { objects = V.take (newMaxObject + 1) $ objects db }
+  where findLastValid oid
+          | oid >= 0  = dbObject oid db >>=
+                        maybe (findLastValid $ oid - 1) (return . const oid)
+          | otherwise = return (-1)
 
 setObjects :: [Maybe Object] -> Database -> IO Database
 setObjects objs db = do
