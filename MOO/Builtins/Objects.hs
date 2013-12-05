@@ -3,11 +3,12 @@
 
 module MOO.Builtins.Objects ( builtins ) where
 
-import Control.Monad (unless)
+import Control.Monad (when, unless)
 import Data.Maybe
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import qualified Data.HashMap.Strict as HM
 
 import MOO.Builtins.Common
 import MOO.Database
@@ -95,10 +96,34 @@ bf_properties [Obj object] = do
   unless (objectPermR obj) $ checkPermission (objectOwner obj)
   fmap (Lst . V.fromList . map Str) $ liftSTM $ definedProperties obj
 
-bf_property_info [Obj object, Str prop_name] = notyet
+bf_property_info [Obj object, Str prop_name] = do
+  obj  <- getObject object >>= maybe (raise E_INVARG) return
+  prop <- getProperty obj prop_name
+  unless (propertyPermR prop) $ checkPermission (propertyOwner prop)
+  return $ Lst $ V.fromList [Obj $ propertyOwner prop, Str $ perms prop]
+  where perms prop = T.pack $ concat [if propertyPermR prop then "r" else "",
+                                      if propertyPermW prop then "w" else "",
+                                      if propertyPermC prop then "c" else ""]
+
 bf_set_property_info [Obj object, Str prop_name, Lst info] = notyet
 bf_add_property [Obj object, Str prop_name, value, Lst info] = notyet
-bf_delete_property [Obj object, Str prop_name] = notyet
+
+traverseDescendants :: Database -> (Object -> Object) -> ObjId -> MOO ()
+traverseDescendants db f oid = do
+  liftSTM $ modifyObject oid db f
+  Just obj <- getObject oid
+  mapM_ (traverseDescendants db f) $ getChildren obj
+
+bf_delete_property [Obj object, Str prop_name] = do
+  obj <- getObject object >>= maybe (raise E_INVARG) return
+  unless (objectPermW obj) $ checkPermission (objectOwner obj)
+  prop <- getProperty obj prop_name
+  when (propertyInherited prop) $ raise E_PROPNF
+  db <- getDatabase
+  flip (traverseDescendants db) object $ \obj ->
+    obj { objectProperties = HM.delete name (objectProperties obj) }
+  return nothing
+  where name = T.toCaseFold prop_name
 
 bf_is_clear_property [Obj object, Str prop_name] = do
   obj <- getObject object >>= maybe (raise E_INVARG) return

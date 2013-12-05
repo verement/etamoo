@@ -112,9 +112,8 @@ fetchVariable var = do
 
 storeVariable :: Id -> Value -> MOO Value
 storeVariable var value = do
-  modifyFrame $ \frame -> frame {
-    variables = Map.insert var value (variables frame)
-    }
+  modifyFrame $ \frame ->
+    frame { variables = Map.insert var value (variables frame) }
   return value
 
 fetchProperty :: (ObjT, StrT) -> MOO Value

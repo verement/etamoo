@@ -173,7 +173,7 @@ installObjects dbObjs = do
           , propertyPermR     = (propPerms propval) .&. pf_read  /= 0
           , propertyPermW     = (propPerms propval) .&. pf_write /= 0
           , propertyPermC     = (propPerms propval) .&. pf_chown /= 0
-          }
+        }
 
         setPlayerFlags objs = do
           players <- asks users
