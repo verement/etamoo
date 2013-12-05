@@ -32,6 +32,7 @@ module MOO.Task ( MOO
                 , checkFloat
                 , checkWizard
                 , checkPermission
+                , checkValid
                 , binaryString
                 , random
                 , delayIO
@@ -146,36 +147,41 @@ setBuiltinProperty oid "name" (Str name) = do
   if objectIsPlayer obj
     then checkWizard
     else checkPermission (objectOwner obj)
-  liftSTM $ modifyObject oid db $ \obj -> obj { objectName = name }
+  liftSTM $ modifyObject oid db $ \obj -> return obj { objectName = name }
 setBuiltinProperty oid "owner" (Obj owner) = do
   checkWizard
   db <- getDatabase
-  liftSTM $ modifyObject oid db $ \obj -> obj { objectOwner = owner }
+  liftSTM $ modifyObject oid db $ \obj -> return obj { objectOwner = owner }
 setBuiltinProperty _ "location" (Obj _) = raise E_PERM
 setBuiltinProperty _ "contents" (Lst _) = raise E_PERM
 setBuiltinProperty oid "programmer" bit = do
   checkWizard
   db <- getDatabase
-  liftSTM $ modifyObject oid db $ \obj -> obj { objectProgrammer = truthOf bit }
+  liftSTM $ modifyObject oid db $ \obj ->
+    return obj { objectProgrammer = truthOf bit }
 setBuiltinProperty oid "wizard" bit = do
   checkWizard
   db <- getDatabase
-  liftSTM $ modifyObject oid db $ \obj -> obj { objectWizard = truthOf bit }
+  liftSTM $ modifyObject oid db $ \obj ->
+    return obj { objectWizard = truthOf bit }
 setBuiltinProperty oid "r" bit = do
   db <- getDatabase
   obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
   checkPermission (objectOwner obj)
-  liftSTM $ modifyObject oid db $ \obj -> obj { objectPermR = truthOf bit }
+  liftSTM $ modifyObject oid db $ \obj ->
+    return obj { objectPermR = truthOf bit }
 setBuiltinProperty oid "w" bit = do
   db <- getDatabase
   obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
   checkPermission (objectOwner obj)
-  liftSTM $ modifyObject oid db $ \obj -> obj { objectPermW = truthOf bit }
+  liftSTM $ modifyObject oid db $ \obj ->
+    return obj { objectPermW = truthOf bit }
 setBuiltinProperty oid "f" bit = do
   db <- getDatabase
   obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
   checkPermission (objectOwner obj)
-  liftSTM $ modifyObject oid db $ \obj -> obj { objectPermF = truthOf bit }
+  liftSTM $ modifyObject oid db $ \obj ->
+    return obj { objectPermF = truthOf bit }
 setBuiltinProperty _ _ _ = raise E_TYPE
 
 newtype CallStack = Stack [StackFrame]
@@ -287,6 +293,9 @@ checkPermission who = do
   if perm == who
     then return ()
     else checkWizard' perm
+
+checkValid :: ObjId -> MOO Object
+checkValid oid = getObject oid >>= maybe (raise E_INVARG) return
 
 binaryString :: StrT -> MOO ByteString
 binaryString = maybe (raise E_INVARG) (return . BS.pack) . text2binary

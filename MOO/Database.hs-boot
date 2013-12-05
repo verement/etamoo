@@ -12,4 +12,4 @@ import MOO.Object (Object)
 data Database
 
 dbObject :: ObjId -> Database -> STM (Maybe Object)
-modifyObject :: ObjId -> Database -> (Object -> Object) -> STM ()
+modifyObject :: ObjId -> Database -> (Object -> STM Object) -> STM ()

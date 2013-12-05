@@ -3,12 +3,14 @@
 
 module MOO.Builtins.Objects ( builtins ) where
 
+import Control.Concurrent.STM
 import Control.Monad (when, unless)
 import Data.Maybe
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.HashMap.Strict as HM
+import qualified Data.Set as S
 
 import MOO.Builtins.Common
 import MOO.Database
@@ -106,13 +108,60 @@ bf_property_info [Obj object, Str prop_name] = do
                                       if propertyPermC prop then "c" else ""]
 
 bf_set_property_info [Obj object, Str prop_name, Lst info] = notyet
-bf_add_property [Obj object, Str prop_name, value, Lst info] = notyet
 
-traverseDescendants :: Database -> (Object -> Object) -> ObjId -> MOO ()
-traverseDescendants db f oid = do
+traverseDescendants :: (Object -> MOO a) -> ObjId -> MOO ()
+traverseDescendants f oid = do
+  Just obj <- getObject oid
+  f obj
+  mapM_ (traverseDescendants f) $ getChildren obj
+
+modifyDescendants :: Database -> (Object -> STM Object) -> ObjId -> MOO ()
+modifyDescendants db f oid = do
   liftSTM $ modifyObject oid db f
   Just obj <- getObject oid
-  mapM_ (traverseDescendants db f) $ getChildren obj
+  mapM_ (modifyDescendants db f) $ getChildren obj
+
+bf_add_property [Obj object, Str prop_name, value, Lst info] = do
+  obj <- checkValid object
+  (owner, perms) <- case V.toList info of
+    [Obj owner, Str perms] -> return (owner, perms)
+    _                      -> raise E_INVARG
+  checkValid owner
+  let permSet = S.fromList (T.unpack $ T.toCaseFold perms)
+  unless (S.null $ permSet `S.difference` S.fromList "rwc") $ raise E_INVARG
+  unless (objectPermW obj) $ checkPermission (objectOwner obj)
+  checkPermission owner
+  flip traverseDescendants object $ \obj ->
+    when (isJust $ lookupPropertyRef obj name) $ raise E_INVARG
+
+  let definedProp = initProperty {
+          propertyName      = prop_name
+        , propertyValue     = Just value
+        , propertyInherited = False
+        , propertyOwner     = owner
+        , propertyPermR     = 'r' `S.member` permSet
+        , propertyPermW     = 'w' `S.member` permSet
+        , propertyPermC     = 'c' `S.member` permSet
+      }
+      inheritedProp = definedProp {
+          propertyInherited = True
+        , propertyValue     = Nothing
+       }
+      addProperty prop obj = do
+        propTVar <- newTVar prop
+        return obj { objectProperties =
+                        HM.insert name propTVar $ objectProperties obj }
+      addInheritedProperty prop obj =
+        flip addProperty obj $ if propertyPermC prop
+                               then prop { propertyOwner = objectOwner obj }
+                               else prop
+  db <- getDatabase
+  liftSTM $ modifyObject object db (addProperty definedProp)
+  mapM_ (modifyDescendants db $
+         addInheritedProperty inheritedProp) $ getChildren obj
+
+  return nothing
+  where name = T.toCaseFold prop_name
 
 bf_delete_property [Obj object, Str prop_name] = do
   obj <- getObject object >>= maybe (raise E_INVARG) return
@@ -120,8 +169,8 @@ bf_delete_property [Obj object, Str prop_name] = do
   prop <- getProperty obj prop_name
   when (propertyInherited prop) $ raise E_PROPNF
   db <- getDatabase
-  flip (traverseDescendants db) object $ \obj ->
-    obj { objectProperties = HM.delete name (objectProperties obj) }
+  flip (modifyDescendants db) object $ \obj ->
+    return obj { objectProperties = HM.delete name (objectProperties obj) }
   return nothing
   where name = T.toCaseFold prop_name
 
@@ -162,16 +211,16 @@ bf_disassemble [Obj object, Str verb_desc] = notyet
 
 bf_players [] = fmap (Lst . V.fromList . map Obj . allPlayers) getDatabase
 
-bf_is_player [Obj object] = do
-  obj <- getObject object >>= maybe (raise E_INVARG) return
-  return $ truthValue (objectIsPlayer obj)
+bf_is_player [Obj object] =
+  fmap (truthValue . objectIsPlayer) $
+    getObject object >>= maybe (raise E_INVARG) return
 
 bf_set_player_flag [Obj object, value] = do
   getObject object >>= maybe (raise E_INVARG) return
   checkWizard
   db <- getDatabase
   liftSTM $ modifyObject object db $
-    \obj -> obj { objectIsPlayer = isPlayer }
+    \obj -> return obj { objectIsPlayer = isPlayer }
   putDatabase $ setPlayer isPlayer object db
   unless isPlayer $ bootPlayer object
   return nothing

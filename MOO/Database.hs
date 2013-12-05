@@ -62,7 +62,7 @@ setObjects objs db = do
   tvarObjs <- mapM newTVarIO objs
   return db { objects = V.fromList tvarObjs }
 
-modifyObject :: ObjId -> Database -> (Object -> Object) -> STM ()
+modifyObject :: ObjId -> Database -> (Object -> STM Object) -> STM ()
 modifyObject oid db f = do
   case dbObjectRef oid db of
     Nothing      -> return ()
@@ -70,7 +70,7 @@ modifyObject oid db f = do
       maybeObject <- readTVar objTVar
       case maybeObject of
         Nothing  -> return ()
-        Just obj -> writeTVar objTVar (Just $ f obj)
+        Just obj -> writeTVar objTVar . Just =<< f obj
 
 {-
 isPlayer :: ObjId -> Database -> Bool
