@@ -82,44 +82,44 @@ liftSTM :: STM a -> MOO a
 liftSTM = lift . lift . lift
 
 data Environment = Env {
-    taskId           :: IntT
+    database         :: TVar Database
+  , taskId           :: IntT
   , startTime        :: ClockTime
   , exceptionHandler :: ExceptionHandler
   , indexLength      :: MOO Int
 }
 
-initEnvironment :: IO Environment
-initEnvironment = do
+initEnvironment :: TVar Database -> IO Environment
+initEnvironment db = do
   taskId    <- randomRIO (1, maxBound)
   startTime <- getClockTime
   return Env {
-      taskId           = taskId
+      database         = db
+    , taskId           = taskId
     , startTime        = startTime
     , exceptionHandler = Handler $ \(Exception _ m _) -> error (T.unpack m)
     , indexLength      = error "Invalid index context"
   }
 
 data TaskState = State {
-    database  :: TVar Database
-  , stack     :: CallStack
+    stack     :: CallStack
   , randomGen :: StdGen
   , delayedIO :: DelayedIO
 }
 
-initState :: TVar Database -> StdGen -> TaskState
-initState db gen = State {
-    database  = db
-  , stack     = Stack []
+initState :: StdGen -> TaskState
+initState gen = State {
+    stack     = Stack []
   , randomGen = gen
   , delayedIO = mempty
 }
 
 getDatabase :: MOO Database
-getDatabase = liftSTM . readTVar =<< gets database
+getDatabase = liftSTM . readTVar =<< asks database
 
 putDatabase :: Database -> MOO ()
 putDatabase db = do
-  dbTVar <- gets database
+  dbTVar <- asks database
   liftSTM $ writeTVar dbTVar db
 
 getObject :: ObjId -> MOO (Maybe Object)
@@ -258,7 +258,7 @@ catchException action handler = callCC $ \k -> local (mkHandler k) action
 
 raiseException :: Exception -> MOO a
 raiseException except = do
-  Handler handler <- reader exceptionHandler
+  Handler handler <- asks exceptionHandler
   handler except
   error "Returned from exception handler"
 

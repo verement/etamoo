@@ -19,9 +19,9 @@ import Data.Map (Map)
 import qualified Data.Vector as V
 import qualified Data.IntSet as IS
 
+import MOO.Types
 import MOO.Object
 import MOO.Task
-import MOO.Types
 
 data Database = Database {
     objects     :: Vector (TVar (Maybe Object))

@@ -1,6 +1,6 @@
 -- -*- Haskell -*-
 
-module MOO.Object (Object) where
+module MOO.Object ( Object ) where
 
 data Object
 
