@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module MOO.Task ( MOO
+                , DelayedIO ( .. )
                 , Task
                 , Environment ( .. )
                 , TaskState ( .. )
@@ -14,18 +15,26 @@ module MOO.Task ( MOO
                 , getDatabase
                 , putDatabase
                 , getObject
+                , getProperty
+                , modifyProperty
+                , setBuiltinProperty
                 , reader
                 , local
+                , initFrame
+                , pushFrame
                 , frame
+                , caller
                 , modifyFrame
                 , catchException
                 , raiseException
                 , notyet
                 , raise
                 , checkFloat
+                , checkWizard
+                , checkPermission
                 , binaryString
                 , random
-                , appendIO
+                , delayIO
                 , runContT
                 , evalStateT
                 , runReaderT
@@ -34,13 +43,13 @@ module MOO.Task ( MOO
 import Control.Monad.Cont
 import Control.Monad.State
 import Control.Monad.Reader
-import Control.Monad.Identity
 import Control.Arrow (first)
 import Control.Concurrent.STM
 import System.Random hiding (random)
 import System.Time
 import Data.ByteString (ByteString)
 import Data.Map (Map)
+import Data.Monoid
 
 import qualified Data.Map as Map
 import qualified Data.Text as T
@@ -54,7 +63,20 @@ import MOO.Object
 data Task = Task
           deriving Show
 
-type MOO = ReaderT Environment (ContT Value (StateT TaskState STM))
+type MOO = ReaderT Environment
+           (ContT Value
+            (StateT TaskState STM))
+
+newtype DelayedIO = DelayedIO { runDelayed :: IO () }
+
+instance Monoid DelayedIO where
+  mempty  = DelayedIO $ return ()
+  (DelayedIO a) `mappend` (DelayedIO b) = DelayedIO (a >> b)
+
+delayIO :: IO () -> MOO ()
+delayIO io = do
+  existing <- gets delayedIO
+  modify $ \st -> st { delayedIO = existing `mappend` (DelayedIO io) }
 
 liftSTM :: STM a -> MOO a
 liftSTM = lift . lift . lift
@@ -81,15 +103,15 @@ data TaskState = State {
     database  :: TVar Database
   , stack     :: CallStack
   , randomGen :: StdGen
-  , queuedIO  :: IO ()
+  , delayedIO :: DelayedIO
 }
 
 initState :: TVar Database -> StdGen -> TaskState
 initState db gen = State {
     database  = db
-  , stack     = initStack
+  , stack     = Stack []
   , randomGen = gen
-  , queuedIO  = return ()
+  , delayedIO = mempty
 }
 
 getDatabase :: MOO Database
@@ -103,27 +125,94 @@ putDatabase db = do
 getObject :: ObjId -> MOO (Maybe Object)
 getObject oid = liftSTM . dbObject oid =<< getDatabase
 
+getProperty :: Object -> StrT -> MOO Property
+getProperty obj name = do
+  maybeProp <- liftSTM $ lookupProperty obj (T.toCaseFold name)
+  maybe (raise E_PROPNF) return maybeProp
+
+modifyProperty :: Object -> StrT -> (Property -> MOO Property) -> MOO ()
+modifyProperty obj name f = do
+  case lookupPropertyRef obj (T.toCaseFold name) of
+    Nothing       -> raise E_PROPNF
+    Just propTVar -> do
+      prop  <- liftSTM $ readTVar propTVar
+      prop' <- f prop
+      liftSTM $ writeTVar propTVar prop'
+
+setBuiltinProperty :: ObjId -> StrT -> Value -> MOO ()
+setBuiltinProperty oid "name" (Str name) = do
+  db <- getDatabase
+  if isPlayer oid db
+    then checkWizard
+    else do
+      obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
+      checkPermission (objectOwner obj)
+  liftSTM $ modifyObject oid db $ \obj -> obj { objectName = name }
+setBuiltinProperty oid "owner" (Obj owner) = do
+  checkWizard
+  db <- getDatabase
+  liftSTM $ modifyObject oid db $ \obj -> obj { objectOwner = owner }
+setBuiltinProperty _ "location" (Obj location) = raise E_PERM
+setBuiltinProperty _ "contents" (Lst contents) = raise E_PERM
+setBuiltinProperty oid "programmer" bit = do
+  checkWizard
+  db <- getDatabase
+  liftSTM $ modifyObject oid db $ \obj -> obj { objectProgrammer = truthOf bit }
+setBuiltinProperty oid "wizard" bit = do
+  checkWizard
+  db <- getDatabase
+  liftSTM $ modifyObject oid db $ \obj -> obj { objectWizard = truthOf bit }
+setBuiltinProperty oid "r" bit = do
+  db <- getDatabase
+  obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
+  checkPermission (objectOwner obj)
+  liftSTM $ modifyObject oid db $ \obj -> obj { objectPermR = truthOf bit }
+setBuiltinProperty oid "w" bit = do
+  db <- getDatabase
+  obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
+  checkPermission (objectOwner obj)
+  liftSTM $ modifyObject oid db $ \obj -> obj { objectPermW = truthOf bit }
+setBuiltinProperty oid "f" bit = do
+  db <- getDatabase
+  obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
+  checkPermission (objectOwner obj)
+  liftSTM $ modifyObject oid db $ \obj -> obj { objectPermF = truthOf bit }
+setBuiltinProperty _ _ _ = raise E_TYPE
+
 newtype CallStack = Stack [StackFrame]
                   deriving Show
 
 data StackFrame = Frame {
-    variables :: Map Id Value
-  , debugBit  :: Bool
+    variables   :: Map Id Value
+  , debugBit    :: Bool
+  , permissions :: ObjId
 } deriving Show
 
-initStack :: CallStack
-initStack = Stack [
-  Frame {
-       variables = mkInitVars
-     , debugBit  = True
-   }]
+initFrame :: Bool -> ObjId -> StackFrame
+initFrame debug programmer = Frame {
+    variables   = mkInitVars
+  , debugBit    = debug
+  , permissions = programmer
+}
+
+pushFrame :: StackFrame -> MOO ()
+pushFrame frame = modify $ \st@State { stack = Stack frames } ->
+  st { stack = Stack (frame : frames) }
 
 currentFrame :: CallStack -> StackFrame
-currentFrame (Stack (x:_)) = x
-currentFrame (Stack  [])   = error "Empty call stack"
+currentFrame (Stack (frame:_)) = frame
+currentFrame (Stack [])        = error "Empty call stack"
+
+previousFrame :: CallStack -> Maybe StackFrame
+previousFrame (Stack (_:frame:_)) = Just frame
+previousFrame (Stack [_])         = Nothing
+previousFrame (Stack [])          = error "Empty call stack"
 
 frame :: (StackFrame -> a) -> MOO a
 frame f = gets (f . currentFrame . stack)
+
+caller :: (StackFrame -> a) -> MOO (Maybe a)
+caller f = gets (fmap f . previousFrame . stack)
 
 modifyFrame :: (StackFrame -> StackFrame) -> MOO ()
 modifyFrame f = modify $ \st@State { stack = Stack (frame:stack) } ->
@@ -185,6 +274,21 @@ checkFloat flt | isInfinite flt = raise E_FLOAT
                | isNaN      flt = raise E_INVARG
                | otherwise      = return (Flt flt)
 
+checkWizard' :: ObjId -> MOO ()
+checkWizard' perm = do
+  wizard <- fmap (maybe False objectWizard) $ getObject perm
+  unless wizard $ raise E_PERM
+
+checkWizard :: MOO ()
+checkWizard = frame permissions >>= checkWizard'
+
+checkPermission :: ObjId -> MOO ()
+checkPermission who = do
+  perm <- frame permissions
+  if perm == who
+    then return ()
+    else checkWizard' perm
+
 binaryString :: StrT -> MOO ByteString
 binaryString = maybe (raise E_INVARG) (return . BS.pack) . text2binary
 
@@ -194,8 +298,3 @@ random range = do
   let (r, g') = randomR range g
   modify $ \st -> st { randomGen = g' }
   return r
-
-appendIO :: IO () -> MOO ()
-appendIO io = do
-  currentIO <- gets queuedIO
-  modify $ \st -> st { queuedIO = currentIO >> io }

@@ -12,6 +12,7 @@ module MOO.Types ( IntT
                  , Type(..)
                  , Value(..)
                  , Error(..)
+                 , nothing
                  , fromInt
                  , fromFlt
                  , fromStr
@@ -58,6 +59,8 @@ data Value = Int !IntT
            | Err !ErrT
            | Lst !LstT
            deriving Show
+
+nothing = truthValue False
 
 fromInt :: Value -> IntT
 fromInt (Int x) = x

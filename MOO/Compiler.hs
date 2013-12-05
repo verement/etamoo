@@ -4,7 +4,7 @@
 module MOO.Compiler ( compileExpr ) where
 
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when, void)
+import Control.Monad (when, unless, void)
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -105,35 +105,45 @@ compileExpr expr = catchDebug $ case expr of
                                 Lst{} -> raise E_TYPE
                                 _     -> return $ truthValue (a `op` b)
 
-getProperty :: ObjT -> StrT -> MOO Value
-getProperty oid name = do
-  obj <- getObject oid >>= maybe (raise E_INVIND) return
-  maybe (search obj) (return . ($ obj)) $ builtinProperty name'
-  where search _ = undefined
-        name' = T.toCaseFold name
-
-{-
-getPropValue obj pn = maybe (search obj)
-                      (return . Just . ($ obj)) $ builtinProperty pn'
-  where pn' = T.toCaseFold pn
-        search obj = case HM.lookup pn (properties obj) of
-          Nothing -> raise E_PROPNF
-
-maybe (search $ parent obj) (return . propValue) $
-                     HM.lookup pn (properties obj)
--}
-
-getVariable :: Id -> MOO Value
-getVariable var = do
+fetchVariable :: Id -> MOO Value
+fetchVariable var = do
   vars <- frame variables
   maybe (raise E_VARNF) return $ Map.lookup var vars
 
-putVariable :: Id -> Value -> MOO Value
-putVariable var value = do
+storeVariable :: Id -> Value -> MOO Value
+storeVariable var value = do
   modifyFrame $ \frame -> frame {
     variables = Map.insert var value (variables frame)
     }
   return value
+
+fetchProperty :: (ObjT, StrT) -> MOO Value
+fetchProperty (oid, name) = do
+  obj <- getObject oid >>= maybe (raise E_INVIND) return
+  maybe (search False obj) (return . ($ obj)) $ builtinProperty name'
+  where name' = T.toCaseFold name
+
+        search skipPermCheck obj = do
+          prop <- getProperty obj name'
+          unless (skipPermCheck || propertyPermR prop) $
+            checkPermission (propertyOwner prop)
+          case propertyValue prop of
+            Just value -> return value
+            Nothing    -> do
+              parentObj <- maybe (return Nothing) getObject (parent obj)
+              maybe (fail $ "No inherited value for property " ++
+                     T.unpack name) (search True) parentObj
+
+storeProperty :: (ObjT, StrT) -> Value -> MOO Value
+storeProperty (oid, name) value = do
+  obj <- getObject oid >>= maybe (raise E_INVIND) return
+  if isBuiltinProperty name'
+    then setBuiltinProperty oid name' value
+    else modifyProperty obj name' $ \prop -> do
+      unless (propertyPermW prop) $ checkPermission (propertyOwner prop)
+      return prop { propertyValue = Just value }
+  return value
+  where name' = T.toCaseFold name
 
 withIndexLength :: Value -> MOO a -> MOO a
 withIndexLength expr =
@@ -163,19 +173,22 @@ lValue :: Expr -> LValue
 
 lValue (Variable var) = LValue fetch store change
   where var'  = T.toCaseFold var
-        fetch = getVariable var'
-        store = putVariable var'
+        fetch = fetchVariable var'
+        store = storeVariable var'
 
         change = do
           value <- fetch
           return (value, store)
 
-lValue (PropRef objExpr nameExpr) = LValue fetch (const notyet) notyet
-  where fetch = do
+lValue (PropRef objExpr nameExpr) = LValue fetch store notyet
+  where fetch = getRefs >>= fetchProperty
+        store value = getRefs >>= flip storeProperty value
+
+        getRefs = do
           objRef  <- compileExpr objExpr
           nameRef <- compileExpr nameExpr
           case (objRef, nameRef) of
-            (Obj oid, Str name) -> getProperty oid name
+            (Obj oid, Str name) -> return (oid, name)
             _                   -> raise E_TYPE
 
 lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
@@ -307,7 +320,7 @@ scatterAssign items args = do
               walk items r noptAvail
         walk [] _ _ = return ()
 
-        assign var = putVariable (T.toCaseFold var)
+        assign var = storeVariable (T.toCaseFold var)
 
 expand :: [Arg] -> MOO [Value]
 expand (a:as) = case a of

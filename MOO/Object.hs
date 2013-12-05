@@ -2,12 +2,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module MOO.Object ( Object (..)
+                  , Property (..)
                   , initObject
+                  , initProperty
                   , getParent
                   , getChildren
                   , builtinProperty
+                  , isBuiltinProperty
+                  , objectForMaybe
+                  , setProperties
+                  , lookupPropertyRef
+                  , lookupProperty
+                  , definedProperties
                   ) where
 
+import Control.Concurrent.STM
 import Data.HashMap.Strict (HashMap)
 import Data.Text (Text)
 import Data.IntSet (IntSet)
@@ -20,7 +29,6 @@ import qualified Data.IntSet as IS
 
 import MOO.Types
 import MOO.Verb
-import MOO.Types
 
 data Object = Object {
   -- Attributes
@@ -28,18 +36,18 @@ data Object = Object {
   , children       :: IntSet
 
   -- Built-in properties
-  , slotName       :: StrT
-  , slotOwner      :: ObjT
-  , slotLocation   :: Maybe ObjId
-  , slotContents   :: IntSet
-  , slotProgrammer :: Bool
-  , slotWizard     :: Bool
-  , slotR          :: Bool
-  , slotW          :: Bool
-  , slotF          :: Bool
+  , objectName       :: StrT
+  , objectOwner      :: ObjT
+  , objectLocation   :: Maybe ObjId
+  , objectContents   :: IntSet
+  , objectProgrammer :: Bool
+  , objectWizard     :: Bool
+  , objectPermR      :: Bool
+  , objectPermW      :: Bool
+  , objectPermF      :: Bool
 
   -- Definitions
-  , properties     :: HashMap StrT Property
+  , properties     :: HashMap StrT (TVar Property)
   , verbs          :: [Verb]
 }
 
@@ -47,15 +55,15 @@ initObject = Object {
     parent         = Nothing
   , children       = IS.empty
 
-  , slotName       = T.empty
-  , slotOwner      = -1
-  , slotLocation   = Nothing
-  , slotContents   = IS.empty
-  , slotProgrammer = False
-  , slotWizard     = False
-  , slotR          = False
-  , slotW          = False
-  , slotF          = False
+  , objectName       = T.empty
+  , objectOwner      = -1
+  , objectLocation   = Nothing
+  , objectContents   = IS.empty
+  , objectProgrammer = False
+  , objectWizard     = False
+  , objectPermR      = False
+  , objectPermW      = False
+  , objectPermF      = False
 
   , properties     = HM.empty
   , verbs          = []
@@ -71,40 +79,38 @@ getChildren :: Object -> [ObjId]
 getChildren = IS.elems . children
 
 data Property = Property {
-    propName      :: StrT
-  , propValue     :: Maybe Value
-  , propInherited :: Bool
+    propertyName      :: StrT
+  , propertyValue     :: Maybe Value
+  , propertyInherited :: Bool
 
-  , propOwner     :: ObjT
-  , propPermR     :: Bool
-  , propPermW     :: Bool
-  , propPermC     :: Bool
+  , propertyOwner     :: ObjT
+  , propertyPermR     :: Bool
+  , propertyPermW     :: Bool
+  , propertyPermC     :: Bool
 } deriving Show
 
-{-
-getProperty :: Object -> Text -> Maybe Property
-getProperty obj pn = HM.lookup (T.toCaseFold pn) (properties obj)
+initProperty = Property {
+    propertyName      = ""
+  , propertyValue     = Nothing
+  , propertyInherited = False
 
-getPropValue :: Object -> Text -> Maybe Value
-getPropValue obj pn = get (T.toCaseFold pn) obj
-  where get pn obj = do
-          p <- HM.lookup pn $ properties obj
-          case propValue p of
-            Just v  -> return v
-            Nothing -> parent obj >>= get pn
--}
+  , propertyOwner     = -1
+  , propertyPermR     = False
+  , propertyPermW     = False
+  , propertyPermC     = False
+}
 
 builtinProperty :: StrT -> Maybe (Object -> Value)
-builtinProperty "name"       = Just (Str        . slotName)
-builtinProperty "owner"      = Just (Obj        . slotOwner)
-builtinProperty "location"   = Just (Obj        . objectForMaybe . slotLocation)
-builtinProperty "contents"   = Just (Lst . V.fromList .
-                                     map Obj . IS.elems . slotContents)
-builtinProperty "programmer" = Just (truthValue . slotProgrammer)
-builtinProperty "wizard"     = Just (truthValue . slotWizard)
-builtinProperty "r"          = Just (truthValue . slotR)
-builtinProperty "w"          = Just (truthValue . slotW)
-builtinProperty "f"          = Just (truthValue . slotF)
+builtinProperty "name"       = Just (Str . objectName)
+builtinProperty "owner"      = Just (Obj . objectOwner)
+builtinProperty "location"   = Just (Obj . objectForMaybe . objectLocation)
+builtinProperty "contents"   = Just (Lst . V.fromList
+                                     . map Obj . IS.elems . objectContents)
+builtinProperty "programmer" = Just (truthValue . objectProgrammer)
+builtinProperty "wizard"     = Just (truthValue . objectWizard)
+builtinProperty "r"          = Just (truthValue . objectPermR)
+builtinProperty "w"          = Just (truthValue . objectPermW)
+builtinProperty "f"          = Just (truthValue . objectPermF)
 builtinProperty _            = Nothing
 
 isBuiltinProperty = isJust . builtinProperty . T.toCaseFold
@@ -112,3 +118,24 @@ isBuiltinProperty = isJust . builtinProperty . T.toCaseFold
 objectForMaybe :: Maybe ObjId -> ObjId
 objectForMaybe (Just oid) = oid
 objectForMaybe Nothing    = -1
+
+setProperties :: [Property] -> Object -> IO Object
+setProperties props obj = do
+  propHash <- mkHash props
+  return obj { properties = propHash }
+  where mkHash = fmap HM.fromList . mapM mkAssoc
+        mkAssoc prop = do
+          tvarProp <- newTVarIO prop
+          return (T.toCaseFold $ propertyName prop, tvarProp)
+
+lookupPropertyRef :: Object -> StrT -> Maybe (TVar Property)
+lookupPropertyRef obj name = HM.lookup name (properties obj)
+
+lookupProperty :: Object -> StrT -> STM (Maybe Property)
+lookupProperty obj name = maybe (return Nothing) (fmap Just . readTVar) $
+                          lookupPropertyRef obj name
+
+definedProperties :: Object -> STM [StrT]
+definedProperties obj = do
+  props <- mapM readTVar $ HM.elems (properties obj)
+  return $ map propertyName $ filter (not . propertyInherited) props

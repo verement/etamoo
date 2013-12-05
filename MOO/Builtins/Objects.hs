@@ -4,7 +4,9 @@
 module MOO.Builtins.Objects ( builtins ) where
 
 import Control.Monad (unless)
+import Data.Maybe
 
+import qualified Data.Text as T
 import qualified Data.Vector as V
 
 import MOO.Builtins.Common
@@ -67,8 +69,7 @@ builtins = [
 bf_create (Obj parent : owner) = notyet
 bf_chparent [Obj object, Obj new_parent] = notyet
 
-bf_valid [Obj object] =
-  fmap (truthValue . maybe False (const True)) $ getObject object
+bf_valid [Obj object] = fmap (truthValue . isJust) $ getObject object
 
 bf_parent [Obj object] =
   fmap (Obj . getParent) $ getObject object >>= maybe (raise E_INVARG) return
@@ -88,13 +89,35 @@ bf_move [Obj what, Obj where_] = notyet
 
 -- 4.4.3.3 Operations on Properties
 
-bf_properties [Obj object] = notyet
+bf_properties [Obj object] = do
+  obj <- getObject object >>= maybe (raise E_INVARG) return
+  unless (objectPermR obj) $ checkPermission (objectOwner obj)
+  fmap (Lst . V.fromList . map Str) $ liftSTM $ definedProperties obj
+
 bf_property_info [Obj object, Str prop_name] = notyet
 bf_set_property_info [Obj object, Str prop_name, Lst info] = notyet
 bf_add_property [Obj object, Str prop_name, value, Lst info] = notyet
 bf_delete_property [Obj object, Str prop_name] = notyet
-bf_is_clear_property [Obj object, Str prop_name] = notyet
-bf_clear_property [Obj object, Str prop_name] = notyet
+
+bf_is_clear_property [Obj object, Str prop_name] = do
+  obj <- getObject object >>= maybe (raise E_INVARG) return
+  if isBuiltinProperty prop_name
+    then return $ truthValue False
+    else do
+    prop <- getProperty obj prop_name
+    unless (propertyPermR prop) $ checkPermission (propertyOwner prop)
+    return (truthValue $ isNothing $ propertyValue prop)
+
+bf_clear_property [Obj object, Str prop_name] = do
+  obj <- getObject object >>= maybe (raise E_INVARG) return
+  if isBuiltinProperty prop_name
+    then raise E_PERM
+    else do
+    modifyProperty obj prop_name $ \prop -> do
+      unless (propertyPermW prop) $ checkPermission (propertyOwner prop)
+      unless (propertyInherited prop) $ raise E_INVARG
+      return prop { propertyValue = Nothing }
+    return nothing
 
 -- 4.4.3.4 Operations on Verbs
 

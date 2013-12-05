@@ -1,9 +1,11 @@
 
 module MOO.Database ( Database
                     , initDatabase
+                    , dbObjectRef
                     , dbObject
                     , maxObject
                     , setObjects
+                    , modifyObject
                     , isPlayer
                     , allPlayers
                     , setPlayer
@@ -33,11 +35,14 @@ initDatabase = Database {
   , queuedTasks = []
 }
 
-dbObject :: ObjId -> Database -> STM (Maybe Object)
-dbObject oid db
-  | oid < 0 || oid >= V.length objs = return Nothing
-  | otherwise                       = readTVar (objs V.! oid)
+dbObjectRef :: ObjId -> Database -> Maybe (TVar (Maybe Object))
+dbObjectRef oid db
+  | oid < 0 || oid >= V.length objs = Nothing
+  | otherwise                       = Just (objs V.! oid)
   where objs = objects db
+
+dbObject :: ObjId -> Database -> STM (Maybe Object)
+dbObject oid db = maybe (return Nothing) readTVar $ dbObjectRef oid db
 
 maxObject :: Database -> ObjId
 maxObject db = V.length (objects db) - 1
@@ -46,6 +51,16 @@ setObjects :: [Maybe Object] -> Database -> IO Database
 setObjects objs db = do
   tvarObjs <- mapM newTVarIO objs
   return db { objects = V.fromList tvarObjs }
+
+modifyObject :: ObjId -> Database -> (Object -> Object) -> STM ()
+modifyObject oid db f = do
+  case dbObjectRef oid db of
+    Nothing      -> return ()
+    Just objTVar -> do
+      maybeObject <- readTVar objTVar
+      case maybeObject of
+        Nothing  -> return ()
+        Just obj -> writeTVar objTVar (Just $ f obj)
 
 isPlayer :: ObjId -> Database -> Bool
 isPlayer oid db = oid `IS.member` players db

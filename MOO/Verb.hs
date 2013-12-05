@@ -6,13 +6,18 @@ module MOO.Verb ( Verb ) where
 import Data.Text
 import {-# SOURCE #-} MOO.Object
 
+import MOO.AST
+
 data Verb = Verb {
-    name           :: Text
-  , owner          :: Object
-  , permissionR    :: Bool
-  , permissionW    :: Bool
-  , permissionX    :: Bool
-  , permissionD    :: Bool
+    verbName       :: Text
+  , program        :: Program
+
+  , verbOwner      :: Object
+  , verbPermR      :: Bool
+  , verbPermW      :: Bool
+  , verbPermX      :: Bool
+  , verbPermD      :: Bool
+
   , directObject   :: ObjSpec
   , preposition    :: PrepSpec
   , indirectObject :: ObjSpec

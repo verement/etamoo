@@ -7,6 +7,7 @@ import Control.Monad.Reader (asks)
 
 import MOO.Types
 import MOO.Task
+import MOO.Object
 import {-# SOURCE #-} MOO.Builtins
 import MOO.Builtins.Common
 
@@ -58,9 +59,12 @@ bf_function_info [Str name] =
 
 bf_eval [Str string] = notyet
 
-bf_set_task_perms [Obj who] = notyet
+bf_set_task_perms [Obj who] = do
+  checkPermission who
+  modifyFrame $ \frame -> frame { permissions = who }
+  return nothing
 
-bf_caller_perms [] = notyet
+bf_caller_perms [] = fmap (Obj . objectForMaybe) $ caller permissions
 
 bf_ticks_left [] = notyet
 bf_seconds_left [] = notyet

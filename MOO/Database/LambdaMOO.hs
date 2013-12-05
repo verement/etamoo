@@ -2,13 +2,13 @@
 module MOO.Database.LambdaMOO ( loadLMDatabase ) where
 
 import Control.Monad.Reader
-import Control.Concurrent.STM (newTVarIO)
 import Text.Parsec
 import Data.Word (Word)
 import Data.List (sort)
 import Data.Maybe (catMaybes)
 import Data.Array
 import Data.Bits
+import System.IO (hFlush, stdout)
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -18,8 +18,6 @@ import MOO.Database
 import MOO.Object
 import MOO.Types
 import MOO.Parser
-
--- Functions for loading a database from a LambdaMOO dump file ...
 
 loadLMDatabase :: FilePath -> IO (Either ParseError Database)
 loadLMDatabase dbFile = do
@@ -65,16 +63,10 @@ lmDatabase = do
       T.unpack (toLiteral $ Lst $ V.fromList $ sort $ map Obj users)
 
     liftIO $ putStrLn "Reading objects..."
-    objects <- count nobjs read_object
-
-    liftIO $ putStrLn "Installing objects..."
-    installObjects objects
+    count nobjs read_object >>= installObjects
 
     liftIO $ putStrLn "Reading verb programs..."
-    programs <- count nprogs program
-
-    liftIO $ putStrLn "Installing verb programs..."
-    installPrograms programs
+    count nprogs program >>= installPrograms
 
     liftIO $ putStrLn "Reading forked and suspended tasks..."
     read_task_queue
@@ -98,22 +90,22 @@ data DBObject = DBObject {
 }
 
 data ObjectDef = ObjectDef {
-    objectName     :: String
-  , objectFlags    :: Int
-  , objectOwner    :: ObjId
+    objName     :: String
+  , objFlags    :: Int
+  , objOwner    :: ObjId
 
-  , objectLocation :: ObjId
-  , objectContents :: ObjId
-  , objectNext     :: ObjId
+  , objLocation :: ObjId
+  , objContents :: ObjId
+  , objNext     :: ObjId
 
-  , objectParent   :: ObjId
-  , objectChild    :: ObjId
-  , objectSibling  :: ObjId
+  , objParent   :: ObjId
+  , objChild    :: ObjId
+  , objSibling  :: ObjId
 
-  , objectVerbdefs :: [VerbDef]
+  , objVerbdefs :: [VerbDef]
 
-  , objectPropdefs :: [PropDef]
-  , objectPropvals :: [PropVal]
+  , objPropdefs :: [PropDef]
+  , objPropvals :: [PropVal]
 }
 
 data VerbDef = VerbDef {
@@ -136,15 +128,48 @@ installObjects dbObjs = do
   -- Check sequential object ordering
   mapM_ checkObjId (zip [0..] dbObjs)
 
-  let dbArray = listArray (0, length dbObjs - 1) $ map valid dbObjs
-      objs = map (snd . objectForDBObject dbArray) dbObjs
-
+  objs <- liftIO $ mapM installProperties preObjs
   getState >>= liftIO . setObjects objs >>= putState
 
-  where checkObjId (objId, dbObj) =
+  where dbArray = listArray (0, length dbObjs - 1) $ map valid dbObjs
+        preObjs = map (objectForDBObject dbArray) dbObjs
+
+        checkObjId (objId, dbObj) =
           unless (objId == oid dbObj) $
             fail $ "Unexpected object #" ++ show (oid dbObj) ++
                    " (expecting #" ++ show objId ++ ")"
+
+        installProperties (_  , Nothing)  = return Nothing
+        installProperties (oid, Just obj) =
+          let Just def = dbArray ! oid
+              propvals = objPropvals def
+          in fmap Just $ setProperties (mkProperties False oid propvals) obj
+
+        mkProperties :: Bool -> ObjId -> [PropVal] -> [Property]
+        mkProperties _ _ [] = []
+        mkProperties inherited oid propvals
+          | inRange (bounds dbArray) oid =
+            case maybeDef of
+              Nothing  -> []
+              Just def ->
+                let propdefs = objPropdefs def
+                    (mine, others) = splitAt (length propdefs) propvals
+                    properties = zipWith (mkProperty inherited) propdefs mine
+                in properties ++ mkProperties True (objParent def) others
+          | otherwise = []
+          where maybeDef = dbArray ! oid
+
+        mkProperty :: Bool -> PropDef -> PropVal -> Property
+        mkProperty inherited propdef propval = initProperty {
+            propertyName      = T.pack propdef
+          , propertyValue     = either (const Nothing) id $
+                                valueFromVar (propVar propval)
+          , propertyInherited = inherited
+          , propertyOwner     = propOwner propval
+          , propertyPermR     = (propPerms propval) .&. pf_read  /= 0
+          , propertyPermW     = (propPerms propval) .&. pf_write /= 0
+          , propertyPermC     = (propPerms propval) .&. pf_chown /= 0
+        }
 
 objectTrail :: Array ObjId (Maybe ObjectDef) -> ObjectDef ->
                (ObjectDef -> ObjId) -> (ObjectDef -> ObjId) -> [ObjId]
@@ -159,23 +184,23 @@ objectForDBObject :: Array ObjId (Maybe ObjectDef) ->
                      DBObject -> (ObjId, Maybe Object)
 objectForDBObject dbArray dbObj = (oid dbObj, fmap mkObject $ valid dbObj)
   where mkObject def = initObject {
-            parent         = maybeObject (objectParent   def)
-          , children       = IS.fromList $
-                             objectTrail dbArray def objectChild objectSibling
-          , slotName       = T.pack     $ objectName     def
-          , slotOwner      =              objectOwner    def
-          , slotLocation   = maybeObject (objectLocation def)
-          , slotContents   = IS.fromList $
-                             objectTrail dbArray def objectContents objectNext
-          , slotProgrammer = flag def flag_programmer
-          , slotWizard     = flag def flag_wizard
-          , slotR          = flag def flag_read
-          , slotW          = flag def flag_write
-          , slotF          = flag def flag_fertile
+            parent           = maybeObject (objParent   def)
+          , children         = IS.fromList $
+                               objectTrail dbArray def objChild objSibling
+          , objectName       = T.pack     $ objName     def
+          , objectOwner      =              objOwner    def
+          , objectLocation   = maybeObject (objLocation def)
+          , objectContents   = IS.fromList $
+                               objectTrail dbArray def objContents objNext
+          , objectProgrammer = flag def flag_programmer
+          , objectWizard     = flag def flag_wizard
+          , objectPermR      = flag def flag_read
+          , objectPermW      = flag def flag_write
+          , objectPermF      = flag def flag_fertile
         }
 
         flag def fl = let mask = 1 `shiftL` fl
-                      in (objectFlags def .&. mask) /= 0
+                      in (objFlags def .&. mask) /= 0
 
         maybeObject :: ObjId -> Maybe ObjId
         maybeObject oid
@@ -247,18 +272,18 @@ read_object = (<?> "object") $ do
     propvals <- count (fromIntegral nprops) read_propval
 
     return $ Just ObjectDef {
-        objectName     = name
-      , objectFlags    = fromIntegral flags
-      , objectOwner    = owner
-      , objectLocation = location
-      , objectContents = contents
-      , objectNext     = next
-      , objectParent   = parent
-      , objectChild    = child
-      , objectSibling  = sibling
-      , objectVerbdefs = verbdefs
-      , objectPropdefs = propdefs
-      , objectPropvals = propvals
+        objName     = name
+      , objFlags    = fromIntegral flags
+      , objOwner    = owner
+      , objLocation = location
+      , objContents = contents
+      , objNext     = next
+      , objParent   = parent
+      , objChild    = child
+      , objSibling  = sibling
+      , objVerbdefs = verbdefs
+      , objPropdefs = propdefs
+      , objPropvals = propvals
     }
 
   return DBObject { oid = oid, valid = objectDef }
@@ -352,7 +377,8 @@ program = do
   char '\n'
 
   let verbdesc = "#" ++ show oid ++ ":" ++ show vnum
-  -- liftIO $ putStrLn $ "  " ++ verbdesc
+
+  liftIO $ putStr ("  " ++ verbdesc ++ "     \r") >> hFlush stdout
 
   program <- read_program
   case program of
@@ -535,3 +561,7 @@ flag_read       = 4
 flag_write      = 5
 flag_obsolete_2 = 6
 flag_fertile    = 7
+
+pf_read  = 01
+pf_write = 02
+pf_chown = 04
