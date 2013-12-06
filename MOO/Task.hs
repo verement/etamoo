@@ -73,16 +73,21 @@ liftSTM :: STM a -> MOO a
 liftSTM = lift . lift . lift
 
 data Task = Task {
-    taskId      :: IntT
-  , computation :: MOO TaskDisposition
+    taskId          :: IntT
+  , taskDatabase    :: TVar Database
+  , taskComputation :: MOO TaskDisposition
+  , taskState       :: TaskState
 }
 
-initTask :: MOO TaskDisposition -> IO Task
-initTask comp = do
+initTask :: TVar Database -> MOO TaskDisposition -> IO Task
+initTask db comp = do
   taskId <- randomRIO (1, maxBound)
+  gen <- getStdGen
   return Task {
-      taskId      = taskId
-    , computation = comp
+      taskId          = taskId
+    , taskDatabase    = db
+    , taskComputation = comp
+    , taskState       = initState gen
   }
 
 type Continuation = Value -> MOO TaskDisposition
@@ -92,22 +97,23 @@ data TaskDisposition = Complete Value
                      | Suspend (Maybe IntT) Continuation
                      | Read Continuation
 
-runTask :: TVar Database -> Task -> TaskState -> IO (TaskDisposition, TaskState)
-runTask db task state = do
-  env <- initEnvironment task db
-  let comp   = computation task
+runTask :: Task -> IO (TaskDisposition, Task)
+runTask task = do
+  env <- initEnvironment task
+  let comp   = taskComputation task
       comp'  = callCC $ \k -> local (\r -> r { interruptHandler = k }) comp
+      state  = taskState task
       contM  = runReaderT comp' env
       stateM = runContT contM return
-      stmM   = runStateT stateM state { delayedIO = mempty }
+      stmM   = runStateT stateM state
   (result, state') <- atomically stmM
   runDelayed $ delayedIO state'
-  return (result, state')
+  return (result, task { taskState = state' { delayedIO = mempty }})
 
 interrupt :: TaskDisposition -> MOO a
 interrupt disp = do
   asks interruptHandler >>= ($ disp)
-  error "Interrupt returned"
+  error "Returned from interrupt handler"
 
 newtype DelayedIO = DelayedIO { runDelayed :: IO () }
 
@@ -123,19 +129,17 @@ delayIO io = do
 data Environment = Env {
     task             :: Task
   , interruptHandler :: TaskDisposition -> MOO TaskDisposition
-  , database         :: TVar Database
   , startTime        :: ClockTime
   , exceptionHandler :: ExceptionHandler
   , indexLength      :: MOO Int
 }
 
-initEnvironment :: Task -> TVar Database -> IO Environment
-initEnvironment task db = do
+initEnvironment :: Task -> IO Environment
+initEnvironment task = do
   startTime <- getClockTime
   return Env {
       task             = task
     , interruptHandler = error "Undefined interrupt handler"
-    , database         = db
     , startTime        = startTime
     , exceptionHandler = Handler $ interrupt . Abort
     , indexLength      = error "Invalid index context"
@@ -155,11 +159,11 @@ initState gen = State {
 }
 
 getDatabase :: MOO Database
-getDatabase = liftSTM . readTVar =<< asks database
+getDatabase = liftSTM . readTVar . taskDatabase =<< asks task
 
 putDatabase :: Database -> MOO ()
 putDatabase db = do
-  dbTVar <- asks database
+  dbTVar <- fmap taskDatabase $ asks task
   liftSTM $ writeTVar dbTVar db
 
 getObject :: ObjId -> MOO (Maybe Object)

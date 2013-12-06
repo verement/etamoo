@@ -77,7 +77,7 @@ bf_suspend optional =
     request <- case seconds of
       Nothing         -> return $ Suspend Nothing     k
       Just (Int secs) -> return $ Suspend (Just secs) k
-      _               -> raise E_TYPE
+      Just  _         -> raise E_TYPE
     interrupt request
   where (seconds : _) = maybeDefaults optional
 

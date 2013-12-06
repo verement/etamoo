@@ -75,23 +75,23 @@ run db line state =
       putStrLn $ "-- " ++ show expr
       let comp = compileExpr expr
           comp' = fmap Complete comp
-      task <- initTask comp'
-      evalPrint db task state
+      task <- initTask db comp'
+      fmap taskState $ evalPrint task { taskState = state }
 
-evalPrint db task state = do
-  (result, state') <- runTask db task state
+evalPrint task = do
+  (result, task') <- runTask task
   case result of
     Complete value -> do
       putStrLn $ "=> " ++ unpack (toLiteral value)
-      return state'
+      return task'
     Suspend Nothing _  -> do
       putStrLn   ".. Suspended indefinitely"
-      return state'
+      return task'
     Suspend (Just s) k -> do
       putStrLn $ ".. Suspended for " ++ show s ++ " seconds"
-      evalPrint db task { computation = k nothing } state'
+      evalPrint task' { taskComputation = k nothing }
     Abort (Exception code m v) -> do
       putStrLn $ "** " ++ unpack m ++ formatValue v
-      return state'
+      return task'
   where formatValue (Int 0) = ""
         formatValue v = " [" ++ unpack (toLiteral v) ++ "]"
