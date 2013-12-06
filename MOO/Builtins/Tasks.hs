@@ -70,7 +70,7 @@ bf_caller_perms [] = fmap (Obj . objectForMaybe) $ caller permissions
 bf_ticks_left [] = notyet
 bf_seconds_left [] = notyet
 
-bf_task_id [] = fmap Int $ asks taskId
+bf_task_id [] = fmap (Int . taskId) $ asks task
 
 bf_suspend optional =
   callCC $ \k -> do
@@ -78,8 +78,7 @@ bf_suspend optional =
       Nothing         -> return $ Suspend Nothing     k
       Just (Int secs) -> return $ Suspend (Just secs) k
       _               -> raise E_TYPE
-    asks interrupt >>= ($ request)
-    error "Interrupt returned"
+    interrupt request
   where (seconds : _) = maybeDefaults optional
 
 bf_resume (Int task_id : optional) = notyet

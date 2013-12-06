@@ -4,11 +4,9 @@ module Main where
 import System.Console.Readline
 import System.Random
 import System.Environment
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.State
+import Control.Monad.Reader
 import Control.Concurrent.STM
 import Data.Text
-import Data.Monoid (mempty)
 import Data.Maybe
 
 import MOO.Parser
@@ -75,17 +73,15 @@ run db line state =
     Left err -> putStr "Parse error " >> print err >> return state
     Right expr -> do
       putStrLn $ "-- " ++ show expr
-      let comp = compileExpr expr `catchException` \(Exception code m v) -> do
-            delayIO $ putStrLn $ "** " ++ unpack m ++ formatValue v
-            return code
-          formatValue (Int 0) = ""
-          formatValue v = " [" ++ unpack (toLiteral v) ++ "]"
-      evalPrint db (Task $ fmap Return comp) state
+      let comp = compileExpr expr
+          comp' = fmap Complete comp
+      task <- initTask comp'
+      evalPrint db task state
 
 evalPrint db task state = do
   (result, state') <- runTask db task state
   case result of
-    Return value       -> do
+    Complete value -> do
       putStrLn $ "=> " ++ unpack (toLiteral value)
       return state'
     Suspend Nothing _  -> do
@@ -93,4 +89,9 @@ evalPrint db task state = do
       return state'
     Suspend (Just s) k -> do
       putStrLn $ ".. Suspended for " ++ show s ++ " seconds"
-      evalPrint db (Task $ k nothing) state'
+      evalPrint db task { computation = k nothing } state'
+    Abort (Exception code m v) -> do
+      putStrLn $ "** " ++ unpack m ++ formatValue v
+      return state'
+  where formatValue (Int 0) = ""
+        formatValue v = " [" ++ unpack (toLiteral v) ++ "]"
