@@ -2,13 +2,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module MOO.Task ( MOO
+                , Task ( .. )
+                , TaskResult ( .. )
                 , DelayedIO ( .. )
-                , Task
                 , Environment ( .. )
                 , TaskState ( .. )
                 , CallStack ( .. )
                 , StackFrame ( .. )
                 , Exception ( .. )
+                , runTask
                 , liftSTM
                 , initEnvironment
                 , initState
@@ -61,12 +63,29 @@ import MOO.Types
 import {-# SOURCE #-} MOO.Database
 import MOO.Object
 
-data Task = Task
-          deriving Show
-
 type MOO = ReaderT Environment
-           (ContT Value
+           (ContT TaskResult
             (StateT TaskState STM))
+
+data Task = Task {
+  computation :: MOO TaskResult
+}
+
+data TaskResult = Return Value
+                | Suspend (Maybe IntT) (Value -> MOO TaskResult)
+                | Read (Value -> MOO TaskResult)
+                | Abort Exception
+
+runTask :: TVar Database -> Task -> TaskState -> IO (TaskResult, TaskState)
+runTask db (Task comp) state = do
+  env <- initEnvironment db
+  let comp'  = callCC $ \k -> local (\r -> r { interrupt = k }) comp
+      contM  = runReaderT comp' env
+      stateM = runContT contM return
+      stmM   = runStateT stateM state { delayedIO = mempty }
+  (result, state') <- atomically stmM
+  runDelayed $ delayedIO state'
+  return (result, state')
 
 newtype DelayedIO = DelayedIO { runDelayed :: IO () }
 
@@ -83,7 +102,8 @@ liftSTM :: STM a -> MOO a
 liftSTM = lift . lift . lift
 
 data Environment = Env {
-    database         :: TVar Database
+    interrupt        :: TaskResult -> MOO TaskResult
+  , database         :: TVar Database
   , taskId           :: IntT
   , startTime        :: ClockTime
   , exceptionHandler :: ExceptionHandler
@@ -95,7 +115,8 @@ initEnvironment db = do
   taskId    <- randomRIO (1, maxBound)
   startTime <- getClockTime
   return Env {
-      database         = db
+      interrupt        = error "Undefined interrupt"
+    , database         = db
     , taskId           = taskId
     , startTime        = startTime
     , exceptionHandler = Handler $ \(Exception _ m _) -> error (T.unpack m)

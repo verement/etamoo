@@ -39,13 +39,13 @@ replDatabase = do
     [dbFile] -> loadLMDatabase dbFile >>= either (error . show) return
     []       -> return initDatabase
 
-repLoop tvarDB state = do
+repLoop db state = do
   maybeLine <- readline ">> "
   case maybeLine of
     Nothing   -> return ()
     Just line -> do
       addHistory line
-      run tvarDB line state >>= repLoop tvarDB
+      run db line state >>= repLoop db
 
 addFrame frame st@State { stack = Stack frames } =
   st { stack = Stack (frame : frames) }
@@ -70,21 +70,27 @@ run _ (':':'p':'e':'r':'m':' ':perm) state =
 
 run _ ":stack" state = print (stack state) >> return state
 
-run tvarDB line state =
+run db line state =
   case runParser expression initParserState "" (pack line) of
     Left err -> putStr "Parse error " >> print err >> return state
     Right expr -> do
       putStrLn $ "-- " ++ show expr
-      env <- initEnvironment tvarDB
       let comp = compileExpr expr `catchException` \(Exception code m v) -> do
             delayIO $ putStrLn $ "** " ++ unpack m ++ formatValue v
             return code
           formatValue (Int 0) = ""
           formatValue v = " [" ++ unpack (toLiteral v) ++ "]"
-          contM  = runReaderT comp env
-          stateM = runContT contM return
-          stmM   = runStateT stateM state { delayedIO = mempty }
-      (value, state') <- atomically stmM
-      runDelayed $ delayedIO state'
+      evalPrint db (Task $ fmap Return comp) state
+
+evalPrint db task state = do
+  (result, state') <- runTask db task state
+  case result of
+    Return value       -> do
       putStrLn $ "=> " ++ unpack (toLiteral value)
       return state'
+    Suspend Nothing _  -> do
+      putStrLn   ".. Suspended indefinitely"
+      return state'
+    Suspend (Just s) k -> do
+      putStrLn $ ".. Suspended for " ++ show s ++ " seconds"
+      evalPrint db (Task $ k nothing) state'

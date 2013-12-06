@@ -4,6 +4,7 @@
 module MOO.Builtins.Tasks ( builtins ) where
 
 import Control.Monad.Reader (asks)
+import Control.Monad.Cont (callCC)
 
 import MOO.Types
 import MOO.Task
@@ -71,7 +72,16 @@ bf_seconds_left [] = notyet
 
 bf_task_id [] = fmap Int $ asks taskId
 
-bf_suspend optional = notyet
+bf_suspend optional =
+  callCC $ \k -> do
+    request <- case seconds of
+      Nothing         -> return $ Suspend Nothing     k
+      Just (Int secs) -> return $ Suspend (Just secs) k
+      _               -> raise E_TYPE
+    asks interrupt >>= ($ request)
+    error "Interrupt returned"
+  where (seconds : _) = maybeDefaults optional
+
 bf_resume (Int task_id : optional) = notyet
   where [value] = defaults optional [Int 0]
 
