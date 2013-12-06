@@ -20,7 +20,7 @@ import MOO.Database.LambdaMOO
 import MOO.Object
 
 main :: IO ()
-main = do
+main =
   case verifyBuiltins of
     Left  err -> putStrLn $ "Built-in function verification failed: " ++ err
     Right n   -> do

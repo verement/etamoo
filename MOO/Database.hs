@@ -63,7 +63,7 @@ setObjects objs db = do
   return db { objects = V.fromList tvarObjs }
 
 modifyObject :: ObjId -> Database -> (Object -> STM Object) -> STM ()
-modifyObject oid db f = do
+modifyObject oid db f =
   case dbObjectRef oid db of
     Nothing      -> return ()
     Just objTVar -> do

@@ -69,9 +69,8 @@ compileStatements (s:ss) = case s of
 
     where loop var expr body = do
             expr' <- expr
-            maybe (return expr') (flip storeVariable expr') var
-            if truthOf expr' then body >> loop var expr body
-              else return ()
+            maybe (return expr') (`storeVariable` expr') var
+            when (truthOf expr') $ body >> loop var expr body
 
   Return (Just expr) -> compileExpr expr >>= popFrame
   Return Nothing     -> popFrame nothing

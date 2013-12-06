@@ -127,7 +127,7 @@ instance Monoid DelayedIO where
 delayIO :: IO () -> MOO ()
 delayIO io = do
   existing <- gets delayedIO
-  modify $ \st -> st { delayedIO = existing `mappend` (DelayedIO io) }
+  modify $ \st -> st { delayedIO = existing `mappend` DelayedIO io }
 
 data Environment = Env {
     task             :: Task
@@ -178,7 +178,7 @@ getProperty obj name = do
   maybe (raise E_PROPNF) return maybeProp
 
 modifyProperty :: Object -> StrT -> (Property -> MOO Property) -> MOO ()
-modifyProperty obj name f = do
+modifyProperty obj name f =
   case lookupPropertyRef obj (T.toCaseFold name) of
     Nothing       -> raise E_PROPNF
     Just propTVar -> do
@@ -349,9 +349,7 @@ checkWizard = frame permissions >>= checkWizard'
 checkPermission :: ObjId -> MOO ()
 checkPermission who = do
   perm <- frame permissions
-  if perm == who
-    then return ()
-    else checkWizard' perm
+  unless (perm == who) $ checkWizard' perm
 
 checkValid :: ObjId -> MOO Object
 checkValid oid = getObject oid >>= maybe (raise E_INVARG) return
