@@ -10,6 +10,7 @@ import Data.Text
 import Data.Maybe
 
 import MOO.Parser
+import MOO.AST
 import MOO.Compiler
 import MOO.Task
 import MOO.Types
@@ -68,14 +69,25 @@ run _ (':':'p':'e':'r':'m':' ':perm) state =
 
 run _ ":stack" state = print (stack state) >> return state
 
-run db line state =
-  case runParser expression initParserState "" (pack line) of
+run db (';':';':line) state = evalP db line state
+run db (';'    :line) state = evalE db line state
+run db          line  state = evalE db line state
+
+expr = between whiteSpace eof expression
+
+evalE db line state =
+  case runParser expr initParserState "" (pack line) of
     Left err -> putStr "Parse error " >> print err >> return state
     Right expr -> do
-      putStrLn $ "-- " ++ show expr
-      let comp = compileExpr expr
-          comp' = fmap Complete comp
-      task <- initTask db comp'
+      -- putStrLn $ "-- " ++ show expr
+      task <- initTask db (compileExpr expr)
+      fmap taskState $ evalPrint task { taskState = state }
+
+evalP db line state =
+  case runParser program initParserState "" (pack line) of
+    Left err -> putStr "Parse error" >> print err >> return state
+    Right (Program stmts) -> do
+      task <- initTask db (compileStatements stmts)
       fmap taskState $ evalPrint task { taskState = state }
 
 evalPrint task = do
@@ -87,7 +99,7 @@ evalPrint task = do
     Suspend Nothing _  -> do
       putStrLn   ".. Suspended indefinitely"
       return task'
-    Suspend (Just s) k -> do
+    Suspend (Just s) (Resume k) -> do
       putStrLn $ ".. Suspended for " ++ show s ++ " seconds"
       evalPrint task' { taskComputation = k nothing }
     Abort (Exception code m v) -> do

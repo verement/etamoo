@@ -1,6 +1,6 @@
 
 repl: FORCE MOO/Builtins/Match.hs
-	ghc $(OPT) --make repl.hs -lcrypt -lpcre
+	ghc $(OPT) --make -threaded repl.hs -lcrypt -lpcre
 
 FORCE:
 

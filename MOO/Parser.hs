@@ -1,5 +1,6 @@
 
-module MOO.Parser ( Program, parse, runParser, initParserState, expression
+module MOO.Parser ( Program, parse, runParser, initParserState
+                  , expression, between, whiteSpace, eof, program
                   , parseInt, parseFlt, parseNum, parseObj ) where
 
 import           Text.Parsec hiding (parse)

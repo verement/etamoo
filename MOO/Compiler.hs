@@ -1,9 +1,9 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Compiler ( compileExpr ) where
+module MOO.Compiler ( compileStatements, compileExpr ) where
 
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Cont (callCC)
 import Control.Monad (when, unless, void)
 
 import qualified Data.Text as T
@@ -15,6 +15,68 @@ import MOO.AST
 import MOO.Task
 import MOO.Builtins
 import MOO.Object
+
+compileStatements :: [Statement] -> MOO Value
+compileStatements (s:ss) = case s of
+  Expression expr -> compileExpr expr >> compileStatements ss
+
+  If cond (Then thens) elseIfs (Else elses) -> do
+    compileIf ((cond, thens) : map elseIf elseIfs) elses
+    compileStatements ss
+
+    where elseIf (ElseIf cond thens) = (cond, thens)
+
+          compileIf ((cond,thens):conds) elses = do
+            cond' <- fmap truthOf (compileExpr cond)
+            if cond' then compileStatements thens
+              else compileIf conds elses
+          compileIf [] elses = compileStatements elses
+
+  ForList var expr body -> do
+    expr' <- compileExpr expr
+    elts <- case expr' of
+      Lst elts -> return $ V.toList elts
+      _        -> raise E_TYPE
+
+    loop var elts (compileStatements body)
+    compileStatements ss
+
+    where loop var (elt:elts) body = do
+            storeVariable var elt >> body
+            loop var elts body
+          loop _ [] _ = return ()
+
+  ForRange var (start, end) body -> do
+    start' <- compileExpr start
+    end'   <- compileExpr end
+    (ty, s, e) <- case (start', end') of
+      (Int s, Int e) -> return (Int . fromIntegral, toInteger s, toInteger e)
+      (Obj s, Obj e) -> return (Obj . fromIntegral, toInteger s, toInteger e)
+      (_    , _    ) -> raise E_TYPE
+
+    loop var ty s e (compileStatements body)
+    compileStatements ss
+
+    where loop var ty i end body
+            | i > end   = return ()
+            | otherwise = do
+              storeVariable var (ty i) >> body
+              loop var ty (i + 1) end body
+
+  While var expr body -> do
+    loop var (compileExpr expr) (compileStatements body)
+    compileStatements ss
+
+    where loop var expr body = do
+            expr' <- expr
+            maybe (return expr') (flip storeVariable expr') var
+            if truthOf expr' then body >> loop var expr body
+              else return ()
+
+  Return (Just expr) -> compileExpr expr >>= popFrame
+  Return Nothing     -> popFrame nothing
+
+compileStatements [] = return nothing
 
 catchDebug :: MOO Value -> MOO Value
 catchDebug action = action `catchException` \except@(Exception code _ _) -> do

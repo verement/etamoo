@@ -70,7 +70,7 @@ lmDatabase = do
       count nobjs read_object >>= installObjects
 
       liftIO $ putStrLn "Reading verb programs..."
-      count nprogs program >>= installPrograms
+      count nprogs dbProgram >>= installPrograms
 
       liftIO $ putStrLn "Reading forked and suspended tasks..."
       read_task_queue
@@ -379,8 +379,8 @@ read_var = (<?> "var") $ do
 
     cases l = fail $ "Unknown type (" ++ show l ++ ")"
 
-program :: DBParser (Int, Int, Program)
-program = do
+dbProgram :: DBParser (Int, Int, Program)
+dbProgram = do
   char '#'
   oid <- signedInt
   char ':'

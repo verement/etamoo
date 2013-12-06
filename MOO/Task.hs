@@ -4,6 +4,7 @@
 module MOO.Task ( MOO
                 , Task ( .. )
                 , TaskDisposition ( .. )
+                , Resume ( .. )
                 , DelayedIO ( .. )
                 , Environment ( .. )
                 , TaskState ( .. )
@@ -26,6 +27,7 @@ module MOO.Task ( MOO
                 , local
                 , initFrame
                 , pushFrame
+                , popFrame
                 , frame
                 , caller
                 , modifyFrame
@@ -75,11 +77,11 @@ liftSTM = lift . lift . lift
 data Task = Task {
     taskId          :: IntT
   , taskDatabase    :: TVar Database
-  , taskComputation :: MOO TaskDisposition
+  , taskComputation :: MOO Value
   , taskState       :: TaskState
 }
 
-initTask :: TVar Database -> MOO TaskDisposition -> IO Task
+initTask :: TVar Database -> MOO Value -> IO Task
 initTask db comp = do
   taskId <- randomRIO (1, maxBound)
   gen <- getStdGen
@@ -90,18 +92,19 @@ initTask db comp = do
     , taskState       = initState gen
   }
 
-type Continuation = Value -> MOO TaskDisposition
-
 data TaskDisposition = Complete Value
                      | Abort Exception
-                     | Suspend (Maybe IntT) Continuation
-                     | Read Continuation
+                     | Suspend (Maybe IntT) Resume
+                     | Read Resume
+
+newtype Resume = Resume (Value -> MOO Value)
 
 runTask :: Task -> IO (TaskDisposition, Task)
 runTask task = do
   env <- initEnvironment task
   let comp   = taskComputation task
-      comp'  = callCC $ \k -> local (\r -> r { interruptHandler = k }) comp
+      comp'  = callCC $ \k ->
+        fmap Complete $ local (\r -> r { interruptHandler = k }) comp
       state  = taskState task
       contM  = runReaderT comp' env
       stateM = runContT contM return
@@ -230,22 +233,35 @@ setBuiltinProperty _ _ _ = raise E_TYPE
 newtype CallStack = Stack [StackFrame]
                   deriving Show
 
+newtype Continuation = Continuation (Value -> MOO Value)
+
+instance Show Continuation where
+  show _ = "<continuation>"
+
 data StackFrame = Frame {
-    variables   :: Map Id Value
-  , debugBit    :: Bool
-  , permissions :: ObjId
+    continuation :: Continuation
+  , variables    :: Map Id Value
+  , debugBit     :: Bool
+  , permissions  :: ObjId
 } deriving Show
 
 initFrame :: Bool -> ObjId -> StackFrame
 initFrame debug programmer = Frame {
-    variables   = mkInitVars
-  , debugBit    = debug
-  , permissions = programmer
+    continuation = Continuation return
+  , variables    = mkInitVars
+  , debugBit     = debug
+  , permissions  = programmer
 }
 
 pushFrame :: StackFrame -> MOO ()
 pushFrame frame = modify $ \st@State { stack = Stack frames } ->
   st { stack = Stack (frame : frames) }
+
+popFrame :: Value -> MOO Value
+popFrame value = do
+  (Continuation k) <- frame continuation
+  modify $ \st@State { stack = Stack (_:frames) } -> st { stack = Stack frames }
+  k value
 
 currentFrame :: CallStack -> StackFrame
 currentFrame (Stack (frame:_)) = frame

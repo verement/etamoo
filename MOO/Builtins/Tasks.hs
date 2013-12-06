@@ -75,8 +75,8 @@ bf_task_id [] = fmap (Int . taskId) $ asks task
 bf_suspend optional =
   callCC $ \k -> do
     request <- case seconds of
-      Nothing         -> return $ Suspend Nothing     k
-      Just (Int secs) -> return $ Suspend (Just secs) k
+      Nothing         -> return $ Suspend Nothing     $ Resume k
+      Just (Int secs) -> return $ Suspend (Just secs) $ Resume k
       Just  _         -> raise E_TYPE
     interrupt request
   where (seconds : _) = maybeDefaults optional
