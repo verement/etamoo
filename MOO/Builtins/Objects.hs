@@ -6,6 +6,7 @@ module MOO.Builtins.Objects ( builtins ) where
 import Control.Concurrent.STM
 import Control.Monad (when, unless)
 import Data.Maybe
+import Data.Set (Set)
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -76,11 +77,10 @@ bf_chparent [Obj object, Obj new_parent] = notyet
 bf_valid [Obj object] = fmap (truthValue . isJust) $ getObject object
 
 bf_parent [Obj object] =
-  fmap (Obj . getParent) $ getObject object >>= maybe (raise E_INVARG) return
+  fmap (Obj . getParent) $ checkValid object
 
 bf_children [Obj object] =
-  fmap (Lst . V.fromList . map Obj . getChildren) $
-  getObject object >>= maybe (raise E_INVARG) return
+  fmap (Lst . V.fromList . map Obj . getChildren) $ checkValid object
 
 bf_recycle [Obj object] = notyet
 bf_object_bytes [Obj object] = notyet
@@ -94,20 +94,18 @@ bf_move [Obj what, Obj where_] = notyet
 -- 4.4.3.3 Operations on Properties
 
 bf_properties [Obj object] = do
-  obj <- getObject object >>= maybe (raise E_INVARG) return
+  obj <- checkValid object
   unless (objectPermR obj) $ checkPermission (objectOwner obj)
   fmap (Lst . V.fromList . map Str) $ liftSTM $ definedProperties obj
 
 bf_property_info [Obj object, Str prop_name] = do
-  obj  <- getObject object >>= maybe (raise E_INVARG) return
+  obj <- checkValid object
   prop <- getProperty obj prop_name
   unless (propertyPermR prop) $ checkPermission (propertyOwner prop)
   return $ Lst $ V.fromList [Obj $ propertyOwner prop, Str $ perms prop]
   where perms prop = T.pack $ concat [if propertyPermR prop then "r" else "",
                                       if propertyPermW prop then "w" else "",
                                       if propertyPermC prop then "c" else ""]
-
-bf_set_property_info [Obj object, Str prop_name, Lst info] = notyet
 
 traverseDescendants :: (Object -> MOO a) -> ObjId -> MOO ()
 traverseDescendants f oid = do
@@ -121,16 +119,73 @@ modifyDescendants db f oid = do
   Just obj <- getObject oid
   mapM_ (modifyDescendants db f) $ getChildren obj
 
-bf_add_property [Obj object, Str prop_name, value, Lst info] = do
+checkPerms :: [Char] -> StrT -> MOO (Set Char)
+checkPerms valid perms = do
+  let permSet = S.fromList (T.unpack $ T.toCaseFold perms)
+  unless (S.null $ permSet `S.difference` S.fromList valid) $ raise E_INVARG
+  return permSet
+
+bf_set_property_info [Obj object, Str prop_name, Lst info] = do
+  (owner, perms, new_name) <- case V.toList info of
+    [Obj owner, Str perms]               -> return (owner, perms, Nothing)
+    [_        , _        ]               -> raise E_TYPE
+    [Obj owner, Str perms, Str new_name] -> return (owner, perms, Just new_name)
+    [_        , _        , _           ] -> raise E_TYPE
+    _                                    -> raise E_INVARG
+  permSet <- checkPerms "rwc" perms
+  checkValid owner
+
   obj <- checkValid object
+  prop <- getProperty obj prop_name
+  unless (propertyPermW prop) $ checkPermission (propertyOwner prop)
+  checkPermission owner
+
+  let setInfo = modifyProperty obj prop_name $ \prop ->
+        return prop {
+            propertyOwner = owner
+          , propertyPermR = 'r' `S.member` permSet
+          , propertyPermW = 'w' `S.member` permSet
+          , propertyPermC = 'c' `S.member` permSet
+        }
+
+  case new_name of
+    Nothing      -> setInfo
+    Just newName -> do
+      let newName' = T.toCaseFold newName
+          oldName' = T.toCaseFold prop_name
+
+      unless (objectPermW obj) $ checkPermission (objectOwner obj)
+
+      when (propertyInherited prop) $ raise E_INVARG
+      flip traverseDescendants object $ \obj ->
+        when (isJust $ lookupPropertyRef obj $ newName') $ raise E_INVARG
+
+      setInfo
+
+      db <- getDatabase
+      flip (modifyDescendants db) object $ \obj -> do
+        let Just propTVar = lookupPropertyRef obj oldName'
+        prop <- readTVar propTVar
+        writeTVar propTVar $ prop { propertyName = newName }
+
+        return obj { objectProperties =
+                        HM.insert newName' propTVar $
+                        HM.delete oldName' (objectProperties obj) }
+
+  return nothing
+
+bf_add_property [Obj object, Str prop_name, value, Lst info] = do
   (owner, perms) <- case V.toList info of
     [Obj owner, Str perms] -> return (owner, perms)
+    [_        , _        ] -> raise E_TYPE
     _                      -> raise E_INVARG
+  permSet <- checkPerms "rwc" perms
   checkValid owner
-  let permSet = S.fromList (T.unpack $ T.toCaseFold perms)
-  unless (S.null $ permSet `S.difference` S.fromList "rwc") $ raise E_INVARG
+
+  obj <- checkValid object
   unless (objectPermW obj) $ checkPermission (objectOwner obj)
   checkPermission owner
+
   flip traverseDescendants object $ \obj ->
     when (isJust $ lookupPropertyRef obj name) $ raise E_INVARG
 
@@ -164,7 +219,7 @@ bf_add_property [Obj object, Str prop_name, value, Lst info] = do
   where name = T.toCaseFold prop_name
 
 bf_delete_property [Obj object, Str prop_name] = do
-  obj <- getObject object >>= maybe (raise E_INVARG) return
+  obj <- checkValid object
   unless (objectPermW obj) $ checkPermission (objectOwner obj)
   prop <- getProperty obj prop_name
   when (propertyInherited prop) $ raise E_PROPNF
@@ -175,7 +230,7 @@ bf_delete_property [Obj object, Str prop_name] = do
   where name = T.toCaseFold prop_name
 
 bf_is_clear_property [Obj object, Str prop_name] = do
-  obj <- getObject object >>= maybe (raise E_INVARG) return
+  obj <- checkValid object
   if isBuiltinProperty prop_name
     then return $ truthValue False
     else do
@@ -184,7 +239,7 @@ bf_is_clear_property [Obj object, Str prop_name] = do
     return (truthValue $ isNothing $ propertyValue prop)
 
 bf_clear_property [Obj object, Str prop_name] = do
-  obj <- getObject object >>= maybe (raise E_INVARG) return
+  obj <- checkValid object
   if isBuiltinProperty prop_name
     then raise E_PERM
     else do
@@ -212,11 +267,10 @@ bf_disassemble [Obj object, Str verb_desc] = notyet
 bf_players [] = fmap (Lst . V.fromList . map Obj . allPlayers) getDatabase
 
 bf_is_player [Obj object] =
-  fmap (truthValue . objectIsPlayer) $
-    getObject object >>= maybe (raise E_INVARG) return
+  fmap (truthValue . objectIsPlayer) $ checkValid object
 
 bf_set_player_flag [Obj object, value] = do
-  getObject object >>= maybe (raise E_INVARG) return
+  checkValid object
   checkWizard
   db <- getDatabase
   liftSTM $ modifyObject object db $
