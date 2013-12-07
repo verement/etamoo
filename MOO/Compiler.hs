@@ -1,7 +1,7 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Compiler ( compileStatements, compileExpr ) where
+module MOO.Compiler ( compileStatements, evaluate ) where
 
 import Control.Monad.Cont (callCC)
 import Control.Monad (when, unless, void)
@@ -18,7 +18,7 @@ import MOO.Object
 
 compileStatements :: [Statement] -> MOO Value
 compileStatements (s:ss) = catchDebug $ case s of
-  Expression expr -> compileExpr expr >> compileStatements ss
+  Expression expr -> evaluate expr >> compileStatements ss
 
   If cond (Then thens) elseIfs (Else elses) -> do
     compileIf ((cond, thens) : map elseIf elseIfs) elses
@@ -27,13 +27,13 @@ compileStatements (s:ss) = catchDebug $ case s of
     where elseIf (ElseIf cond thens) = (cond, thens)
 
           compileIf ((cond,thens):conds) elses = do
-            cond' <- fmap truthOf (compileExpr cond)
+            cond' <- fmap truthOf (evaluate cond)
             if cond' then compileStatements thens
               else compileIf conds elses
           compileIf [] elses = compileStatements elses
 
   ForList var expr body -> do
-    expr' <- compileExpr expr
+    expr' <- evaluate expr
     elts <- case expr' of
       Lst elts -> return $ V.toList elts
       _        -> raise E_TYPE
@@ -55,8 +55,8 @@ compileStatements (s:ss) = catchDebug $ case s of
           loop _ [] _ = return nothing
 
   ForRange var (start, end) body -> do
-    start' <- compileExpr start
-    end'   <- compileExpr end
+    start' <- evaluate start
+    end'   <- evaluate end
     (ty, s, e) <- case (start', end') of
       (Int s, Int e) -> return (Int . fromIntegral, toInteger s, toInteger e)
       (Obj s, Obj e) -> return (Obj . fromIntegral, toInteger s, toInteger e)
@@ -82,7 +82,7 @@ compileStatements (s:ss) = catchDebug $ case s of
   While var expr body -> do
     callCC $ \break -> do
       pushLoop var' (Continuation break)
-      loop var' (compileExpr expr) (compileStatements body)
+      loop var' (evaluate expr) (compileStatements body)
       return nothing
     popLoop
 
@@ -103,7 +103,7 @@ compileStatements (s:ss) = catchDebug $ case s of
   Break    name -> breakLoop    (fmap T.toCaseFold name)
   Continue name -> continueLoop (fmap T.toCaseFold name)
 
-  Return expr -> maybe (return nothing) compileExpr expr >>= popFrame
+  Return expr -> maybe (return nothing) evaluate expr >>= popFrame
 
   TryExcept body excepts -> notyet
 
@@ -116,18 +116,18 @@ catchDebug action = action `catchException` \except@(Exception code _ _) -> do
   debug <- frame debugBit
   if debug then raiseException except else return code
 
-compileExpr :: Expr -> MOO Value
-compileExpr expr = catchDebug $ case expr of
+evaluate :: Expr -> MOO Value
+evaluate expr = catchDebug $ case expr of
   Literal v -> return v
   List args -> fmap (Lst . V.fromList) $ expand args
 
   Variable{} -> fetch (lValue expr)
   PropRef{}  -> fetch (lValue expr)
 
-  Assign what expr -> store (lValue what) =<< compileExpr expr
+  Assign what expr -> store (lValue what) =<< evaluate expr
 
   ScatterAssign items expr -> do
-    expr' <- compileExpr expr
+    expr' <- evaluate expr
     case expr' of
       Lst v -> scatterAssign items v
       _     -> raise E_TYPE
@@ -143,21 +143,21 @@ compileExpr expr = catchDebug $ case expr of
   a `Remain` b -> binary remain a b
   a `Power`  b -> binary power  a b
 
-  Negate a -> do a' <- compileExpr a
+  Negate a -> do a' <- evaluate a
                  case a' of
                    Int x -> return (Int $ negate x)
                    Flt x -> return (Flt $ negate x)
                    _     -> raise E_TYPE
 
-  Conditional c x y -> do c' <- compileExpr c
-                          compileExpr $ if truthOf c' then x else y
+  Conditional c x y -> do c' <- evaluate c
+                          evaluate $ if truthOf c' then x else y
 
-  x `And` y -> do x' <- compileExpr x
-                  if truthOf x' then compileExpr y else return x'
-  x `Or`  y -> do x' <- compileExpr x
-                  if truthOf x' then return x' else compileExpr y
+  x `And` y -> do x' <- evaluate x
+                  if truthOf x' then evaluate y else return x'
+  x `Or`  y -> do x' <- evaluate x
+                  if truthOf x' then return x' else evaluate y
 
-  Not x -> fmap (truthValue . not . truthOf) $ compileExpr x
+  Not x -> fmap (truthValue . not . truthOf) $ evaluate x
 
   x `Equal`        y -> equality   (==) x y
   x `NotEqual`     y -> equality   (/=) x y
@@ -172,8 +172,8 @@ compileExpr expr = catchDebug $ case expr of
   Length -> fmap (Int . fromIntegral) =<< reader indexLength
 
   item `In` list -> do
-    item' <- compileExpr item
-    list' <- compileExpr list
+    item' <- evaluate item
+    list' <- evaluate list
     case list' of
       Lst v -> return $ Int $ maybe 0 (fromIntegral . succ) $
                V.elemIndex item' v
@@ -183,14 +183,14 @@ compileExpr expr = catchDebug $ case expr of
     codes' <- case codes of
       ANY        -> return Nothing
       Codes args -> fmap Just (expand args)
-    compileExpr expr `catchException` \except@(Exception code _ _) ->
+    evaluate expr `catchException` \except@(Exception code _ _) ->
       if maybe True (code `elem`) codes'
-        then maybe (return code) compileExpr dv
+        then maybe (return code) evaluate dv
         else raiseException except
 
   where binary op a b = do
-          a' <- compileExpr a
-          b' <- compileExpr b
+          a' <- evaluate a
+          b' <- evaluate b
           a' `op` b'
         equality op = binary test
           where test a b = return $ truthValue (a `op` b)
@@ -284,8 +284,8 @@ lValue (PropRef objExpr nameExpr) = LValue fetch store change
           -- XXX improve this to avoid redundant checks?
 
         getRefs = do
-          objRef  <- compileExpr objExpr
-          nameRef <- compileExpr nameExpr
+          objRef  <- evaluate objExpr
+          nameRef <- evaluate nameExpr
           case (objRef, nameRef) of
             (Obj oid, Str name) -> return (oid, name)
             _                   -> raise E_TYPE
@@ -302,7 +302,7 @@ lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
 
         changeIndex = do
           (value, changeExpr) <- change (lValue expr)
-          index' <- checkIndex =<< withIndexLength value (compileExpr index)
+          index' <- checkIndex =<< withIndexLength value (evaluate index)
           value' <- case value of
             Lst v -> checkLstRange v index' >> return (v V.! (index' - 1))
             Str t -> checkStrRange t index' >>
@@ -337,8 +337,8 @@ lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
               _     -> raise E_TYPE
 
         getIndices value = withIndexLength value $ do
-          start' <- checkIndex =<< compileExpr start
-          end'   <- checkIndex =<< compileExpr end
+          start' <- checkIndex =<< evaluate start
+          end'   <- checkIndex =<< evaluate end
           return (start', end')
 
         storeRange newValue = do
@@ -372,7 +372,7 @@ lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
         changeRange = error "Illegal Range as lvalue subexpression"
 
 lValue expr = LValue fetch store change
-  where fetch = compileExpr expr
+  where fetch = evaluate expr
         store _ = error "Unmodifiable LValue"
 
         change = do
@@ -411,7 +411,7 @@ scatterAssign items args = do
                                     walk items (V.tail args) (noptAvail - 1)
               | otherwise     -> do
                 case opt of Nothing   -> return ()
-                            Just expr -> void $ compileExpr expr >>= assign var
+                            Just expr -> void $ evaluate expr >>= assign var
                 walk items args noptAvail
             ScatRest var -> do
               let (s, r) = V.splitAt nrest args
@@ -423,9 +423,9 @@ scatterAssign items args = do
 
 expand :: [Arg] -> MOO [Value]
 expand (a:as) = case a of
-  ArgNormal expr -> do a' <- compileExpr expr
+  ArgNormal expr -> do a' <- evaluate expr
                        fmap (a' :) $ expand as
-  ArgSplice expr -> do a' <- compileExpr expr
+  ArgSplice expr -> do a' <- evaluate expr
                        case a' of
                          Lst v -> fmap (V.toList v ++) $ expand as
                          _     -> raise E_TYPE

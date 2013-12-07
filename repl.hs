@@ -80,7 +80,7 @@ evalE db line state =
     Left err -> putStr "Parse error " >> print err >> return state
     Right expr -> do
       -- putStrLn $ "-- " ++ show expr
-      task <- initTask db (compileExpr expr)
+      task <- initTask db (evaluate expr)
       fmap taskState $ evalPrint task { taskState = state }
 
 evalP db line state =
