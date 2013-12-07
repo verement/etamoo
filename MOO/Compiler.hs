@@ -17,7 +17,7 @@ import MOO.Builtins
 import MOO.Object
 
 compileStatements :: [Statement] -> MOO Value
-compileStatements (s:ss) = case s of
+compileStatements (s:ss) = catchDebug $ case s of
   Expression expr -> compileExpr expr >> compileStatements ss
 
   If cond (Then thens) elseIfs (Else elses) -> do
@@ -38,13 +38,21 @@ compileStatements (s:ss) = case s of
       Lst elts -> return $ V.toList elts
       _        -> raise E_TYPE
 
-    loop var elts (compileStatements body)
+    callCC $ \break -> do
+      pushLoop (Just var') (Continuation break)
+      loop var' elts (compileStatements body)
+    popLoop
+
     compileStatements ss
 
-    where loop var (elt:elts) body = do
-            storeVariable var elt >> body
+    where var' = T.toCaseFold var
+          loop var (elt:elts) body = do
+            storeVariable var elt
+            callCC $ \continue -> do
+              setLoopContinue (Continuation continue)
+              body
             loop var elts body
-          loop _ [] _ = return ()
+          loop _ [] _ = return nothing
 
   ForRange var (start, end) body -> do
     start' <- compileExpr start
@@ -54,26 +62,52 @@ compileStatements (s:ss) = case s of
       (Obj s, Obj e) -> return (Obj . fromIntegral, toInteger s, toInteger e)
       (_    , _    ) -> raise E_TYPE
 
-    loop var ty s e (compileStatements body)
+    callCC $ \break -> do
+      pushLoop (Just var') (Continuation break)
+      loop var' ty s e (compileStatements body)
+    popLoop
+
     compileStatements ss
 
-    where loop var ty i end body
-            | i > end   = return ()
+    where var' = T.toCaseFold var
+          loop var ty i end body
+            | i > end   = return nothing
             | otherwise = do
-              storeVariable var (ty i) >> body
+              storeVariable var (ty i)
+              callCC $ \continue -> do
+                setLoopContinue (Continuation continue)
+                body
               loop var ty (i + 1) end body
 
   While var expr body -> do
-    loop var (compileExpr expr) (compileStatements body)
+    callCC $ \break -> do
+      pushLoop var' (Continuation break)
+      loop var' (compileExpr expr) (compileStatements body)
+      return nothing
+    popLoop
+
     compileStatements ss
 
-    where loop var expr body = do
+    where var' = fmap T.toCaseFold var
+          loop var expr body = do
             expr' <- expr
             maybe (return expr') (`storeVariable` expr') var
-            when (truthOf expr') $ body >> loop var expr body
+            when (truthOf expr') $ do
+              callCC $ \continue -> do
+                setLoopContinue (Continuation continue)
+                body
+              loop var expr body
 
-  Return (Just expr) -> compileExpr expr >>= popFrame
-  Return Nothing     -> popFrame nothing
+  Fork taskVar delay body -> notyet
+
+  Break    name -> breakLoop    (fmap T.toCaseFold name)
+  Continue name -> continueLoop (fmap T.toCaseFold name)
+
+  Return expr -> maybe (return nothing) compileExpr expr >>= popFrame
+
+  TryExcept body excepts -> notyet
+
+  TryFinally body (Finally finally) -> notyet
 
 compileStatements [] = return nothing
 

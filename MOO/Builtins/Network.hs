@@ -7,6 +7,8 @@ import MOO.Types
 import MOO.Task
 import MOO.Builtins.Common
 
+import qualified Data.Text as T
+
 -- 4.4.4 Operations on Network Connections
 
 builtins :: [BuiltinSpec]
@@ -47,7 +49,12 @@ builtins = [
 bf_connected_players optional = notyet
 bf_connected_seconds [Obj player] = notyet
 bf_idle_seconds [Obj player] = notyet
-bf_notify (Obj conn : Str string : optional) = notyet
+
+bf_notify (Obj conn : Str string : optional) = do
+  delayIO (putStrLn $ T.unpack string)
+  return $ truthValue True
+  where [no_flush] = booleanDefaults optional [False]
+
 bf_buffered_output_length optional = notyet
 bf_read optional = notyet
 bf_force_input (Obj conn : Str line : optional) = notyet

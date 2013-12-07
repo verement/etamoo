@@ -9,6 +9,8 @@ module MOO.Task ( MOO
                 , Environment ( .. )
                 , TaskState ( .. )
                 , CallStack ( .. )
+                , Continuation ( .. )
+                , LoopFrame ( .. )
                 , StackFrame ( .. )
                 , Exception ( .. )
                 , initTask
@@ -31,6 +33,11 @@ module MOO.Task ( MOO
                 , frame
                 , caller
                 , modifyFrame
+                , pushLoop
+                , setLoopContinue
+                , popLoop
+                , breakLoop
+                , continueLoop
                 , catchException
                 , raiseException
                 , notyet
@@ -238,8 +245,15 @@ newtype Continuation = Continuation (Value -> MOO Value)
 instance Show Continuation where
   show _ = "<continuation>"
 
+data LoopFrame = Loop {
+    loopName     :: Maybe Id
+  , loopBreak    :: Continuation
+  , loopContinue :: Continuation
+} deriving Show
+
 data StackFrame = Frame {
     continuation :: Continuation
+  , loopStack    :: [LoopFrame]
   , variables    :: Map Id Value
   , debugBit     :: Bool
   , permissions  :: ObjId
@@ -248,6 +262,7 @@ data StackFrame = Frame {
 initFrame :: Bool -> ObjId -> StackFrame
 initFrame debug programmer = Frame {
     continuation = Continuation return
+  , loopStack    = []
   , variables    = mkInitVars
   , debugBit     = debug
   , permissions  = programmer
@@ -281,6 +296,53 @@ caller f = gets (fmap f . previousFrame . stack)
 modifyFrame :: (StackFrame -> StackFrame) -> MOO ()
 modifyFrame f = modify $ \st@State { stack = Stack (frame:stack) } ->
   st { stack = Stack (f frame : stack) }
+
+pushLoop :: Maybe Id -> Continuation -> MOO ()
+pushLoop name break =
+  let loopFrame = Loop {
+          loopName     = name
+        , loopBreak    = break
+        , loopContinue = undefined
+      }
+  in modifyFrame $ \frame -> frame { loopStack = loopFrame : loopStack frame }
+
+setLoopContinue :: Continuation -> MOO ()
+setLoopContinue continue =
+  modifyFrame $ \frame@Frame { loopStack = loop:loops } ->
+    frame { loopStack = loop { loopContinue = continue } : loops }
+
+popLoop :: MOO ()
+popLoop = modifyFrame $ \frame@Frame { loopStack = _:loops } ->
+  frame { loopStack = loops }
+
+findLoop :: Id -> [LoopFrame] -> [LoopFrame]
+findLoop name loops@(this:next)
+  | loopName this == Just name = loops
+  | otherwise                  = findLoop name next
+
+breakLoop :: Maybe Id -> MOO Value
+breakLoop Nothing = do
+  loop:_ <- frame loopStack
+  let Continuation break = loopBreak loop
+  break nothing
+breakLoop (Just name) = do
+  loops <- frame loopStack
+  let loops'@(loop:_) = findLoop name loops
+      Continuation break = loopBreak loop
+  modifyFrame $ \frame -> frame { loopStack = loops' }
+  break nothing
+
+continueLoop :: Maybe Id -> MOO Value
+continueLoop Nothing = do
+  loop:_ <- frame loopStack
+  let Continuation continue = loopContinue loop
+  continue nothing
+continueLoop (Just name) = do
+  loops <- frame loopStack
+  let loops'@(loop:_) = findLoop name loops
+      Continuation continue = loopContinue loop
+  modifyFrame $ \frame -> frame { loopStack = loops' }
+  continue nothing
 
 mkInitVars = Map.fromList $ map (first T.toCaseFold) initVars
 
