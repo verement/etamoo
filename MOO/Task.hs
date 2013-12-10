@@ -389,16 +389,18 @@ raiseException except = do
   handler except
   error "Returned from exception handler"
 
+notyet :: MOO a
 notyet = raiseException $
-         Exception (Err E_INVARG) "Not yet implemented" (Int 0)
+         Exception (Err E_INVARG) "Not yet implemented" nothing
 
 raise :: Error -> MOO a
-raise err = raiseException $ Exception (Err err) (error2text err) (Int 0)
+raise err = raiseException $ Exception (Err err) (error2text err) nothing
 
 checkFloat :: FltT -> MOO Value
-checkFloat flt | isInfinite flt = raise E_FLOAT
-               | isNaN      flt = raise E_INVARG
-               | otherwise      = return (Flt flt)
+checkFloat flt
+  | isInfinite flt = raise E_FLOAT
+  | isNaN      flt = raise E_INVARG
+  | otherwise      = return (Flt flt)
 
 checkWizard' :: ObjId -> MOO ()
 checkWizard' perm = do
@@ -406,7 +408,7 @@ checkWizard' perm = do
   unless wizard $ raise E_PERM
 
 checkWizard :: MOO ()
-checkWizard = frame permissions >>= checkWizard'
+checkWizard = checkWizard' =<< frame permissions
 
 checkPermission :: ObjId -> MOO ()
 checkPermission who = do

@@ -40,7 +40,7 @@ builtins = [
   ]
 
 bf_raise (code : optional) = raiseException $ Exception code message value
-  where [Str message, value] = defaults optional [Str (toText code), Int 0]
+  where [Str message, value] = defaults optional [Str $ toText code, nothing]
 
 bf_call_function (Str func_name : args) =
   callBuiltin (T.toCaseFold func_name) args
@@ -82,7 +82,7 @@ bf_suspend optional =
   where (seconds : _) = maybeDefaults optional
 
 bf_resume (Int task_id : optional) = notyet
-  where [value] = defaults optional [Int 0]
+  where [value] = defaults optional [nothing]
 
 bf_queue_info [] = notyet
 bf_queue_info [Obj player] = notyet

@@ -90,7 +90,7 @@ data Arg = ArgNormal Expr
 
 data ScatItem = ScatRequired Id
               | ScatOptional Id (Maybe Expr)
-              | ScatRest Id
+              | ScatRest     Id
               deriving Show
 
 isLValue :: Expr -> Bool

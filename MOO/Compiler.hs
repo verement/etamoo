@@ -77,7 +77,7 @@ compileStatements (s:ss) = catchDebug $ case s of
               callCC $ \continue -> do
                 setLoopContinue (Continuation continue)
                 body
-              loop var ty (i + 1) end body
+              loop var ty (succ i) end body
 
   While var expr body -> do
     callCC $ \break -> do
@@ -98,7 +98,7 @@ compileStatements (s:ss) = catchDebug $ case s of
                 body
               loop var expr body
 
-  Fork taskVar delay body -> notyet
+  Fork var delay body -> notyet
 
   Break    name -> breakLoop    (fmap T.toCaseFold name)
   Continue name -> continueLoop (fmap T.toCaseFold name)
