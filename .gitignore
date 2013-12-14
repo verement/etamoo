@@ -4,4 +4,5 @@
 *.hi-boot
 *_stub.h
 repl
+hlint.html
 *.db

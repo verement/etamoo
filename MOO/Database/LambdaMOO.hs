@@ -170,9 +170,9 @@ installObjects dbObjs = do
                                 valueFromVar (propVar propval)
           , propertyInherited = inherited
           , propertyOwner     = propOwner propval
-          , propertyPermR     = (propPerms propval) .&. pf_read  /= 0
-          , propertyPermW     = (propPerms propval) .&. pf_write /= 0
-          , propertyPermC     = (propPerms propval) .&. pf_chown /= 0
+          , propertyPermR     = propPerms propval .&. pf_read  /= 0
+          , propertyPermW     = propPerms propval .&. pf_write /= 0
+          , propertyPermC     = propPerms propval .&. pf_chown /= 0
         }
 
         setPlayerFlags objs = do
@@ -517,8 +517,7 @@ read_rt_env = (<?> "rt_env") $ do
   return ()
 
 read_bi_func_data :: DBParser ()
-read_bi_func_data = do
-  return ()
+read_bi_func_data = return ()
 
 read_active_connections :: DBParser ()
 read_active_connections = (<?> "active_connections") $ eof <|> do

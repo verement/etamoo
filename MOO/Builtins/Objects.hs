@@ -158,7 +158,7 @@ bf_set_property_info [Obj object, Str prop_name, Lst info] = do
 
       when (propertyInherited prop) $ raise E_INVARG
       flip traverseDescendants object $ \obj ->
-        when (isJust $ lookupPropertyRef obj $ newName') $ raise E_INVARG
+        when (isJust $ lookupPropertyRef obj newName') $ raise E_INVARG
 
       setInfo
 

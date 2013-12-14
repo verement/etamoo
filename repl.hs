@@ -102,7 +102,7 @@ evalPrint task = do
     Suspend (Just s) (Resume k) -> do
       putStrLn $ ".. Suspended for " ++ show s ++ " seconds"
       evalPrint task' { taskComputation = k nothing }
-    Abort (Exception code m v) -> do
+    Abort (Exception _ m v) -> do
       putStrLn $ "** " ++ unpack m ++ formatValue v
       return task'
   where formatValue (Int 0) = ""

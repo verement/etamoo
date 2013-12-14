@@ -14,7 +14,7 @@ import Foreign.C (CString, withCString, peekCString)
 import Data.Maybe (fromJust)
 import Data.Text.Encoding (encodeUtf8)
 import Data.ByteString (ByteString)
-import Data.Char (intToDigit)
+import Data.Char (intToDigit, isDigit)
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -188,8 +188,8 @@ bf_abs [Flt x] = return $ Flt $ abs x
 bf_floatstr (Flt x : Int precision : optional)
   | precision < 0 = raise E_INVARG
   | otherwise = return $ Str $ T.pack $ printf format x
-  where prec = min precision 19
-        [scientific] = booleanDefaults optional [False]
+  where [scientific] = booleanDefaults optional [False]
+        prec = min precision 19
         format = printf "%%.%d%c" prec $ if scientific then 'e' else 'f'
 
 bf_sqrt  [Flt x] = checkFloat $ sqrt x
@@ -371,9 +371,8 @@ bf_substitute [Str template, Lst subs] =
                       mapM substitution $ V.toList replacements'
 
       let walk ('%':c:cs)
-            | c >= '0' && c <= '9' =
-              let i = fromEnum c - fromEnum '0'
-              in fmap (replacements !! i ++) $ walk cs
+            | isDigit c = let i = fromEnum c - fromEnum '0'
+                          in fmap (replacements !! i ++) $ walk cs
             | c == '%'  = fmap ("%" ++) $ walk cs
             | otherwise = raise E_INVARG
           walk (c:cs) = fmap ([c] ++) $ walk cs
@@ -388,7 +387,8 @@ foreign import ccall unsafe "static unistd.h crypt"
 crypt :: String -> String -> String
 crypt key salt =
   unsafePerformIO $ bracket (takeMVar cryptLock) (putMVar cryptLock) $ \_ ->
-    withCString key $ \c_key -> withCString salt $ \c_salt ->
+    withCString key  $ \c_key  ->
+    withCString salt $ \c_salt ->
       c_crypt c_key c_salt >>= peekCString
 
 cryptLock :: MVar ()
@@ -408,13 +408,13 @@ bf_crypt (Str text : optional)
         saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
         go salt = return $ Str $ T.pack $ crypt (T.unpack text) (T.unpack salt)
 
-hash :: ByteString -> MOO Value
-hash bs = return $ Str $ T.pack $ show md5hash
+hash :: ByteString -> Value
+hash bs = Str $ T.pack $ show md5hash
   where md5hash = MD5.hash' bs :: MD5Digest
 
-bf_string_hash [Str text] = hash $ encodeUtf8 text
+bf_string_hash [Str text] = return $ hash $ encodeUtf8 text
 
-bf_binary_hash [Str bin_string] = binaryString bin_string >>= hash
+bf_binary_hash [Str bin_string] = fmap hash $ binaryString bin_string
 
 -- 4.4.2.4 Operations on Lists
 

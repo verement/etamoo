@@ -54,9 +54,10 @@ formatInfo (name, (_, Info min max types _)) =
 bf_function_info [] = return $ Lst $ V.fromList $
                       map formatInfo $ Map.assocs builtinFunctions
 bf_function_info [Str name] =
-  case Map.lookupIndex (T.toCaseFold name) builtinFunctions of
-    Just index -> return $ formatInfo $ Map.elemAt index builtinFunctions
-    Nothing    -> raise E_INVARG
+  case Map.lookup name' builtinFunctions of
+    Just detail -> return $ formatInfo (name', detail)
+    Nothing     -> raise E_INVARG
+  where name' = T.toCaseFold name
 
 bf_eval [Str string] = notyet
 
@@ -72,14 +73,8 @@ bf_seconds_left [] = notyet
 
 bf_task_id [] = fmap (Int . taskId) $ asks task
 
-bf_suspend optional =
-  callCC $ \k -> do
-    request <- case seconds of
-      Nothing         -> return $ Suspend Nothing     $ Resume k
-      Just (Int secs) -> return $ Suspend (Just secs) $ Resume k
-      Just  _         -> raise E_TYPE
-    interrupt request
-  where (seconds : _) = maybeDefaults optional
+bf_suspend [Int seconds] = callCC $ interrupt . Suspend (Just seconds) . Resume
+bf_suspend []            = callCC $ interrupt . Suspend Nothing        . Resume
 
 bf_resume (Int task_id : optional) = notyet
   where [value] = defaults optional [nothing]

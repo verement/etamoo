@@ -2,10 +2,11 @@
 repl: FORCE MOO/Builtins/Match.hs
 	ghc $(OPT) --make -threaded repl.hs -lcrypt -lpcre
 
-FORCE:
-
 MOO/Builtins/Match.hs: MOO/Builtins/Match.hsc
 	hsc2hs $<
+
+hlint.html: $(shell find . -name \*.hs)
+	-hlint --report=$@ $^ >/dev/null
 
 .PHONY: clean
 clean:
@@ -14,3 +15,5 @@ clean:
 	       -o -name \*.hi       \
 	       -o -name \*.hi-boot  \
 	       \) -print0 | xargs -0 rm
+
+FORCE:
