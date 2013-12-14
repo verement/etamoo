@@ -232,7 +232,7 @@ storeProperty :: (ObjT, StrT) -> Value -> MOO Value
 storeProperty (oid, name) value = do
   obj <- getObject oid >>= maybe (raise E_INVIND) return
   if isBuiltinProperty name'
-    then setBuiltinProperty oid name' value
+    then setBuiltinProperty (oid, obj) name' value
     else modifyProperty obj name' $ \prop -> do
       unless (propertyPermW prop) $ checkPermission (propertyOwner prop)
       return prop { propertyValue = Just value }

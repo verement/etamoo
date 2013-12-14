@@ -193,46 +193,42 @@ modifyProperty obj name f =
       prop' <- f prop
       liftSTM $ writeTVar propTVar prop'
 
-setBuiltinProperty :: ObjId -> StrT -> Value -> MOO ()
-setBuiltinProperty oid "name" (Str name) = do
-  db <- getDatabase
-  obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
+setBuiltinProperty :: (ObjId, Object) -> StrT -> Value -> MOO ()
+setBuiltinProperty (oid, obj) "name" (Str name) = do
   if objectIsPlayer obj
     then checkWizard
     else checkPermission (objectOwner obj)
+  db <- getDatabase
   liftSTM $ modifyObject oid db $ \obj -> return obj { objectName = name }
-setBuiltinProperty oid "owner" (Obj owner) = do
+setBuiltinProperty (oid, _) "owner" (Obj owner) = do
   checkWizard
   db <- getDatabase
   liftSTM $ modifyObject oid db $ \obj -> return obj { objectOwner = owner }
 setBuiltinProperty _ "location" (Obj _) = raise E_PERM
 setBuiltinProperty _ "contents" (Lst _) = raise E_PERM
-setBuiltinProperty oid "programmer" bit = do
+setBuiltinProperty (oid, _) "programmer" bit = do
   checkWizard
   db <- getDatabase
   liftSTM $ modifyObject oid db $ \obj ->
     return obj { objectProgrammer = truthOf bit }
-setBuiltinProperty oid "wizard" bit = do
+setBuiltinProperty (oid, _) "wizard" bit = do
   checkWizard
   db <- getDatabase
   liftSTM $ modifyObject oid db $ \obj ->
     return obj { objectWizard = truthOf bit }
-setBuiltinProperty oid "r" bit = do
-  db <- getDatabase
-  obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
+setBuiltinProperty (oid, obj) "r" bit = do
   checkPermission (objectOwner obj)
+  db <- getDatabase
   liftSTM $ modifyObject oid db $ \obj ->
     return obj { objectPermR = truthOf bit }
-setBuiltinProperty oid "w" bit = do
-  db <- getDatabase
-  obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
+setBuiltinProperty (oid, obj) "w" bit = do
   checkPermission (objectOwner obj)
+  db <- getDatabase
   liftSTM $ modifyObject oid db $ \obj ->
     return obj { objectPermW = truthOf bit }
-setBuiltinProperty oid "f" bit = do
-  db <- getDatabase
-  obj <- liftSTM (dbObject oid db) >>= maybe (raise E_INVIND) return
+setBuiltinProperty (oid, obj) "f" bit = do
   checkPermission (objectOwner obj)
+  db <- getDatabase
   liftSTM $ modifyObject oid db $ \obj ->
     return obj { objectPermF = truthOf bit }
 setBuiltinProperty _ _ _ = raise E_TYPE
