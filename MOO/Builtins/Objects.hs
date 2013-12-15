@@ -52,7 +52,7 @@ builtins = [
 
   , ("verbs"         , (bf_verbs         , Info 1 (Just 1) [TObj]       TLst))
   , ("verb_info"     , (bf_verb_info     , Info 2 (Just 2) [TObj, TAny] TLst))
-  , ("set_verb_info" , (bf_set_verb_info , Info 3 (Just 3) [TObj, TStr,
+  , ("set_verb_info" , (bf_set_verb_info , Info 3 (Just 3) [TObj, TAny,
                                                             TLst]       TAny))
   , ("verb_args"     , (bf_verb_args     , Info 2 (Just 2) [TObj, TStr] TLst))
   , ("set_verb_args" , (bf_set_verb_args , Info 3 (Just 3) [TObj, TStr,
@@ -259,7 +259,7 @@ bf_clear_property [Obj object, Str prop_name] = do
 bf_verbs [Obj object] = do
   obj <- checkValid object
   unless (objectPermR obj) $ checkPermission (objectOwner obj)
-  return $ Lst $ V.fromList $ map (Str . verbNames) $ objectVerbs obj
+  fmap (Lst . V.fromList . map Str) $ liftSTM $ definedVerbs obj
 
 bf_verb_info [Obj object, verb_desc] = do
   obj <- checkValid object
@@ -272,7 +272,37 @@ bf_verb_info [Obj object, verb_desc] = do
                                       ['x' | verbPermX verb],
                                       ['d' | verbPermD verb]]
 
-bf_set_verb_info [Obj object, Str verb_desc, Lst info] = notyet
+bf_set_verb_info [Obj object, verb_desc, Lst info] = do
+  (owner, perms, names) <- case V.toList info of
+    [Obj owner, Str perms, Str names] -> return (owner, perms, names)
+    [_        , _        , _        ] -> raise E_TYPE
+    _                                 -> raise E_INVARG
+  permSet <- checkPerms "rwxd" perms
+  checkValid owner
+  when (null $ T.words names) $ raise E_INVARG
+
+  obj <- checkValid object
+  verb <- getVerb obj verb_desc
+  unless (verbPermW verb) $ checkPermission (verbOwner verb)
+  checkPermission owner
+
+  let newNames = T.toCaseFold names
+      oldNames = T.toCaseFold (verbNames verb)
+  unless (newNames == oldNames || objectPermW obj) $
+    checkPermission (objectOwner obj)
+
+  modifyVerb (object, obj) verb_desc $ \verb ->
+    return verb {
+        verbNames = names
+      , verbOwner = owner
+      , verbPermR = 'r' `S.member` permSet
+      , verbPermW = 'w' `S.member` permSet
+      , verbPermX = 'x' `S.member` permSet
+      , verbPermD = 'd' `S.member` permSet
+    }
+
+  return nothing
+
 bf_verb_args [Obj object, Str verb_desc] = notyet
 bf_set_verb_args [Obj object, Str verb_desc, Lst args] = notyet
 bf_add_verb [Obj object, Lst info, Lst args] = notyet

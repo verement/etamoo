@@ -24,6 +24,7 @@ module MOO.Task ( MOO
                 , getProperty
                 , getVerb
                 , modifyProperty
+                , modifyVerb
                 , setBuiltinProperty
                 , reader
                 , local
@@ -191,16 +192,14 @@ getProperty obj name = do
   maybe (raise E_PROPNF) return maybeProp
 
 getVerb :: Object -> Value -> MOO Verb
-getVerb obj (Str name) = do
-  let maybeVerb = lookupVerb obj (T.toCaseFold name)
+getVerb obj desc@Str{} = do
+  maybeVerb <- liftSTM $ lookupVerb obj desc
   maybe (raise E_VERBNF) return maybeVerb
-getVerb obj (Int index)
-  | index' < 1        = raise E_INVARG
-  | index' > numVerbs = raise E_VERBNF
-  | otherwise        = return $ verbs !! (index' - 1)
-  where index'   = fromIntegral index
-        verbs    = objectVerbs obj
-        numVerbs = length verbs
+getVerb obj desc@(Int index)
+  | index < 1 = raise E_INVARG
+  | otherwise = do
+    maybeVerb <- liftSTM $ lookupVerb obj desc
+    maybe (raise E_VERBNF) return maybeVerb
 getVerb _ _ = raise E_TYPE
 
 modifyProperty :: Object -> StrT -> (Property -> MOO Property) -> MOO ()
@@ -211,6 +210,21 @@ modifyProperty obj name f =
       prop  <- liftSTM $ readTVar propTVar
       prop' <- f prop
       liftSTM $ writeTVar propTVar prop'
+
+modifyVerb :: (ObjId, Object) -> Value -> (Verb -> MOO Verb) -> MOO ()
+modifyVerb (oid, obj) desc f =
+  case lookupVerbRef obj desc of
+    Nothing       -> raise E_VERBNF
+    Just (index, verbTVar) -> do
+      verb  <- liftSTM $ readTVar verbTVar
+      verb' <- f verb
+      liftSTM $ writeTVar verbTVar verb'
+      let names  = T.toCaseFold $ verbNames verb
+          names' = T.toCaseFold $ verbNames verb'
+      when (names /= names') $ do
+        db <- getDatabase
+        liftSTM $ modifyObject oid db $ \obj ->
+          return $ replaceVerb obj index verb'
 
 setBuiltinProperty :: (ObjId, Object) -> StrT -> Value -> MOO ()
 setBuiltinProperty (oid, obj) "name" (Str name) = do

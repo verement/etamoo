@@ -14,10 +14,14 @@ module MOO.Object ( Object (..)
                   , setVerbs
                   , lookupPropertyRef
                   , lookupProperty
+                  , lookupVerbRef
                   , lookupVerb
+                  , replaceVerb
                   , definedProperties
+                  , definedVerbs
                   ) where
 
+import Control.Arrow (second)
 import Control.Concurrent.STM
 import Data.HashMap.Strict (HashMap)
 import Data.Text (Text)
@@ -52,7 +56,7 @@ data Object = Object {
 
   -- Definitions
   , objectProperties :: HashMap StrT (TVar Property)
-  , objectVerbs      :: [Verb]
+  , objectVerbs      :: [([StrT], TVar Verb)]
 }
 
 initObject = Object {
@@ -131,10 +135,22 @@ setProperties props obj = do
   where mkHash = fmap HM.fromList . mapM mkAssoc
         mkAssoc prop = do
           tvarProp <- newTVarIO prop
-          return (T.toCaseFold $ propertyName prop, tvarProp)
+          return (propertyKey prop, tvarProp)
+
+propertyKey :: Property -> StrT
+propertyKey = T.toCaseFold . propertyName
 
 setVerbs :: [Verb] -> Object -> IO Object
-setVerbs verbs obj = return obj { objectVerbs = verbs }
+setVerbs verbs obj = do
+  verbList <- mkList verbs
+  return obj { objectVerbs = verbList }
+  where mkList = mapM mkVerb
+        mkVerb verb = do
+          tvarVerb <- newTVarIO verb
+          return (verbKey verb, tvarVerb)
+
+verbKey :: Verb -> [StrT]
+verbKey = T.words . T.toCaseFold . verbNames
 
 lookupPropertyRef :: Object -> StrT -> Maybe (TVar Property)
 lookupPropertyRef obj name = HM.lookup name (objectProperties obj)
@@ -143,20 +159,46 @@ lookupProperty :: Object -> StrT -> STM (Maybe Property)
 lookupProperty obj name = maybe (return Nothing) (fmap Just . readTVar) $
                           lookupPropertyRef obj name
 
-lookupVerb :: Object -> StrT -> Maybe Verb
-lookupVerb obj name = find matchVerb (objectVerbs obj)
-  where matchVerb verb = any matchName $ T.words (T.toCaseFold $ verbNames verb)
+lookupVerbRef :: Object -> Value -> Maybe (Int, TVar Verb)
+lookupVerbRef obj (Str name) =
+  fmap (second snd) $ find matchVerb (zip [0..] $ objectVerbs obj)
+  where matchVerb (_, (names, verb)) = any matchName names
         matchName vname
-          | post == ""  = vname == name
+          | post == ""  = vname == name'
           | post == "*" = pre   == preName
           | otherwise   = pre   == preName &&
                           T.take postNameLen post' == postName
           where (pre, post)         = T.breakOn "*" vname
                 post'               = T.tail post
-                (preName, postName) = T.splitAt (T.length pre) name
+                (preName, postName) = T.splitAt (T.length pre) name'
                 postNameLen         = T.length postName
+                name'               = T.toCaseFold name
+lookupVerbRef obj (Int index)
+  | index' < 1        = Nothing
+  | index' > numVerbs = Nothing
+  | otherwise         = Just (index'', snd $ verbs !! index'')
+  where index'   = fromIntegral index
+        index''  = index' - 1
+        verbs    = objectVerbs obj
+        numVerbs = length verbs
+lookupVerbRef _ _ = Nothing
+
+lookupVerb :: Object -> Value -> STM (Maybe Verb)
+lookupVerb obj desc = maybe (return Nothing) (fmap Just . readTVar . snd) $
+                      lookupVerbRef obj desc
+
+replaceVerb :: Object -> Int -> Verb -> Object
+replaceVerb obj index verb =
+  obj { objectVerbs = pre ++ [(verbKey verb, tvarVerb)] ++ tail post }
+  where (pre, post) = splitAt index (objectVerbs obj)
+        tvarVerb = snd $ head post
 
 definedProperties :: Object -> STM [StrT]
 definedProperties obj = do
   props <- mapM readTVar $ HM.elems (objectProperties obj)
   return $ map propertyName $ filter (not . propertyInherited) props
+
+definedVerbs :: Object -> STM [StrT]
+definedVerbs obj = do
+  verbs <- mapM (readTVar . snd) $ objectVerbs obj
+  return $ map verbNames verbs
