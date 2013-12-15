@@ -27,11 +27,13 @@ module MOO.Task ( MOO
                 , reader
                 , local
                 , initFrame
+                , formatStack
                 , pushFrame
                 , popFrame
                 , frame
                 , caller
                 , modifyFrame
+                , setLineNumber
                 , pushTryFinallyContext
                 , pushLoopContext
                 , setLoopContinue
@@ -39,6 +41,7 @@ module MOO.Task ( MOO
                 , breakLoop
                 , continueLoop
                 , catchException
+                , passException
                 , raiseException
                 , notyet
                 , raise
@@ -101,7 +104,7 @@ initTask db comp = do
   }
 
 data TaskDisposition = Complete Value
-                     | Abort Exception
+                     | Abort Exception CallStack
                      | Suspend (Maybe IntT) Resume
                      | Read Resume
 
@@ -152,7 +155,7 @@ initEnvironment task = do
       task             = task
     , interruptHandler = error "Undefined interrupt handler"
     , startTime        = startTime
-    , exceptionHandler = Handler $ interrupt . Abort
+    , exceptionHandler = Handler $ \e cs -> interrupt (Abort e cs)
     , indexLength      = error "Invalid index context"
   }
 
@@ -259,21 +262,47 @@ instance Show Context where
   show TryFinally{} = "<TryFinally>"
 
 data StackFrame = Frame {
-    continuation :: Continuation
-  , contextStack :: [Context]
-  , variables    :: Map Id Value
-  , debugBit     :: Bool
-  , permissions  :: ObjId
+    continuation  :: Continuation
+  , contextStack  :: [Context]
+  , variables     :: Map Id Value
+  , debugBit      :: Bool
+  , permissions   :: ObjId
+
+  , verbName      :: StrT
+  , verbLocation  :: ObjId
+  , initialThis   :: ObjId
+  , initialPlayer :: ObjId
+
+  , lineNumber    :: IntT
 } deriving Show
 
 initFrame :: Bool -> ObjId -> StackFrame
 initFrame debug programmer = Frame {
-    continuation = Continuation return
-  , contextStack = []
-  , variables    = mkInitVars
-  , debugBit     = debug
-  , permissions  = programmer
+    continuation  = Continuation return
+  , contextStack  = []
+  , variables     = mkInitVars
+  , debugBit      = debug
+  , permissions   = programmer
+
+  , verbName      = ""
+  , verbLocation  = -1
+  , initialThis   = -1
+  , initialPlayer = -1
+
+  , lineNumber    = 0
 }
+
+formatStack :: Bool -> CallStack -> Value
+formatStack includeLineNumbers (Stack stack) =
+  Lst $ V.fromList $ map formatFrame stack
+  where formatFrame frame = Lst $ V.fromList (
+            Obj (initialThis   frame)
+          : Str (verbName      frame)
+          : Obj (permissions   frame)
+          : Obj (verbLocation  frame)
+          : Obj (initialPlayer frame)
+          : if includeLineNumbers then Int (lineNumber frame) : [] else []
+          )
 
 pushFrame :: StackFrame -> MOO ()
 pushFrame frame = modify $ \st@State { stack = Stack frames } ->
@@ -304,6 +333,10 @@ caller f = gets (fmap f . previousFrame . stack)
 modifyFrame :: (StackFrame -> StackFrame) -> MOO ()
 modifyFrame f = modify $ \st@State { stack = Stack (frame:stack) } ->
   st { stack = Stack (f frame : stack) }
+
+setLineNumber :: Int -> MOO ()
+setLineNumber lineNumber = modifyFrame $ \frame ->
+  frame { lineNumber = fromIntegral lineNumber }
 
 pushContext :: Context -> MOO ()
 pushContext context = modifyFrame $ \frame ->
@@ -393,22 +426,28 @@ typeVars = [
   , ("ERR"  , Int $ typeCode TErr)
   ]
 
-newtype ExceptionHandler = Handler (Exception -> MOO Value)
+newtype ExceptionHandler = Handler (Exception -> CallStack -> MOO Value)
+
+instance Show ExceptionHandler where
+  show _ = "<ExceptionHandler>"
 
 data Exception = Exception Code Message Value
 type Code = Value
 type Message = StrT
 
-catchException :: MOO a -> (Exception -> MOO a) -> MOO a
+catchException :: MOO a -> (Exception -> CallStack -> MOO a) -> MOO a
 catchException action handler = callCC $ \k -> local (mkHandler k) action
-  where mkHandler k env = env { exceptionHandler = Handler $ \e ->
-                                 local (const env) $ handler e >>= k }
+  where mkHandler k env = env { exceptionHandler = Handler $ \e cs ->
+                                 local (const env) $ handler e cs >>= k }
+
+passException :: Exception -> CallStack -> MOO a
+passException except callStack = do
+  Handler handler <- asks exceptionHandler
+  handler except callStack
+  error "Returned from exception handler"
 
 raiseException :: Exception -> MOO a
-raiseException except = do
-  Handler handler <- asks exceptionHandler
-  handler except
-  error "Returned from exception handler"
+raiseException except = passException except =<< gets stack
 
 notyet :: MOO a
 notyet = raiseException $

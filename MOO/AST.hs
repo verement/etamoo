@@ -19,25 +19,25 @@ import MOO.Types
 newtype Program = Program [Statement]
                 deriving Show
 
-data Statement = Expression Expr
-               | If         Expr Then [ElseIf] Else
-               | ForList    Id  Expr        [Statement]
-               | ForRange   Id (Expr, Expr) [Statement]
-               | While      (Maybe Id) Expr [Statement]
-               | Fork       (Maybe Id) Expr [Statement]
-               | Break      (Maybe Id)
-               | Continue   (Maybe Id)
-               | Return     (Maybe Expr)
-               | TryExcept  [Statement] [Except]
-               | TryFinally [Statement] Finally
+data Statement = Expression !Int Expr
+               | If         !Int Expr Then [ElseIf] Else
+               | ForList    !Int Id  Expr        [Statement]
+               | ForRange   !Int Id (Expr, Expr) [Statement]
+               | While      !Int (Maybe Id) Expr [Statement]
+               | Fork       !Int (Maybe Id) Expr [Statement]
+               | Break           (Maybe Id)
+               | Continue        (Maybe Id)
+               | Return     !Int (Maybe Expr)
+               | TryExcept       [Statement] [Except]
+               | TryFinally      [Statement] Finally
                deriving Show
 
-newtype Then    = Then        [Statement]             deriving Show
-data    ElseIf  = ElseIf Expr [Statement]             deriving Show
-newtype Else    = Else        [Statement]             deriving Show
+newtype Then    = Then             [Statement]             deriving Show
+data    ElseIf  = ElseIf !Int Expr [Statement]             deriving Show
+newtype Else    = Else             [Statement]             deriving Show
 
-data    Except  = Except (Maybe Id) Codes [Statement] deriving Show
-newtype Finally = Finally                 [Statement] deriving Show
+data    Except  = Except !Int (Maybe Id) Codes [Statement] deriving Show
+newtype Finally = Finally                      [Statement] deriving Show
 
 data Expr = Literal Value
           | List [Arg]

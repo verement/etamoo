@@ -87,6 +87,7 @@ evalP db line state =
   case runParser program initParserState "" (pack line) of
     Left err -> putStr "Parse error" >> print err >> return state
     Right (Program stmts) -> do
+      putStrLn $ "-- " ++ show stmts
       task <- initTask db (compileStatements stmts)
       fmap taskState $ evalPrint task { taskState = state }
 
@@ -102,7 +103,7 @@ evalPrint task = do
     Suspend (Just s) (Resume k) -> do
       putStrLn $ ".. Suspended for " ++ show s ++ " seconds"
       evalPrint task' { taskComputation = k nothing }
-    Abort (Exception _ m v) -> do
+    Abort (Exception _ m v) _ -> do
       putStrLn $ "** " ++ unpack m ++ formatValue v
       return task'
   where formatValue (Int 0) = ""

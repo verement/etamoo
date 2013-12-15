@@ -17,14 +17,17 @@ import           Data.List
 import MOO.Types
 import MOO.AST
 
-data ParserState = ParserState { dollarContext :: Int
-                               , loopStack :: [[Maybe Id]]
-                               }
+data ParserState = ParserState {
+    dollarContext :: Int
+  , loopStack     :: [[Maybe Id]]
+  , lineNumber    :: Int
+}
 
-initParserState :: ParserState
-initParserState = ParserState { dollarContext = 0
-                              , loopStack     = [[]]
-                              }
+initParserState = ParserState {
+    dollarContext = 0
+  , loopStack     = [[]]
+  , lineNumber    = 1
+}
 
 type MOOParser = GenParser ParserState
 
@@ -344,6 +347,12 @@ mkScatter scat expr = checkScatter True scat
 
 -- Statements
 
+incLineNumber :: MOOParser ()
+incLineNumber = modifyState $ \st -> st { lineNumber = succ (lineNumber st) }
+
+getLineNumber :: MOOParser Int
+getLineNumber = fmap lineNumber getState
+
 statements :: MOOParser [Statement]
 statements = fmap catMaybes (many statement) <?> "statements"
 
@@ -358,39 +367,46 @@ statement = fmap Just someStatement <|> nullStatement <?> "statement"
 ifStatement :: MOOParser Statement
 ifStatement = do
   reserved "if"
+  lineNumber <- getLineNumber
   cond <- parens expression
+  incLineNumber
   body <- statements
   elseIfs <- many elseIf
-  elsePart <- option [] $ reserved "else" >> statements
-  reserved "endif"
-  return $ If cond (Then body) elseIfs (Else elsePart)
+  elsePart <- option [] $ reserved "else" >> incLineNumber >> statements
+  reserved "endif" >> incLineNumber
+  return $ If lineNumber cond (Then body) elseIfs (Else elsePart)
   where elseIf = do
           reserved "elseif"
+          lineNumber <- getLineNumber
           cond <- parens expression
+          incLineNumber
           body <- statements
-          return $ ElseIf cond body
+          return $ ElseIf lineNumber cond body
 
 forStatement :: MOOParser Statement
 forStatement = do
   reserved "for"
+  lineNumber <- getLineNumber
   ident <- identifier
   reserved "in"
-  forList ident <|> forRange ident
-  where forList ident = do
+  forList lineNumber ident <|> forRange lineNumber ident
+  where forList lineNumber ident = do
           expr <- parens expression
+          incLineNumber
           body <- loopBody ident
-          reserved "endfor"
-          return $ ForList ident expr body
+          reserved "endfor" >> incLineNumber
+          return $ ForList lineNumber ident expr body
 
-        forRange ident = do
+        forRange lineNumber ident = do
           range <- brackets $ do
             start <- expression
             symbol ".."
             end <- expression
             return (start, end)
+          incLineNumber
           body <- loopBody ident
-          reserved "endfor"
-          return $ ForRange ident range body
+          reserved "endfor" >> incLineNumber
+          return $ ForRange lineNumber ident range body
 
         loopBody ident = between (pushLoopName $ Just ident) popLoopName
                          statements
@@ -398,11 +414,13 @@ forStatement = do
 whileStatement :: MOOParser Statement
 whileStatement = do
   reserved "while"
+  lineNumber <- getLineNumber
   ident <- optionMaybe identifier
   expr <- parens expression
+  incLineNumber
   body <- between (pushLoopName ident) popLoopName statements
-  reserved "endwhile"
-  return $ While ident expr body
+  reserved "endwhile" >> incLineNumber
+  return $ While lineNumber ident expr body
 
 modifyLoopStack :: ([[Maybe Id]] -> [[Maybe Id]]) -> MOOParser ()
 modifyLoopStack f = modifyState $ \st -> st { loopStack = f $ loopStack st }
@@ -434,56 +452,63 @@ breakStatement = do
   reserved "break"
   ident <- optionMaybe identifier
   checkLoopName "break" ident
-  semi >> return (Break ident)
+  semi >> incLineNumber >> return (Break ident)
 
 continueStatement :: MOOParser Statement
 continueStatement = do
   reserved "continue"
   ident <- optionMaybe identifier
   checkLoopName "continue" ident
-  semi >> return (Continue ident)
+  semi >> incLineNumber >> return (Continue ident)
 
 returnStatement :: MOOParser Statement
 returnStatement = do
   reserved "return"
+  lineNumber <- getLineNumber
   expr <- optionMaybe expression
-  semi >> return (Return expr)
+  semi >> incLineNumber >> return (Return lineNumber expr)
 
 tryStatement :: MOOParser Statement
 tryStatement = do
   reserved "try"
+  incLineNumber
   body <- statements
   tryExcept body <|> tryFinally body
   where tryExcept body = do
           excepts <- many1 except
-          reserved "endtry"
+          reserved "endtry" >> incLineNumber
           return $ TryExcept body excepts
         except = do
           reserved "except"
+          lineNumber <- getLineNumber
           ident <- optionMaybe identifier
           cs <- parens codes
+          incLineNumber
           handler <- statements
-          return $ Except ident cs handler
+          return $ Except lineNumber ident cs handler
 
         tryFinally body = do
-          reserved "finally"
+          reserved "finally" >> incLineNumber
           cleanup <- statements
-          reserved "endtry"
+          reserved "endtry" >> incLineNumber
           return $ TryFinally body (Finally cleanup)
 
 forkStatement :: MOOParser Statement
 forkStatement = do
   reserved "fork"
+  lineNumber <- getLineNumber
   ident <- optionMaybe identifier
   expr <- parens expression
+  incLineNumber
   body <- between suspendLoopScope resumeLoopScope statements
-  reserved "endfork"
-  return $ Fork ident expr body
+  reserved "endfork" >> incLineNumber
+  return $ Fork lineNumber ident expr body
 
 expressionStatement :: MOOParser Statement
 expressionStatement = do
+  lineNumber <- getLineNumber
   expr <- expression
-  semi >> return (Expression expr)
+  semi >> incLineNumber >> return (Expression lineNumber expr)
 
 -- Main parser interface
 

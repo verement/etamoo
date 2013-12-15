@@ -3,6 +3,7 @@
 
 module MOO.Compiler ( compileStatements, evaluate ) where
 
+import Control.Monad.State (gets)
 import Control.Monad.Cont (callCC)
 import Control.Monad (when, unless, void)
 
@@ -18,21 +19,26 @@ import MOO.Object
 
 compileStatements :: [Statement] -> MOO Value
 compileStatements (s:ss) = catchDebug $ case s of
-  Expression expr -> evaluate expr >> compileStatements ss
-
-  If cond (Then thens) elseIfs (Else elses) -> do
-    compileIf ((cond, thens) : map elseIf elseIfs) elses
+  Expression lineNumber expr -> do
+    setLineNumber lineNumber
+    evaluate expr
     compileStatements ss
 
-    where elseIf (ElseIf cond thens) = (cond, thens)
+  If lineNumber cond (Then thens) elseIfs (Else elses) -> do
+    compileIf ((lineNumber, cond, thens) : map elseIf elseIfs) elses
+    compileStatements ss
 
-          compileIf ((cond,thens):conds) elses = do
+    where elseIf (ElseIf lineNumber cond thens) = (lineNumber, cond, thens)
+
+          compileIf ((lineNumber,cond,thens):conds) elses = do
+            setLineNumber lineNumber
             cond' <- fmap truthOf (evaluate cond)
             if cond' then compileStatements thens
               else compileIf conds elses
           compileIf [] elses = compileStatements elses
 
-  ForList var expr body -> do
+  ForList lineNumber var expr body -> do
+    setLineNumber lineNumber
     expr' <- evaluate expr
     elts <- case expr' of
       Lst elts -> return $ V.toList elts
@@ -54,7 +60,8 @@ compileStatements (s:ss) = catchDebug $ case s of
             loop var elts body
           loop _ [] _ = return nothing
 
-  ForRange var (start, end) body -> do
+  ForRange lineNumber var (start, end) body -> do
+    setLineNumber lineNumber
     start' <- evaluate start
     end'   <- evaluate end
     (ty, s, e) <- case (start', end') of
@@ -79,42 +86,69 @@ compileStatements (s:ss) = catchDebug $ case s of
                 body
               loop var ty (succ i) end body
 
-  While var expr body -> do
+  While lineNumber var expr body -> do
     callCC $ \break -> do
       pushLoopContext var' (Continuation break)
-      loop var' (evaluate expr) (compileStatements body)
+      loop lineNumber var' (evaluate expr) (compileStatements body)
       return nothing
     popContext
 
     compileStatements ss
 
     where var' = fmap T.toCaseFold var
-          loop var expr body = do
+          loop lineNumber var expr body = do
+            setLineNumber lineNumber
             expr' <- expr
             maybe (return expr') (`storeVariable` expr') var
             when (truthOf expr') $ do
               callCC $ \continue -> do
                 setLoopContinue (Continuation continue)
                 body
-              loop var expr body
+              loop lineNumber var expr body
 
-  Fork var delay body -> notyet
+  Fork lineNumber var delay body -> notyet
 
   Break    name -> breakLoop    (fmap T.toCaseFold name)
   Continue name -> continueLoop (fmap T.toCaseFold name)
 
-  Return expr -> maybe (return nothing) evaluate expr >>= popFrame
+  Return _          Nothing     -> popFrame nothing
+  Return lineNumber (Just expr) -> do
+    setLineNumber lineNumber
+    popFrame =<< evaluate expr
 
-  TryExcept body excepts -> notyet
+  TryExcept body excepts -> do
+    excepts' <- mapM compileExcepts excepts
+
+    compileStatements body `catchException` dispatch excepts'
+    compileStatements ss
+
+    where compileExcepts (Except lineNumber var codes statements) = do
+            codes' <- case codes of
+              ANY        -> return Nothing
+              Codes args -> setLineNumber lineNumber >> fmap Just (expand args)
+            return (codes', var, compileStatements statements)
+
+          dispatch ((codes, var, handler):next)
+            except@(Exception code message value)
+            | maybe True (code `elem`) codes = \(Stack callStack) -> do
+              Stack currentStack <- gets stack
+              let traceback = formatStack True $ Stack $ take stackLen callStack
+                  stackLen  = length callStack - length currentStack + 1
+                  errorInfo =
+                    Lst $ V.fromList [code, Str message, value, traceback]
+              maybe return storeVariable var errorInfo
+              handler
+            | otherwise = dispatch next except
+          dispatch [] except = passException except
 
   TryFinally body (Finally finally) -> do
     let finally' = compileStatements finally
     pushTryFinallyContext finally'
 
-    compileStatements body `catchException` \except -> do
+    compileStatements body `catchException` \except callStack -> do
       popContext
       finally'
-      raiseException except
+      passException except callStack
 
     popContext
     finally'
@@ -124,9 +158,10 @@ compileStatements (s:ss) = catchDebug $ case s of
 compileStatements [] = return nothing
 
 catchDebug :: MOO Value -> MOO Value
-catchDebug action = action `catchException` \except@(Exception code _ _) -> do
-  debug <- frame debugBit
-  if debug then raiseException except else return code
+catchDebug action =
+  action `catchException` \except@(Exception code _ _) callStack -> do
+    debug <- frame debugBit
+    if debug then passException except callStack else return code
 
 evaluate :: Expr -> MOO Value
 evaluate expr = catchDebug $ case expr of
@@ -195,10 +230,10 @@ evaluate expr = catchDebug $ case expr of
     codes' <- case codes of
       ANY        -> return Nothing
       Codes args -> fmap Just (expand args)
-    evaluate expr `catchException` \except@(Exception code _ _) ->
+    evaluate expr `catchException` \except@(Exception code _ _) callStack ->
       if maybe True (code `elem`) codes'
         then maybe (return code) evaluate dv
-        else raiseException except
+        else passException except callStack
 
   where binary op a b = do
           a' <- evaluate a
