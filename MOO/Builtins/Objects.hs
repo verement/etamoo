@@ -64,7 +64,7 @@ builtins = [
                                                             TAny, TAny] TLst))
   , ("set_verb_code" , (bf_set_verb_code , Info 3 (Just 3) [TObj, TStr,
                                                             TLst]       TLst))
-  , ("disassemble"   , (bf_disassemble   , Info 2 (Just 2) [TObj, TStr] TLst))
+  , ("disassemble"   , (bf_disassemble   , Info 2 (Just 2) [TObj, TAny] TLst))
 
   , ("players"       , (bf_players       , Info 0 (Just 0) []           TLst))
   , ("is_player"     , (bf_is_player     , Info 1 (Just 1) [TObj]       TInt))
@@ -339,7 +339,13 @@ bf_add_verb [Obj object, Lst info, Lst args] = notyet
 bf_delete_verb [Obj object, Str verb_desc] = notyet
 bf_verb_code (Obj object : Str verb_desc : options) = notyet
 bf_set_verb_code [Obj object, Str verb_desc, Lst code] = notyet
-bf_disassemble [Obj object, Str verb_desc] = notyet
+
+bf_disassemble [Obj object, verb_desc] = do
+  obj <- checkValid object
+  verb <- getVerb obj verb_desc
+  unless (verbPermR verb) $ checkPermission (verbOwner verb)
+
+  return $ Lst V.empty  -- nothing to see here
 
 -- 4.4.3.5 Operations on Player Objects
 
