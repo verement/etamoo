@@ -54,7 +54,7 @@ builtins = [
   , ("verb_info"     , (bf_verb_info     , Info 2 (Just 2) [TObj, TAny] TLst))
   , ("set_verb_info" , (bf_set_verb_info , Info 3 (Just 3) [TObj, TAny,
                                                             TLst]       TAny))
-  , ("verb_args"     , (bf_verb_args     , Info 2 (Just 2) [TObj, TStr] TLst))
+  , ("verb_args"     , (bf_verb_args     , Info 2 (Just 2) [TObj, TAny] TLst))
   , ("set_verb_args" , (bf_set_verb_args , Info 3 (Just 3) [TObj, TStr,
                                                             TLst]       TAny))
   , ("add_verb"      , (bf_add_verb      , Info 3 (Just 3) [TObj, TLst,
@@ -303,7 +303,15 @@ bf_set_verb_info [Obj object, verb_desc, Lst info] = do
 
   return nothing
 
-bf_verb_args [Obj object, Str verb_desc] = notyet
+bf_verb_args [Obj object, verb_desc] = do
+  obj <- checkValid object
+  verb <- getVerb obj verb_desc
+  unless (verbPermR verb) $ checkPermission (verbOwner verb)
+  return $ Lst $ V.fromList [Str $ dobj verb, Str $ prep verb, Str $ iobj verb]
+  where dobj = obj2text  . verbDirectObject
+        iobj = obj2text  . verbIndirectObject
+        prep = prep2text . verbPreposition
+
 bf_set_verb_args [Obj object, Str verb_desc, Lst args] = notyet
 bf_add_verb [Obj object, Lst info, Lst args] = notyet
 bf_delete_verb [Obj object, Str verb_desc] = notyet

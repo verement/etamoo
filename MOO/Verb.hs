@@ -3,6 +3,8 @@
 
 module MOO.Verb ( Verb (..)
                 , initVerb
+                , obj2text
+                , prep2text
                 ) where
 
 import Data.Text (Text)
@@ -44,6 +46,11 @@ data ObjSpec = ObjNone
              | ObjAny
              | ObjThis
              deriving (Enum, Show)
+
+obj2text :: ObjSpec -> Text
+obj2text ObjNone = "none"
+obj2text ObjAny  = "any"
+obj2text ObjThis = "this"
 
 data PrepSpec = PrepAny
               | PrepNone
