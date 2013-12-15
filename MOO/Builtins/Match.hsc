@@ -20,6 +20,8 @@ import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Text as T
 import qualified Data.ByteString as BS
 
+{-# ANN module "HLint: ignore Avoid lambda" #-}
+
 #include <pcre.h>
 
 data PCRE
@@ -71,6 +73,8 @@ data RewriteState = StateBase
                   | StateCsetInit
                   | StateCsetInit2
                   | StateCset
+
+{-# ANN translate "HLint: ignore Use list literal" #-}
 
 translate :: Text -> ByteString
 translate = encodeUtf8 . T.pack . concat . rewrite . T.unpack

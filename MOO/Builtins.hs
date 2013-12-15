@@ -26,6 +26,8 @@ import MOO.Builtins.Objects as Objects
 import MOO.Builtins.Network as Network
 import MOO.Builtins.Tasks   as Tasks
 
+{-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
+
 builtinFunctions :: Map Id (Builtin, Info)
 builtinFunctions =
   Map.fromList $ miscBuiltins ++

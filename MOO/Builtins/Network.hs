@@ -9,6 +9,8 @@ import MOO.Builtins.Common
 
 import qualified Data.Text as T
 
+{-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
+
 -- 4.4.4 Operations on Network Connections
 
 builtins :: [BuiltinSpec]

@@ -29,6 +29,8 @@ import MOO.Parser (parseNum, parseObj)
 import MOO.Builtins.Common
 import MOO.Builtins.Match
 
+{-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
+
 -- 4.4.2 Manipulating MOO Values
 
 builtins :: [BuiltinSpec]
@@ -383,6 +385,8 @@ bf_substitute [Str template, Lst subs] =
 
 foreign import ccall unsafe "static unistd.h crypt"
   c_crypt :: CString -> CString -> IO CString
+
+{-# ANN crypt ("HLint: ignore Use >=>" :: String) #-}
 
 crypt :: String -> String -> String
 crypt key salt =

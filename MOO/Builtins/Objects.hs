@@ -20,6 +20,8 @@ import MOO.Task
 import MOO.Object
 import MOO.Network
 
+{-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
+
 -- 4.4.3 Manipulating Objects
 
 builtins :: [BuiltinSpec]
@@ -118,6 +120,8 @@ modifyDescendants db f oid = do
   liftSTM $ modifyObject oid db f
   Just obj <- getObject oid
   mapM_ (modifyDescendants db f) $ getChildren obj
+
+{-# ANN module ("HLint: ignore Use String" :: String) #-}
 
 checkPerms :: [Char] -> StrT -> MOO (Set Char)
 checkPerms valid perms = do

@@ -17,6 +17,8 @@ import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Vector as V
 
+{-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
+
 -- 4.4.6 MOO-Code Evaluation and Task Manipulation
 
 builtins :: [BuiltinSpec]

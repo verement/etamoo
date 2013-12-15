@@ -54,6 +54,8 @@ mooDef = LanguageDef {
 
 lexer = T.makeTokenParser mooDef
 
+{-# ANN identifier "HLint: ignore Use liftM" #-}
+
 identifier     = T.identifier     lexer >>= return . pack
 reserved       = T.reserved       lexer
 decimal        = T.decimal        lexer

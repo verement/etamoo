@@ -5,7 +5,7 @@ repl: FORCE MOO/Builtins/Match.hs
 MOO/Builtins/Match.hs: MOO/Builtins/Match.hsc
 	hsc2hs $<
 
-hlint.html: $(shell find . -name \*.hs)
+hlint.html: $(shell find . -name \*.hs \! -name .\*)
 	-hlint --report=$@ $^ >/dev/null
 
 .PHONY: clean

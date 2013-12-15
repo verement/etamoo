@@ -20,6 +20,8 @@ import MOO.Object
 import MOO.Types
 import MOO.Parser
 
+{-# ANN module "HLint: ignore Use camelCase" #-}
+
 loadLMDatabase :: FilePath -> IO (Either ParseError Database)
 loadLMDatabase dbFile = do
   contents <- readFile dbFile

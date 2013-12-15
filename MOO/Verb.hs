@@ -8,6 +8,8 @@ import {-# SOURCE #-} MOO.Object
 
 import MOO.AST
 
+{-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
+
 data Verb = Verb {
     verbName       :: Text
   , program        :: Program
