@@ -4,6 +4,7 @@
 module MOO.Builtins.Tasks ( builtins ) where
 
 import Control.Monad.Reader (asks)
+import Control.Monad.State (gets)
 import Control.Monad.Cont (callCC)
 
 import MOO.Types
@@ -85,7 +86,7 @@ bf_queue_info [Obj player] = notyet
 bf_queued_tasks [] = notyet
 bf_kill_task [Int task_id] = notyet
 
-bf_callers optional = notyet
+bf_callers optional = fmap (formatStack include_line_numbers) $ gets stack
   where [include_line_numbers] = booleanDefaults optional [False]
 
 bf_task_stack (Int task_id : optional) = notyet
