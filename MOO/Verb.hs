@@ -4,13 +4,17 @@
 module MOO.Verb ( Verb (..)
                 , initVerb
                 , obj2text
+                , text2obj
                 , prep2text
+                , text2prep
                 ) where
 
 import Data.Text (Text)
 
 import MOO.Types
 import MOO.AST
+
+import qualified Data.Text as T
 
 data Verb = Verb {
     verbNames          :: StrT
@@ -45,12 +49,16 @@ initVerb = Verb {
 data ObjSpec = ObjNone
              | ObjAny
              | ObjThis
-             deriving (Enum, Show)
+             deriving (Enum, Bounded, Show)
 
 obj2text :: ObjSpec -> Text
 obj2text ObjNone = "none"
 obj2text ObjAny  = "any"
 obj2text ObjThis = "this"
+
+text2obj :: Text -> Maybe ObjSpec
+text2obj = flip lookup $ map mkAssoc [minBound ..]
+  where mkAssoc objSpec = (obj2text objSpec, objSpec)
 
 data PrepSpec = PrepAny
               | PrepNone
@@ -69,7 +77,7 @@ data PrepSpec = PrepAny
               | PrepIs
               | PrepAs
               | PrepOffOffof
-              deriving (Enum, Show)
+              deriving (Enum, Bounded, Show)
 
 prep2text :: PrepSpec -> Text
 prep2text PrepAny                    = "any"
@@ -89,3 +97,8 @@ prep2text PrepForAbout               = "for/about"
 prep2text PrepIs                     = "is"
 prep2text PrepAs                     = "as"
 prep2text PrepOffOffof               = "off/off of"
+
+text2prep :: Text -> Maybe PrepSpec
+text2prep = flip lookup $ concatMap mkAssoc [minBound ..]
+  where mkAssoc prepSpec =
+          [(prep, prepSpec) | prep <- T.splitOn "/" $ prep2text prepSpec]

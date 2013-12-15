@@ -55,7 +55,7 @@ builtins = [
   , ("set_verb_info" , (bf_set_verb_info , Info 3 (Just 3) [TObj, TAny,
                                                             TLst]       TAny))
   , ("verb_args"     , (bf_verb_args     , Info 2 (Just 2) [TObj, TAny] TLst))
-  , ("set_verb_args" , (bf_set_verb_args , Info 3 (Just 3) [TObj, TStr,
+  , ("set_verb_args" , (bf_set_verb_args , Info 3 (Just 3) [TObj, TAny,
                                                             TLst]       TAny))
   , ("add_verb"      , (bf_add_verb      , Info 3 (Just 3) [TObj, TLst,
                                                             TLst]       TInt))
@@ -312,7 +312,29 @@ bf_verb_args [Obj object, verb_desc] = do
         iobj = obj2text  . verbIndirectObject
         prep = prep2text . verbPreposition
 
-bf_set_verb_args [Obj object, Str verb_desc, Lst args] = notyet
+bf_set_verb_args [Obj object, verb_desc, Lst args] = do
+  (dobj, prep, iobj) <- case V.toList args of
+    [Str dobj, Str prep, Str iobj] -> return (dobj, breakSlash prep, iobj)
+      where breakSlash = fst . T.breakOn "/"
+    [_       , _       , _       ] -> raise E_TYPE
+    _                              -> raise E_INVARG
+  dobj' <- maybe (raise E_INVARG) return $ text2obj  (T.toCaseFold dobj)
+  prep' <- maybe (raise E_INVARG) return $ text2prep (T.toCaseFold prep)
+  iobj' <- maybe (raise E_INVARG) return $ text2obj  (T.toCaseFold iobj)
+
+  obj <- checkValid object
+  verb <- getVerb obj verb_desc
+  unless (verbPermW verb) $ checkPermission (verbOwner verb)
+
+  modifyVerb (object, obj) verb_desc $ \verb ->
+    return verb {
+        verbDirectObject   = dobj'
+      , verbPreposition    = prep'
+      , verbIndirectObject = iobj'
+    }
+
+  return nothing
+
 bf_add_verb [Obj object, Lst info, Lst args] = notyet
 bf_delete_verb [Obj object, Str verb_desc] = notyet
 bf_verb_code (Obj object : Str verb_desc : options) = notyet
