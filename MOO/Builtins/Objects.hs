@@ -18,6 +18,7 @@ import MOO.Database
 import MOO.Types
 import MOO.Task
 import MOO.Object
+import MOO.Verb
 import MOO.Network
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
@@ -255,7 +256,11 @@ bf_clear_property [Obj object, Str prop_name] = do
 
 -- 4.4.3.4 Operations on Verbs
 
-bf_verbs [Obj object] = notyet
+bf_verbs [Obj object] = do
+  obj <- checkValid object
+  unless (objectPermR obj) $ checkPermission (objectOwner obj)
+  return $ Lst $ V.fromList $ map (Str . verbNames) $ objectVerbs obj
+
 bf_verb_info [Obj object, Str verb_desc] = notyet
 bf_set_verb_info [Obj object, Str verb_desc, Lst info] = notyet
 bf_verb_args [Obj object, Str verb_desc] = notyet

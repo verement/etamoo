@@ -11,6 +11,7 @@ module MOO.Object ( Object (..)
                   , isBuiltinProperty
                   , objectForMaybe
                   , setProperties
+                  , setVerbs
                   , lookupPropertyRef
                   , lookupProperty
                   , definedProperties
@@ -38,7 +39,7 @@ data Object = Object {
 
   -- Built-in properties
   , objectName       :: StrT
-  , objectOwner      :: ObjT
+  , objectOwner      :: ObjId
   , objectLocation   :: Maybe ObjId
   , objectContents   :: IntSet
   , objectProgrammer :: Bool
@@ -85,7 +86,7 @@ data Property = Property {
   , propertyValue     :: Maybe Value
   , propertyInherited :: Bool
 
-  , propertyOwner     :: ObjT
+  , propertyOwner     :: ObjId
   , propertyPermR     :: Bool
   , propertyPermW     :: Bool
   , propertyPermC     :: Bool
@@ -129,6 +130,9 @@ setProperties props obj = do
         mkAssoc prop = do
           tvarProp <- newTVarIO prop
           return (T.toCaseFold $ propertyName prop, tvarProp)
+
+setVerbs :: [Verb] -> Object -> IO Object
+setVerbs verbs obj = return obj { objectVerbs = verbs }
 
 lookupPropertyRef :: Object -> StrT -> Maybe (TVar Property)
 lookupPropertyRef obj name = HM.lookup name (objectProperties obj)

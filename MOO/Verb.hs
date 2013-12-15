@@ -1,66 +1,84 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Verb ( Verb ) where
+module MOO.Verb ( Verb (..)
+                , initVerb
+                ) where
 
-import Data.Text
-import {-# SOURCE #-} MOO.Object
+import Data.Text (Text)
 
+import MOO.Types
 import MOO.AST
 
-{-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
-
 data Verb = Verb {
-    verbName       :: Text
-  , program        :: Program
+    verbNames          :: StrT
+  , verbProgram        :: Program
 
-  , verbOwner      :: Object
-  , verbPermR      :: Bool
-  , verbPermW      :: Bool
-  , verbPermX      :: Bool
-  , verbPermD      :: Bool
+  , verbOwner          :: ObjId
+  , verbPermR          :: Bool
+  , verbPermW          :: Bool
+  , verbPermX          :: Bool
+  , verbPermD          :: Bool
 
-  , directObject   :: ObjSpec
-  , preposition    :: PrepSpec
-  , indirectObject :: ObjSpec
+  , verbDirectObject   :: ObjSpec
+  , verbPreposition    :: PrepSpec
+  , verbIndirectObject :: ObjSpec
 } deriving Show
 
-data ObjSpec = ObjThis | ObjAny | ObjNone
-             deriving Show
+initVerb = Verb {
+    verbNames          = ""
+  , verbProgram        = Program []
 
-data PrepSpec = PrepNone | PrepAny
-              | PrepWith_Using
-              | PrepAt_To
-              | PrepInFrontOf
-              | PrepIn_Inside_Into
-              | PrepOnTopOf_On_Onto_Upon
-              | PrepOutOf_FromInside_From
+  , verbOwner          = -1
+  , verbPermR          = False
+  , verbPermW          = False
+  , verbPermX          = False
+  , verbPermD          = False
+
+  , verbDirectObject   = ObjNone
+  , verbPreposition    = PrepNone
+  , verbIndirectObject = ObjNone
+}
+
+data ObjSpec = ObjNone
+             | ObjAny
+             | ObjThis
+             deriving (Enum, Show)
+
+data PrepSpec = PrepAny
+              | PrepNone
+              | PrepWithUsing
+              | PrepAtTo
+              | PrepInfrontof
+              | PrepInInsideInto
+              | PrepOntopofOnOntoUpon
+              | PrepOutofFrominsideFrom
               | PrepOver
               | PrepThrough
-              | PrepUnder_Underneath_Beneath
+              | PrepUnderUnderneathBeneath
               | PrepBehind
               | PrepBeside
-              | PrepFor_About
+              | PrepForAbout
               | PrepIs
               | PrepAs
-              | PrepOff_OffOf
-              deriving Show
+              | PrepOffOffof
+              deriving (Enum, Show)
 
 prep2text :: PrepSpec -> Text
-prep2text PrepNone                     = "none"
-prep2text PrepAny                      = "any"
-prep2text PrepWith_Using               = "with/using"
-prep2text PrepAt_To                    = "at/to"
-prep2text PrepInFrontOf                = "in front of"
-prep2text PrepIn_Inside_Into           = "in/inside/into"
-prep2text PrepOnTopOf_On_Onto_Upon     = "on top of/on/onto/upon"
-prep2text PrepOutOf_FromInside_From    = "out of/from inside/from"
-prep2text PrepOver                     = "over"
-prep2text PrepThrough                  = "through"
-prep2text PrepUnder_Underneath_Beneath = "under/underneath/beneath"
-prep2text PrepBehind                   = "behind"
-prep2text PrepBeside                   = "beside"
-prep2text PrepFor_About                = "for/about"
-prep2text PrepIs                       = "is"
-prep2text PrepAs                       = "as"
-prep2text PrepOff_OffOf                = "off/off of"
+prep2text PrepAny                    = "any"
+prep2text PrepNone                   = "none"
+prep2text PrepWithUsing              = "with/using"
+prep2text PrepAtTo                   = "at/to"
+prep2text PrepInfrontof              = "in front of"
+prep2text PrepInInsideInto           = "in/inside/into"
+prep2text PrepOntopofOnOntoUpon      = "on top of/on/onto/upon"
+prep2text PrepOutofFrominsideFrom    = "out of/from inside/from"
+prep2text PrepOver                   = "over"
+prep2text PrepThrough                = "through"
+prep2text PrepUnderUnderneathBeneath = "under/underneath/beneath"
+prep2text PrepBehind                 = "behind"
+prep2text PrepBeside                 = "beside"
+prep2text PrepForAbout               = "for/about"
+prep2text PrepIs                     = "is"
+prep2text PrepAs                     = "as"
+prep2text PrepOffOffof               = "off/off of"

@@ -17,6 +17,7 @@ import qualified Data.IntSet as IS
 
 import MOO.Database
 import MOO.Object
+import MOO.Verb
 import MOO.Types
 import MOO.Parser
 
@@ -69,10 +70,10 @@ lmDatabase = do
 
     local (\r -> r { users = IS.fromList users }) $ do
       liftIO $ putStrLn "Reading objects..."
-      count nobjs read_object >>= installObjects
+      installObjects =<< count nobjs read_object
 
       liftIO $ putStrLn "Reading verb programs..."
-      count nprogs dbProgram >>= installPrograms
+      installPrograms =<< count nprogs dbProgram
 
       liftIO $ putStrLn "Reading forked and suspended tasks..."
       read_task_queue
@@ -115,10 +116,10 @@ data ObjectDef = ObjectDef {
 }
 
 data VerbDef = VerbDef {
-    verbName  :: String
-  , verbOwner :: ObjId
-  , verbPerms :: IntT
-  , verbPrep  :: IntT
+    vbName  :: String
+  , vbOwner :: ObjId
+  , vbPerms :: IntT
+  , vbPrep  :: IntT
 }
 
 type PropDef = String
@@ -134,7 +135,7 @@ installObjects dbObjs = do
   -- Check sequential object ordering
   mapM_ checkObjId (zip [0..] dbObjs)
 
-  objs <- liftIO (mapM installProperties preObjs) >>= setPlayerFlags
+  objs <- liftIO (mapM installPropsAndVerbs preObjs) >>= setPlayerFlags
   getState >>= liftIO . setObjects objs >>= putState
 
   where dbArray = listArray (0, length dbObjs - 1) $ map valid dbObjs
@@ -145,11 +146,14 @@ installObjects dbObjs = do
             fail $ "Unexpected object #" ++ show (oid dbObj) ++
                    " (expecting #" ++ show objId ++ ")"
 
-        installProperties (_  , Nothing)  = return Nothing
-        installProperties (oid, Just obj) =
+        installPropsAndVerbs :: (ObjId, Maybe Object) -> IO (Maybe Object)
+        installPropsAndVerbs (_  , Nothing)  = return Nothing
+        installPropsAndVerbs (oid, Just obj) =
           let Just def = dbArray ! oid
               propvals = objPropvals def
-          in fmap Just $ setProperties (mkProperties False oid propvals) obj
+              verbdefs = objVerbdefs def
+          in fmap Just $ setProperties (mkProperties False oid propvals) obj >>=
+             setVerbs (map mkVerb verbdefs)
 
         mkProperties :: Bool -> ObjId -> [PropVal] -> [Property]
         mkProperties _ _ [] = []
@@ -175,6 +179,21 @@ installObjects dbObjs = do
           , propertyPermR     = propPerms propval .&. pf_read  /= 0
           , propertyPermW     = propPerms propval .&. pf_write /= 0
           , propertyPermC     = propPerms propval .&. pf_chown /= 0
+        }
+
+        mkVerb :: VerbDef -> Verb
+        mkVerb def = initVerb {
+            verbNames          = T.pack $ vbName def
+          , verbOwner          = vbOwner def
+          , verbPermR          = vbPerms def .&. vf_read  /= 0
+          , verbPermW          = vbPerms def .&. vf_write /= 0
+          , verbPermX          = vbPerms def .&. vf_exec  /= 0
+          , verbPermD          = vbPerms def .&. vf_debug /= 0
+          , verbDirectObject   = toEnum $ fromIntegral $
+                                 (vbPerms def `shiftR` dobjShift) .&. objMask
+          , verbPreposition    = toEnum $ fromIntegral $ 2 + vbPrep def
+          , verbIndirectObject = toEnum $ fromIntegral $
+                                 (vbPerms def `shiftR` iobjShift) .&. objMask
         }
 
         setPlayerFlags objs = do
@@ -309,10 +328,10 @@ read_verbdef = (<?> "verbdef") $ do
   prep  <- read_num
 
   return VerbDef {
-      verbName  = name
-    , verbOwner = owner
-    , verbPerms = perms
-    , verbPrep  = prep
+      vbName  = name
+    , vbOwner = owner
+    , vbPerms = perms
+    , vbPrep  = prep
   }
 
 read_propdef :: DBParser PropDef
@@ -574,6 +593,16 @@ flag_write      = 5
 flag_obsolete_2 = 6
 flag_fertile    = 7
 
-pf_read  = 01
-pf_write = 02
-pf_chown = 04
+pf_read  = 0x01
+pf_write = 0x02
+pf_chown = 0x04
+
+vf_read  = 0x01
+vf_write = 0x02
+vf_exec  = 0x04
+vf_debug = 0x08
+
+dobjShift = 4
+iobjShift = 6
+objMask   = 0x3
+permMask  = 0xF
