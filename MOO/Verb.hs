@@ -2,6 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module MOO.Verb ( Verb (..)
+                , ObjSpec
+                , PrepSpec
                 , initVerb
                 , obj2text
                 , text2obj

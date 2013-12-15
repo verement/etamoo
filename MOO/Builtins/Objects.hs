@@ -272,7 +272,8 @@ bf_verb_info [Obj object, verb_desc] = do
                                       ['x' | verbPermX verb],
                                       ['d' | verbPermD verb]]
 
-bf_set_verb_info [Obj object, verb_desc, Lst info] = do
+verbInfo :: LstT -> MOO (ObjId, Set Char, StrT)
+verbInfo info = do
   (owner, perms, names) <- case V.toList info of
     [Obj owner, Str perms, Str names] -> return (owner, perms, names)
     [_        , _        , _        ] -> raise E_TYPE
@@ -280,6 +281,11 @@ bf_set_verb_info [Obj object, verb_desc, Lst info] = do
   permSet <- checkPerms "rwxd" perms
   checkValid owner
   when (null $ T.words names) $ raise E_INVARG
+
+  return (owner, permSet, names)
+
+bf_set_verb_info [Obj object, verb_desc, Lst info] = do
+  (owner, permSet, names) <- verbInfo info
 
   obj <- checkValid object
   verb <- getVerb obj verb_desc
@@ -312,7 +318,8 @@ bf_verb_args [Obj object, verb_desc] = do
         iobj = obj2text  . verbIndirectObject
         prep = prep2text . verbPreposition
 
-bf_set_verb_args [Obj object, verb_desc, Lst args] = do
+verbArgs :: LstT -> MOO (ObjSpec, PrepSpec, ObjSpec)
+verbArgs args = do
   (dobj, prep, iobj) <- case V.toList args of
     [Str dobj, Str prep, Str iobj] -> return (dobj, breakSlash prep, iobj)
       where breakSlash = fst . T.breakOn "/"
@@ -322,20 +329,48 @@ bf_set_verb_args [Obj object, verb_desc, Lst args] = do
   prep' <- maybe (raise E_INVARG) return $ text2prep (T.toCaseFold prep)
   iobj' <- maybe (raise E_INVARG) return $ text2obj  (T.toCaseFold iobj)
 
+  return (dobj', prep', iobj')
+
+bf_set_verb_args [Obj object, verb_desc, Lst args] = do
+  (dobj, prep, iobj) <- verbArgs args
+
   obj <- checkValid object
   verb <- getVerb obj verb_desc
   unless (verbPermW verb) $ checkPermission (verbOwner verb)
 
   modifyVerb (object, obj) verb_desc $ \verb ->
     return verb {
-        verbDirectObject   = dobj'
-      , verbPreposition    = prep'
-      , verbIndirectObject = iobj'
+        verbDirectObject   = dobj
+      , verbPreposition    = prep
+      , verbIndirectObject = iobj
     }
 
   return nothing
 
-bf_add_verb [Obj object, Lst info, Lst args] = notyet
+bf_add_verb [Obj object, Lst info, Lst args] = do
+  (owner, permSet, names) <- verbInfo info
+  (dobj, prep, iobj)      <- verbArgs args
+
+  obj <- checkValid object
+  unless (objectPermW obj) $ checkPermission (objectOwner obj)
+  checkPermission owner
+
+  let definedVerb = initVerb {
+          verbNames          = names
+        , verbOwner          = owner
+        , verbPermR          = 'r' `S.member` permSet
+        , verbPermW          = 'w' `S.member` permSet
+        , verbPermX          = 'x' `S.member` permSet
+        , verbPermD          = 'd' `S.member` permSet
+        , verbDirectObject   = dobj
+        , verbPreposition    = prep
+        , verbIndirectObject = iobj
+      }
+
+  db <- getDatabase
+  liftSTM $ modifyObject object db $ addVerb definedVerb
+  return $ Int $ fromIntegral $ length (objectVerbs obj) + 1
+
 bf_delete_verb [Obj object, Str verb_desc] = notyet
 bf_verb_code (Obj object : Str verb_desc : options) = notyet
 bf_set_verb_code [Obj object, Str verb_desc, Lst code] = notyet
