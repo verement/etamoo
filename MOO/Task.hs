@@ -242,26 +242,21 @@ newtype Continuation = Continuation (Value -> MOO Value)
 instance Show Continuation where
   show _ = "<continuation>"
 
-data Loop = Loop {
+data Context =
+  Loop {
     loopName     :: Maybe Id
   , loopBreak    :: Continuation
   , loopContinue :: Continuation
-}
+  } |
+  TryFinally {
+    finally      :: MOO Value
+  }
 
-instance Show Loop where
-  show Loop { loopName = name } =
-    "<Loop" ++ maybe "" ((" " ++) . show) name ++ ">"
+instance Show Context where
+  show Loop { loopName = Nothing   } = "<Loop>"
+  show Loop { loopName = Just name } = "<Loop " ++ show name ++ ">"
 
-data TryFinally = TryFinally {
-    finally :: MOO Value
-}
-
-instance Show TryFinally where
-  show _ = "<TryFinally>"
-
-data Context = LoopContext       Loop
-             | TryFinallyContext TryFinally
-             deriving Show
+  show TryFinally{} = "<TryFinally>"
 
 data StackFrame = Frame {
     continuation :: Continuation
@@ -316,11 +311,11 @@ pushContext context = modifyFrame $ \frame ->
 
 pushTryFinallyContext :: MOO Value -> MOO ()
 pushTryFinallyContext finally =
-  pushContext $ TryFinallyContext TryFinally { finally = finally }
+  pushContext TryFinally { finally = finally }
 
 pushLoopContext :: Maybe Id -> Continuation -> MOO ()
 pushLoopContext name break =
-  pushContext $ LoopContext Loop {
+  pushContext Loop {
       loopName     = name
     , loopBreak    = break
     , loopContinue = undefined
@@ -328,9 +323,8 @@ pushLoopContext name break =
 
 setLoopContinue :: Continuation -> MOO ()
 setLoopContinue continue =
-  modifyFrame $ \frame@Frame { contextStack = LoopContext loop:loops } ->
-    frame { contextStack =
-               LoopContext loop { loopContinue = continue } : loops }
+  modifyFrame $ \frame@Frame { contextStack = loop:loops } ->
+    frame { contextStack = loop { loopContinue = continue } : loops }
 
 popContext :: MOO ()
 popContext = modifyFrame $ \frame@Frame { contextStack = _:contexts } ->
@@ -346,9 +340,9 @@ unwindContexts p = do
           then return stack
           else do
             case this of
-              TryFinallyContext tfc -> do
+              TryFinally { finally = finally } -> do
                 modifyFrame $ \frame -> frame { contextStack = next }
-                finally tfc
+                finally
               _ -> return nothing
             unwind next
         unwind [] = return []
@@ -357,20 +351,18 @@ unwindLoopContext :: Maybe Id -> MOO Context
 unwindLoopContext maybeName = do
   loop:_ <- unwindContexts testContext
   return loop
-  where testContext (LoopContext loop)
-          | isNothing maybeName || maybeName == loopName loop = True
+  where testContext Loop { loopName = name } =
+          isNothing maybeName || maybeName == name
         testContext _ = False
 
 breakLoop :: Maybe Id -> MOO Value
 breakLoop maybeName = do
-  LoopContext loop <- unwindLoopContext maybeName
-  let Continuation break = loopBreak loop
+  Loop { loopBreak = Continuation break } <- unwindLoopContext maybeName
   break nothing
 
 continueLoop :: Maybe Id -> MOO Value
 continueLoop maybeName = do
-  LoopContext loop <- unwindLoopContext maybeName
-  let Continuation continue = loopContinue loop
+  Loop { loopContinue = Continuation continue } <- unwindLoopContext maybeName
   continue nothing
 
 mkInitVars = Map.fromList $ map (first T.toCaseFold) initVars
