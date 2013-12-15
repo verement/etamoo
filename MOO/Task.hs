@@ -295,14 +295,13 @@ initFrame debug programmer = Frame {
 formatStack :: Bool -> CallStack -> Value
 formatStack includeLineNumbers (Stack stack) =
   Lst $ V.fromList $ map formatFrame stack
-  where formatFrame frame = Lst $ V.fromList (
-            Obj (initialThis   frame)
-          : Str (verbName      frame)
-          : Obj (permissions   frame)
-          : Obj (verbLocation  frame)
-          : Obj (initialPlayer frame)
-          : if includeLineNumbers then Int (lineNumber frame) : [] else []
-          )
+  where formatFrame frame = Lst $ V.fromList $
+                              Obj (initialThis   frame)
+                            : Str (verbName      frame)
+                            : Obj (permissions   frame)
+                            : Obj (verbLocation  frame)
+                            : Obj (initialPlayer frame)
+                            : [Int $ lineNumber frame | includeLineNumbers]
 
 pushFrame :: StackFrame -> MOO ()
 pushFrame frame = modify $ \st@State { stack = Stack frames } ->
