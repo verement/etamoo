@@ -22,6 +22,7 @@ module MOO.Task ( MOO
                 , putDatabase
                 , getObject
                 , getProperty
+                , getVerb
                 , modifyProperty
                 , setBuiltinProperty
                 , reader
@@ -77,6 +78,7 @@ import qualified Data.ByteString as BS
 import MOO.Types
 import {-# SOURCE #-} MOO.Database
 import MOO.Object
+import MOO.Verb
 
 type MOO = ReaderT Environment
            (ContT TaskDisposition
@@ -187,6 +189,19 @@ getProperty :: Object -> StrT -> MOO Property
 getProperty obj name = do
   maybeProp <- liftSTM $ lookupProperty obj (T.toCaseFold name)
   maybe (raise E_PROPNF) return maybeProp
+
+getVerb :: Object -> Value -> MOO Verb
+getVerb obj (Str name) = do
+  let maybeVerb = lookupVerb obj (T.toCaseFold name)
+  maybe (raise E_VERBNF) return maybeVerb
+getVerb obj (Int index)
+  | index' < 1        = raise E_INVARG
+  | index' > numVerbs = raise E_VERBNF
+  | otherwise        = return $ verbs !! (index' - 1)
+  where index'   = fromIntegral index
+        verbs    = objectVerbs obj
+        numVerbs = length verbs
+getVerb _ _ = raise E_TYPE
 
 modifyProperty :: Object -> StrT -> (Property -> MOO Property) -> MOO ()
 modifyProperty obj name f =

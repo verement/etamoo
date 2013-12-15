@@ -14,6 +14,7 @@ module MOO.Object ( Object (..)
                   , setVerbs
                   , lookupPropertyRef
                   , lookupProperty
+                  , lookupVerb
                   , definedProperties
                   ) where
 
@@ -22,6 +23,7 @@ import Data.HashMap.Strict (HashMap)
 import Data.Text (Text)
 import Data.IntSet (IntSet)
 import Data.Maybe
+import Data.List (find)
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
@@ -140,6 +142,19 @@ lookupPropertyRef obj name = HM.lookup name (objectProperties obj)
 lookupProperty :: Object -> StrT -> STM (Maybe Property)
 lookupProperty obj name = maybe (return Nothing) (fmap Just . readTVar) $
                           lookupPropertyRef obj name
+
+lookupVerb :: Object -> StrT -> Maybe Verb
+lookupVerb obj name = find matchVerb (objectVerbs obj)
+  where matchVerb verb = any matchName $ T.words (T.toCaseFold $ verbNames verb)
+        matchName vname
+          | post == ""  = vname == name
+          | post == "*" = pre   == preName
+          | otherwise   = pre   == preName &&
+                          T.take postNameLen post' == postName
+          where (pre, post)         = T.breakOn "*" vname
+                post'               = T.tail post
+                (preName, postName) = T.splitAt (T.length pre) name
+                postNameLen         = T.length postName
 
 definedProperties :: Object -> STM [StrT]
 definedProperties obj = do

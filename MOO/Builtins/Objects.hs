@@ -51,7 +51,7 @@ builtins = [
   , ("clear_property", (bf_clear_property, Info 2 (Just 2) [TObj, TStr] TAny))
 
   , ("verbs"         , (bf_verbs         , Info 1 (Just 1) [TObj]       TLst))
-  , ("verb_info"     , (bf_verb_info     , Info 2 (Just 2) [TObj, TStr] TLst))
+  , ("verb_info"     , (bf_verb_info     , Info 2 (Just 2) [TObj, TAny] TLst))
   , ("set_verb_info" , (bf_set_verb_info , Info 3 (Just 3) [TObj, TStr,
                                                             TLst]       TAny))
   , ("verb_args"     , (bf_verb_args     , Info 2 (Just 2) [TObj, TStr] TLst))
@@ -106,9 +106,9 @@ bf_property_info [Obj object, Str prop_name] = do
   prop <- getProperty obj prop_name
   unless (propertyPermR prop) $ checkPermission (propertyOwner prop)
   return $ Lst $ V.fromList [Obj $ propertyOwner prop, Str $ perms prop]
-  where perms prop = T.pack $ concat [if propertyPermR prop then "r" else "",
-                                      if propertyPermW prop then "w" else "",
-                                      if propertyPermC prop then "c" else ""]
+  where perms prop = T.pack $ concat [['r' | propertyPermR prop],
+                                      ['w' | propertyPermW prop],
+                                      ['c' | propertyPermC prop]]
 
 traverseDescendants :: (Object -> MOO a) -> ObjId -> MOO ()
 traverseDescendants f oid = do
@@ -261,7 +261,17 @@ bf_verbs [Obj object] = do
   unless (objectPermR obj) $ checkPermission (objectOwner obj)
   return $ Lst $ V.fromList $ map (Str . verbNames) $ objectVerbs obj
 
-bf_verb_info [Obj object, Str verb_desc] = notyet
+bf_verb_info [Obj object, verb_desc] = do
+  obj <- checkValid object
+  verb <- getVerb obj verb_desc
+  unless (verbPermR verb) $ checkPermission (verbOwner verb)
+  return $ Lst $ V.fromList
+    [Obj $ verbOwner verb, Str $ perms verb, Str $ verbNames verb]
+  where perms verb = T.pack $ concat [['r' | verbPermR verb],
+                                      ['w' | verbPermW verb],
+                                      ['x' | verbPermX verb],
+                                      ['d' | verbPermD verb]]
+
 bf_set_verb_info [Obj object, Str verb_desc, Lst info] = notyet
 bf_verb_args [Obj object, Str verb_desc] = notyet
 bf_set_verb_args [Obj object, Str verb_desc, Lst args] = notyet
