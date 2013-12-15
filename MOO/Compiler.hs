@@ -39,9 +39,9 @@ compileStatements (s:ss) = catchDebug $ case s of
       _        -> raise E_TYPE
 
     callCC $ \break -> do
-      pushLoop (Just var') (Continuation break)
+      pushLoopContext (Just var') (Continuation break)
       loop var' elts (compileStatements body)
-    popLoop
+    popContext
 
     compileStatements ss
 
@@ -63,9 +63,9 @@ compileStatements (s:ss) = catchDebug $ case s of
       (_    , _    ) -> raise E_TYPE
 
     callCC $ \break -> do
-      pushLoop (Just var') (Continuation break)
+      pushLoopContext (Just var') (Continuation break)
       loop var' ty s e (compileStatements body)
-    popLoop
+    popContext
 
     compileStatements ss
 
@@ -81,10 +81,10 @@ compileStatements (s:ss) = catchDebug $ case s of
 
   While var expr body -> do
     callCC $ \break -> do
-      pushLoop var' (Continuation break)
+      pushLoopContext var' (Continuation break)
       loop var' (evaluate expr) (compileStatements body)
       return nothing
-    popLoop
+    popContext
 
     compileStatements ss
 
@@ -107,7 +107,19 @@ compileStatements (s:ss) = catchDebug $ case s of
 
   TryExcept body excepts -> notyet
 
-  TryFinally body (Finally finally) -> notyet
+  TryFinally body (Finally finally) -> do
+    let finally' = compileStatements finally
+    pushTryFinallyContext finally'
+
+    compileStatements body `catchException` \except -> do
+      popContext
+      finally'
+      raiseException except
+
+    popContext
+    finally'
+
+    compileStatements ss
 
 compileStatements [] = return nothing
 

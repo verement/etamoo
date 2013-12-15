@@ -10,7 +10,6 @@ module MOO.Task ( MOO
                 , TaskState ( .. )
                 , CallStack ( .. )
                 , Continuation ( .. )
-                , LoopFrame ( .. )
                 , StackFrame ( .. )
                 , Exception ( .. )
                 , initTask
@@ -33,9 +32,10 @@ module MOO.Task ( MOO
                 , frame
                 , caller
                 , modifyFrame
-                , pushLoop
+                , pushTryFinallyContext
+                , pushLoopContext
                 , setLoopContinue
-                , popLoop
+                , popContext
                 , breakLoop
                 , continueLoop
                 , catchException
@@ -64,6 +64,7 @@ import System.Time
 import Data.ByteString (ByteString)
 import Data.Map (Map)
 import Data.Monoid
+import Data.Maybe (isNothing)
 
 import qualified Data.Map as Map
 import qualified Data.Text as T
@@ -241,15 +242,30 @@ newtype Continuation = Continuation (Value -> MOO Value)
 instance Show Continuation where
   show _ = "<continuation>"
 
-data LoopFrame = Loop {
+data Loop = Loop {
     loopName     :: Maybe Id
   , loopBreak    :: Continuation
   , loopContinue :: Continuation
-} deriving Show
+}
+
+instance Show Loop where
+  show Loop { loopName = name } =
+    "<Loop" ++ maybe "" ((" " ++) . show) name ++ ">"
+
+data TryFinally = TryFinally {
+    finally :: MOO Value
+}
+
+instance Show TryFinally where
+  show _ = "<TryFinally>"
+
+data Context = LoopContext       Loop
+             | TryFinallyContext TryFinally
+             deriving Show
 
 data StackFrame = Frame {
     continuation :: Continuation
-  , loopStack    :: [LoopFrame]
+  , contextStack :: [Context]
   , variables    :: Map Id Value
   , debugBit     :: Bool
   , permissions  :: ObjId
@@ -258,7 +274,7 @@ data StackFrame = Frame {
 initFrame :: Bool -> ObjId -> StackFrame
 initFrame debug programmer = Frame {
     continuation = Continuation return
-  , loopStack    = []
+  , contextStack = []
   , variables    = mkInitVars
   , debugBit     = debug
   , permissions  = programmer
@@ -270,6 +286,7 @@ pushFrame frame = modify $ \st@State { stack = Stack frames } ->
 
 popFrame :: Value -> MOO Value
 popFrame value = do
+  unwindContexts (const False)
   (Continuation k) <- frame continuation
   modify $ \st@State { stack = Stack (_:frames) } -> st { stack = Stack frames }
   k value
@@ -293,51 +310,67 @@ modifyFrame :: (StackFrame -> StackFrame) -> MOO ()
 modifyFrame f = modify $ \st@State { stack = Stack (frame:stack) } ->
   st { stack = Stack (f frame : stack) }
 
-pushLoop :: Maybe Id -> Continuation -> MOO ()
-pushLoop name break =
-  let loopFrame = Loop {
-          loopName     = name
-        , loopBreak    = break
-        , loopContinue = undefined
-      }
-  in modifyFrame $ \frame -> frame { loopStack = loopFrame : loopStack frame }
+pushContext :: Context -> MOO ()
+pushContext context = modifyFrame $ \frame ->
+  frame { contextStack = context : contextStack frame }
+
+pushTryFinallyContext :: MOO Value -> MOO ()
+pushTryFinallyContext finally =
+  pushContext $ TryFinallyContext TryFinally { finally = finally }
+
+pushLoopContext :: Maybe Id -> Continuation -> MOO ()
+pushLoopContext name break =
+  pushContext $ LoopContext Loop {
+      loopName     = name
+    , loopBreak    = break
+    , loopContinue = undefined
+  }
 
 setLoopContinue :: Continuation -> MOO ()
 setLoopContinue continue =
-  modifyFrame $ \frame@Frame { loopStack = loop:loops } ->
-    frame { loopStack = loop { loopContinue = continue } : loops }
+  modifyFrame $ \frame@Frame { contextStack = LoopContext loop:loops } ->
+    frame { contextStack =
+               LoopContext loop { loopContinue = continue } : loops }
 
-popLoop :: MOO ()
-popLoop = modifyFrame $ \frame@Frame { loopStack = _:loops } ->
-  frame { loopStack = loops }
+popContext :: MOO ()
+popContext = modifyFrame $ \frame@Frame { contextStack = _:contexts } ->
+  frame { contextStack = contexts }
 
-findLoop :: Id -> [LoopFrame] -> [LoopFrame]
-findLoop name loops@(this:next)
-  | loopName this == Just name = loops
-  | otherwise                  = findLoop name next
+unwindContexts :: (Context -> Bool) -> MOO [Context]
+unwindContexts p = do
+  stack <- unwind =<< frame contextStack
+  modifyFrame $ \frame -> frame { contextStack = stack }
+  return stack
+  where unwind stack@(this:next) =
+          if p this
+          then return stack
+          else do
+            case this of
+              TryFinallyContext tfc -> do
+                modifyFrame $ \frame -> frame { contextStack = next }
+                finally tfc
+              _ -> return nothing
+            unwind next
+        unwind [] = return []
+
+unwindLoopContext :: Maybe Id -> MOO Context
+unwindLoopContext maybeName = do
+  loop:_ <- unwindContexts testContext
+  return loop
+  where testContext (LoopContext loop)
+          | isNothing maybeName || maybeName == loopName loop = True
+        testContext _ = False
 
 breakLoop :: Maybe Id -> MOO Value
-breakLoop Nothing = do
-  loop:_ <- frame loopStack
+breakLoop maybeName = do
+  LoopContext loop <- unwindLoopContext maybeName
   let Continuation break = loopBreak loop
-  break nothing
-breakLoop (Just name) = do
-  loops <- frame loopStack
-  let loops'@(loop:_) = findLoop name loops
-      Continuation break = loopBreak loop
-  modifyFrame $ \frame -> frame { loopStack = loops' }
   break nothing
 
 continueLoop :: Maybe Id -> MOO Value
-continueLoop Nothing = do
-  loop:_ <- frame loopStack
+continueLoop maybeName = do
+  LoopContext loop <- unwindLoopContext maybeName
   let Continuation continue = loopContinue loop
-  continue nothing
-continueLoop (Just name) = do
-  loops <- frame loopStack
-  let loops'@(loop:_) = findLoop name loops
-      Continuation continue = loopContinue loop
-  modifyFrame $ \frame -> frame { loopStack = loops' }
   continue nothing
 
 mkInitVars = Map.fromList $ map (first T.toCaseFold) initVars
