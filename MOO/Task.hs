@@ -132,7 +132,7 @@ interrupt disp = do
 newtype DelayedIO = DelayedIO { runDelayed :: IO () }
 
 instance Monoid DelayedIO where
-  mempty  = DelayedIO $ return ()
+  mempty = DelayedIO $ return ()
   (DelayedIO a) `mappend` (DelayedIO b) = DelayedIO (a >> b)
 
 delayIO :: IO () -> MOO ()
@@ -243,7 +243,7 @@ newtype CallStack = Stack [StackFrame]
 newtype Continuation = Continuation (Value -> MOO Value)
 
 instance Show Continuation where
-  show _ = "<continuation>"
+  show _ = "<Continuation>"
 
 data Context =
   Loop {

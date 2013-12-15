@@ -99,7 +99,7 @@ compileStatements (s:ss) = catchDebug $ case s of
           loop lineNumber var expr body = do
             setLineNumber lineNumber
             expr' <- expr
-            maybe (return expr') (`storeVariable` expr') var
+            maybe return storeVariable var expr'
             when (truthOf expr') $ do
               callCC $ \continue -> do
                 setLoopContinue (Continuation continue)
