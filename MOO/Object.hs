@@ -18,6 +18,7 @@ module MOO.Object ( Object (..)
                   , lookupVerb
                   , replaceVerb
                   , addVerb
+                  , deleteVerb
                   , definedProperties
                   , definedVerbs
                   ) where
@@ -198,6 +199,11 @@ addVerb :: Verb -> Object -> STM Object
 addVerb verb obj = do
   verbTVar <- newTVar verb
   return obj { objectVerbs = objectVerbs obj ++ [(verbKey verb, verbTVar)] }
+
+deleteVerb :: Int -> Object -> STM Object
+deleteVerb index obj = return obj { objectVerbs = verbs }
+  where verbs = before ++ tail after
+        (before, after) = splitAt index (objectVerbs obj)
 
 definedProperties :: Object -> STM [StrT]
 definedProperties obj = do

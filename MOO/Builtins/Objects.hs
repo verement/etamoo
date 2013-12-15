@@ -59,7 +59,7 @@ builtins = [
                                                             TLst]       TAny))
   , ("add_verb"      , (bf_add_verb      , Info 3 (Just 3) [TObj, TLst,
                                                             TLst]       TInt))
-  , ("delete_verb"   , (bf_delete_verb   , Info 2 (Just 2) [TObj, TStr] TAny))
+  , ("delete_verb"   , (bf_delete_verb   , Info 2 (Just 2) [TObj, TAny] TAny))
   , ("verb_code"     , (bf_verb_code     , Info 2 (Just 4) [TObj, TStr,
                                                             TAny, TAny] TLst))
   , ("set_verb_code" , (bf_set_verb_code , Info 3 (Just 3) [TObj, TStr,
@@ -371,7 +371,19 @@ bf_add_verb [Obj object, Lst info, Lst args] = do
   liftSTM $ modifyObject object db $ addVerb definedVerb
   return $ Int $ fromIntegral $ length (objectVerbs obj) + 1
 
-bf_delete_verb [Obj object, Str verb_desc] = notyet
+bf_delete_verb [Obj object, verb_desc] = do
+  obj <- checkValid object
+  getVerb obj verb_desc
+  unless (objectPermW obj) $ checkPermission (objectOwner obj)
+
+  case lookupVerbRef obj verb_desc of
+    Nothing         -> raise E_VERBNF
+    Just (index, _) -> do
+      db <- getDatabase
+      liftSTM $ modifyObject object db $ deleteVerb index
+
+  return nothing
+
 bf_verb_code (Obj object : Str verb_desc : options) = notyet
 bf_set_verb_code [Obj object, Str verb_desc, Lst code] = notyet
 
