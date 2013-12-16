@@ -1,7 +1,7 @@
 
 module MOO.Parser ( Program, parse, runParser, initParserState
                   , expression, between, whiteSpace, eof, program
-                  , parseInt, parseFlt, parseNum, parseObj ) where
+                  , parseInt, parseFlt, parseNum, parseObj, keywords ) where
 
 import           Text.Parsec hiding (parse)
 import           Text.Parsec.Text
@@ -31,6 +31,12 @@ initParserState = ParserState {
 
 type MOOParser = GenParser ParserState
 
+keywords :: [String]
+keywords = ["if", "elseif", "else", "endif", "for", "in", "endfor",
+            "while", "endwhile", "fork", "endfork", "return",
+            "try", "except", "finally", "endtry", "ANY",
+            "break", "continue"] ++ map show ([minBound..maxBound] :: [Error])
+
 mooDef :: GenLanguageDef Text u Identity
 mooDef = LanguageDef {
     T.commentStart    = "/*"
@@ -41,11 +47,7 @@ mooDef = LanguageDef {
   , T.identLetter     = alphaNum <|> char '_'
   , T.opStart         = T.opLetter mooDef
   , T.opLetter        = oneOf "+-*/%^=!<>?&|."
-  , T.reservedNames   = ["if", "else", "elseif", "endif", "for", "in", "endfor",
-                         "fork", "endfork", "return", "while", "endwhile",
-                         "try", "except", "finally", "endtry", "ANY",
-                         "break", "continue"] ++
-                        map show ([minBound..maxBound] :: [Error])
+  , T.reservedNames   = keywords
   , T.reservedOpNames = ["+", "-", "*", "/", "%", "^",
                          "==", "!=", "<", "<=", ">=", ">", "&&", "||",
                          "?", "|", ".."]

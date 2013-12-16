@@ -20,6 +20,7 @@ import MOO.Task
 import MOO.Object
 import MOO.Verb
 import MOO.Network
+import MOO.Unparser
 import MOO.Parser
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
@@ -61,7 +62,7 @@ builtins = [
   , ("add_verb"      , (bf_add_verb      , Info 3 (Just 3) [TObj, TLst,
                                                             TLst]       TInt))
   , ("delete_verb"   , (bf_delete_verb   , Info 2 (Just 2) [TObj, TAny] TAny))
-  , ("verb_code"     , (bf_verb_code     , Info 2 (Just 4) [TObj, TStr,
+  , ("verb_code"     , (bf_verb_code     , Info 2 (Just 4) [TObj, TAny,
                                                             TAny, TAny] TLst))
   , ("set_verb_code" , (bf_set_verb_code , Info 3 (Just 3) [TObj, TAny,
                                                             TLst]       TLst))
@@ -385,7 +386,17 @@ bf_delete_verb [Obj object, verb_desc] = do
 
   return nothing
 
-bf_verb_code (Obj object : Str verb_desc : options) = notyet
+bf_verb_code (Obj object : verb_desc : optional) = do
+  obj <- checkValid object
+  verb <- getVerb obj verb_desc
+  unless (verbPermR verb) $ checkPermission (verbOwner verb)
+  checkProgrammer
+
+  let code = init $ T.splitOn "\n" $
+             unparse fully_paren indent (verbProgram verb)
+  return $ Lst $ V.fromList $ map Str code
+
+  where [fully_paren, indent] = booleanDefaults optional [False, False]
 
 bf_set_verb_code [Obj object, verb_desc, Lst code] = do
   obj <- checkValid object

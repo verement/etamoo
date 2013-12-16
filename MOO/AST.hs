@@ -12,6 +12,7 @@ module MOO.AST ( Program(..)
                , Arg(..)
                , ScatItem(..)
                , isLValue
+               , precedence
                ) where
 
 import MOO.Types
@@ -101,3 +102,40 @@ isLValue' Variable{}  = True
 isLValue' PropRef{}   = True
 isLValue' (Index e _) = isLValue' e
 isLValue' _           = False
+
+precedence :: Expr -> Int
+precedence expr = case expr of
+  Assign{}        ->  1
+  ScatterAssign{} ->  1
+
+  Conditional{}   ->  2
+
+  And{}           ->  3
+  Or{}            ->  3
+
+  Equal{}         ->  4
+  NotEqual{}      ->  4
+  LessThan{}      ->  4
+  LessEqual{}     ->  4
+  GreaterThan{}   ->  4
+  GreaterEqual{}  ->  4
+  In{}            ->  4
+
+  Plus{}          ->  5
+  Minus{}         ->  5
+
+  Times{}         ->  6
+  Divide{}        ->  6
+  Remain{}        ->  6
+
+  Power{}         ->  7
+
+  Not{}           ->  8
+  Negate{}        ->  8
+
+  PropRef{}       ->  9
+  VerbCall{}      ->  9
+  Index{}         ->  9
+  Range{}         ->  9
+
+  _               -> 10
