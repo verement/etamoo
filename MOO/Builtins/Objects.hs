@@ -20,6 +20,7 @@ import MOO.Task
 import MOO.Object
 import MOO.Verb
 import MOO.Network
+import MOO.Parser
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
@@ -62,7 +63,7 @@ builtins = [
   , ("delete_verb"   , (bf_delete_verb   , Info 2 (Just 2) [TObj, TAny] TAny))
   , ("verb_code"     , (bf_verb_code     , Info 2 (Just 4) [TObj, TStr,
                                                             TAny, TAny] TLst))
-  , ("set_verb_code" , (bf_set_verb_code , Info 3 (Just 3) [TObj, TStr,
+  , ("set_verb_code" , (bf_set_verb_code , Info 3 (Just 3) [TObj, TAny,
                                                             TLst]       TLst))
   , ("disassemble"   , (bf_disassemble   , Info 2 (Just 2) [TObj, TAny] TLst))
 
@@ -385,7 +386,24 @@ bf_delete_verb [Obj object, verb_desc] = do
   return nothing
 
 bf_verb_code (Obj object : Str verb_desc : options) = notyet
-bf_set_verb_code [Obj object, Str verb_desc, Lst code] = notyet
+
+bf_set_verb_code [Obj object, verb_desc, Lst code] = do
+  obj <- checkValid object
+  verb <- getVerb obj verb_desc
+  text <- fmap (T.concat . ($ [])) $ V.foldM addLine id code
+  unless (verbPermW verb) $ checkPermission (verbOwner verb)
+  checkProgrammer
+
+  case parse text of
+    Left errors   -> return $ Lst $ V.fromList $ map (Str . T.pack) errors
+    Right program -> do
+      modifyVerb (object, obj) verb_desc $ \verb ->
+        return verb { verbProgram = program }
+      return $ Lst V.empty
+
+  where addLine :: ([StrT] -> [StrT]) -> Value -> MOO ([StrT] -> [StrT])
+        addLine add (Str line) = return (add [line, "\n"] ++)
+        addLine _    _         = raise E_INVARG
 
 bf_disassemble [Obj object, verb_desc] = do
   obj <- checkValid object

@@ -48,6 +48,7 @@ module MOO.Task ( MOO
                 , notyet
                 , raise
                 , checkFloat
+                , checkProgrammer
                 , checkWizard
                 , checkPermission
                 , checkValid
@@ -489,6 +490,14 @@ checkFloat flt
   | isInfinite flt = raise E_FLOAT
   | isNaN      flt = raise E_INVARG
   | otherwise      = return (Flt flt)
+
+checkProgrammer' :: ObjId -> MOO ()
+checkProgrammer' perm = do
+  programmer <- fmap (maybe False objectProgrammer) $ getObject perm
+  unless programmer $ raise E_PERM
+
+checkProgrammer :: MOO ()
+checkProgrammer = checkProgrammer' =<< frame permissions
 
 checkWizard' :: ObjId -> MOO ()
 checkWizard' perm = do
