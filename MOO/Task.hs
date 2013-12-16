@@ -215,7 +215,7 @@ modifyProperty obj name f =
 modifyVerb :: (ObjId, Object) -> Value -> (Verb -> MOO Verb) -> MOO ()
 modifyVerb (oid, obj) desc f =
   case lookupVerbRef obj desc of
-    Nothing       -> raise E_VERBNF
+    Nothing                -> raise E_VERBNF
     Just (index, verbTVar) -> do
       verb  <- liftSTM $ readTVar verbTVar
       verb' <- f verb

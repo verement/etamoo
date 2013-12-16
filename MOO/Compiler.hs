@@ -122,11 +122,11 @@ compileStatements (s:ss) = catchDebug $ case s of
     compileStatements body `catchException` dispatch excepts'
     compileStatements ss
 
-    where compileExcepts (Except lineNumber var codes statements) = do
+    where compileExcepts (Except lineNumber var codes handler) = do
             codes' <- case codes of
               ANY        -> return Nothing
               Codes args -> setLineNumber lineNumber >> fmap Just (expand args)
-            return (codes', var, compileStatements statements)
+            return (codes', var, compileStatements handler)
 
           dispatch ((codes, var, handler):next)
             except@(Exception code message value)
@@ -165,8 +165,8 @@ catchDebug action =
 
 evaluate :: Expr -> MOO Value
 evaluate expr = catchDebug $ case expr of
-  Literal v -> return v
-  List args -> fmap (Lst . V.fromList) $ expand args
+  Literal value -> return value
+  List    args  -> fmap (Lst . V.fromList) $ expand args
 
   Variable{} -> fetch (lValue expr)
   PropRef{}  -> fetch (lValue expr)
