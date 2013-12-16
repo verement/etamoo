@@ -1,6 +1,7 @@
 
 module MOO.Database.LambdaMOO ( loadLMDatabase ) where
 
+import Control.Concurrent.STM
 import Control.Monad.Reader
 import Text.Parsec
 import Data.Word (Word)
@@ -73,7 +74,7 @@ lmDatabase = do
       installObjects =<< count nobjs read_object
 
       liftIO $ putStrLn "Reading verb programs..."
-      installPrograms =<< count nprogs dbProgram
+      mapM_ installProgram =<< count nprogs dbProgram
 
       liftIO $ putStrLn "Reading forked and suspended tasks..."
       read_task_queue
@@ -239,8 +240,20 @@ objectForDBObject dbArray dbObj = (oid dbObj, fmap mkObject $ valid dbObj)
           | oid >=  0 = Just oid
           | otherwise = Nothing
 
-installPrograms :: [(Int, Int, Program)] -> DBParser ()
-installPrograms programs = return ()
+installProgram :: (Int, Int, Program) -> DBParser ()
+installProgram (oid, vnum, program) = do
+  db <- getState
+  maybeObj <- liftIO $ atomically $ dbObject oid db
+  case maybeObj of
+    Nothing  -> fail $ doesNotExist "Object"
+    Just obj -> case lookupVerbRef obj (Int $ 1 + fromIntegral vnum) of
+      Nothing            -> fail $ doesNotExist "Verb"
+      Just (_, verbTVar) -> liftIO $ atomically $ do
+        verb <- readTVar verbTVar
+        writeTVar verbTVar verb { verbProgram = program }
+
+  where doesNotExist what = what ++ " for program " ++ desc ++ " does not exist"
+        desc = "#" ++ show oid ++ ":" ++ show vnum
 
 unsignedInt :: DBParser Word
 unsignedInt = fmap read $ many1 digit
