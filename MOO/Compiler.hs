@@ -511,6 +511,7 @@ _       `remain` _                   = raise E_TYPE
 fmod :: FltT -> FltT -> FltT
 x `fmod` y = x - fromIntegral n * y
   where n = roundZero (x / y)
+        roundZero :: FltT -> Integer
         roundZero q | q > 0     = floor   q
                     | q < 0     = ceiling q
                     | otherwise = round   q

@@ -36,7 +36,7 @@ import Data.Int
 import Data.Word
 import Data.Text (Text)
 import Data.Vector (Vector)
-import Data.Char (isAscii, isPrint)
+import Data.Char (isAscii, isPrint, isDigit)
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -60,6 +60,7 @@ data Value = Int !IntT
            | Lst !LstT
            deriving Show
 
+nothing :: Value
 nothing = truthValue False
 
 fromInt :: Value -> IntT
@@ -216,7 +217,7 @@ text2binary = translate . T.unpack
           return (b:bs)
         translate [] = return []
         hexValue x
-          | x >= '0' && x <= '9' = Just $      distance '0' x
+          | isDigit x            = Just $      distance '0' x
           | x >= 'a' && x <= 'f' = Just $ 10 + distance 'a' x
           | x >= 'A' && x <= 'F' = Just $ 10 + distance 'A' x
           | otherwise            = Nothing

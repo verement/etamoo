@@ -38,6 +38,7 @@ replDatabase = do
     [dbFile] -> loadLMDatabase dbFile >>= either (error . show) return
     []       -> return initDatabase
 
+repLoop :: TVar Database -> TaskState -> IO ()
 repLoop db state = do
   maybeLine <- readline ">> "
   case maybeLine of
@@ -46,6 +47,7 @@ repLoop db state = do
       addHistory line
       run db line state >>= repLoop db
 
+addFrame :: StackFrame -> TaskState -> TaskState
 addFrame frame st@State { stack = Stack frames } =
   st { stack = Stack (frame : frames) }
 
@@ -59,6 +61,7 @@ alterFrame :: TaskState -> (StackFrame -> StackFrame) -> TaskState
 alterFrame st@State { stack = Stack (frame:stack) } f =
   st { stack = Stack (f frame : stack) }
 
+run :: TVar Database -> String -> TaskState -> IO TaskState
 run _ ":+d" state = return $ alterFrame state $
                   \frame -> frame { debugBit = True  }
 run _ ":-d" state = return $ alterFrame state $
@@ -73,16 +76,17 @@ run db (';':';':line) state = evalP db line state
 run db (';'    :line) state = evalE db line state
 run db          line  state = evalE db line state
 
-expr = between whiteSpace eof expression
-
+evalE :: TVar Database -> String -> TaskState -> IO TaskState
 evalE db line state =
-  case runParser expr initParserState "" (pack line) of
+  case runParser (between whiteSpace eof expression)
+       initParserState "" (pack line) of
     Left err -> putStr "Parse error " >> print err >> return state
     Right expr -> do
       -- putStrLn $ "-- " ++ show expr
       task <- initTask db (evaluate expr)
       fmap taskState $ evalPrint task { taskState = state }
 
+evalP :: TVar Database -> String -> TaskState -> IO TaskState
 evalP db line state =
   case runParser program initParserState "" (pack line) of
     Left err -> putStr "Parse error" >> print err >> return state
@@ -91,6 +95,7 @@ evalP db line state =
       task <- initTask db (compileStatements stmts)
       fmap taskState $ evalPrint task { taskState = state }
 
+evalPrint :: Task -> IO Task
 evalPrint task = do
   (result, task') <- runTask task
   case result of

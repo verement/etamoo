@@ -16,7 +16,7 @@ defaultOptions f = defaultOptions'
   where defaultOptions' (v:vs) (_:ds) = f v : defaultOptions' vs ds
         defaultOptions' []     (d:ds) = d   : defaultOptions' [] ds
         defaultOptions' []     []     = []
-        defaultOptions' (v:vs) []     = error "excess options"
+        defaultOptions' (_:_)  []     = error "excess options"
 
 defaults :: [Value] -> [Value] -> [Value]
 defaults = defaultOptions id

@@ -202,12 +202,12 @@ installObjects dbObjs = do
           return $ map (setPlayerFlag players) $ zip [0..] objs
         setPlayerFlag players (oid, Just obj) = Just $
           obj { objectIsPlayer = oid `IS.member` players }
-        setPlayerFlag players _ = Nothing
+        setPlayerFlag _ _ = Nothing
 
 objectTrail :: Array ObjId (Maybe ObjectDef) -> ObjectDef ->
                (ObjectDef -> ObjId) -> (ObjectDef -> ObjId) -> [ObjId]
 objectTrail arr def first rest = follow first rest (Just def)
-  where follow f1 f2 Nothing = []
+  where follow _  _  Nothing = []
         follow f1 f2 (Just def)
           | inRange (bounds arr) idx = idx : follow f2 f2 (arr ! idx)
           | otherwise                = []

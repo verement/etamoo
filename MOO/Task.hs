@@ -427,8 +427,10 @@ continueLoop maybeName = do
   Loop { loopContinue = Continuation continue } <- unwindLoopContext maybeName
   continue nothing
 
+mkInitVars :: Map Id Value
 mkInitVars = Map.fromList $ map (first T.toCaseFold) initVars
 
+initVars :: [(Id, Value)]
 initVars = [
     ("player" , Obj (-1))
   , ("this"   , Obj (-1))
@@ -445,6 +447,7 @@ initVars = [
   , ("iobj"   , Obj (-1))
   ] ++ typeVars
 
+typeVars :: [(Id, Value)]
 typeVars = [
     ("INT"  , Int $ typeCode TInt)
   , ("NUM"  , Int $ typeCode TInt)

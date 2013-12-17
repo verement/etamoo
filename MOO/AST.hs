@@ -98,6 +98,7 @@ isLValue :: Expr -> Bool
 isLValue (Range e _)  = isLValue' e
 isLValue e            = isLValue' e
 
+isLValue' :: Expr -> Bool
 isLValue' Variable{}  = True
 isLValue' PropRef{}   = True
 isLValue' (Index e _) = isLValue' e

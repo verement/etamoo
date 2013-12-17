@@ -4,7 +4,6 @@
 module MOO.Builtins.Values ( builtins ) where
 
 import Control.Monad (mplus, unless)
-import Control.Monad.State (gets, modify)
 import Control.Exception (bracket)
 import Control.Concurrent.MVar (MVar, newMVar, takeMVar, putMVar)
 import System.IO.Unsafe (unsafePerformIO)
@@ -151,7 +150,7 @@ bf_value_bytes [value] = return $ Int $ fromIntegral $ value_bytes value
           Flt x -> box + sizeOf x
           Obj x -> box + sizeOf x
           Str t -> box + sizeOf 'x' * (T.length t + 1)
-          Err x -> box + sizeOf (0 :: Int)
+          Err _ -> box + sizeOf (0 :: Int)
           Lst v -> box + V.sum (V.map value_bytes v)
         box = 8
 
@@ -214,10 +213,11 @@ bf_exp   [Flt x] = checkFloat $ exp x
 bf_log   [Flt x] = checkFloat $ log x
 bf_log10 [Flt x] = checkFloat $ logBase 10 x
 
-bf_ceil  [Flt x] = checkFloat $ fromIntegral $ ceiling x
-bf_floor [Flt x] = checkFloat $ fromIntegral $ floor   x
-bf_trunc [Flt x] | x < 0     = checkFloat $ fromIntegral $ ceiling x
-                 | otherwise = checkFloat $ fromIntegral $ floor   x
+bf_ceil  [Flt x] = checkFloat $ fromIntegral (ceiling x :: Integer)
+bf_floor [Flt x] = checkFloat $ fromIntegral (floor   x :: Integer)
+bf_trunc [Flt x]
+  | x < 0     = checkFloat $ fromIntegral (ceiling x :: Integer)
+  | otherwise = checkFloat $ fromIntegral (floor   x :: Integer)
 
 -- 4.4.2.3 Operations on Strings
 
@@ -338,6 +338,8 @@ runMatch match subject pattern case_matters = do
 
   where -- convert from 0-based open interval to 1-based closed one
         convert (s,e)  = (1 + fromIntegral s, fromIntegral e)
+
+        repls :: Int -> [(Int, Int)] -> [Value]
         repls n (r:rs) = let (s,e) = convert r
                          in Lst (V.fromList [Int s, Int e]) : repls (n - 1) rs
         repls n []

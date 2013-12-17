@@ -26,7 +26,6 @@ module MOO.Object ( Object (..)
 import Control.Arrow (second)
 import Control.Concurrent.STM
 import Data.HashMap.Strict (HashMap)
-import Data.Text (Text)
 import Data.IntSet (IntSet)
 import Data.Maybe
 import Data.List (find)
@@ -124,6 +123,7 @@ builtinProperty "w"          = Just (truthValue . objectPermW)
 builtinProperty "f"          = Just (truthValue . objectPermF)
 builtinProperty _            = Nothing
 
+isBuiltinProperty :: StrT -> Bool
 isBuiltinProperty = isJust . builtinProperty . T.toCaseFold
 
 objectForMaybe :: Maybe ObjId -> ObjId
@@ -164,7 +164,7 @@ lookupProperty obj name = maybe (return Nothing) (fmap Just . readTVar) $
 lookupVerbRef :: Object -> Value -> Maybe (Int, TVar Verb)
 lookupVerbRef obj (Str name) =
   fmap (second snd) $ find matchVerb (zip [0..] $ objectVerbs obj)
-  where matchVerb (_, (names, verb)) = any matchName names
+  where matchVerb (_, (names, _)) = any matchName names
         matchName vname
           | post == ""  = vname == name'
           | post == "*" = pre   == preName

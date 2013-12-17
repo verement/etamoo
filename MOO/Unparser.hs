@@ -6,7 +6,6 @@ module MOO.Unparser ( unparse ) where
 import Control.Monad.Reader
 import Control.Monad.Writer
 import Data.Char
-import Data.Monoid
 import Data.Set (Set)
 import Data.Text (Text)
 

@@ -14,7 +14,6 @@ module MOO.Database ( Database
 import Control.Concurrent.STM
 import Data.Vector (Vector)
 import Data.IntSet (IntSet)
-import Data.Maybe (isJust)
 import Data.Map (Map)
 
 import qualified Data.Vector as V
