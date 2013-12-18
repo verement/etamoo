@@ -88,27 +88,27 @@ bf_set_task_perms [Obj who] = do
 
 bf_caller_perms [] = fmap (Obj . objectForMaybe) $ caller permissions
 
-bf_ticks_left [] = notyet
-bf_seconds_left [] = notyet
+bf_ticks_left [] = notyet "ticks_left"
+bf_seconds_left [] = notyet "seconds_left"
 
 bf_task_id [] = fmap (Int . taskId) $ asks task
 
 bf_suspend [Int seconds] = callCC $ interrupt . Suspend (Just seconds) . Resume
 bf_suspend []            = callCC $ interrupt . Suspend Nothing        . Resume
 
-bf_resume (Int task_id : optional) = notyet
+bf_resume (Int task_id : optional) = notyet "resume"
   where [value] = defaults optional [nothing]
 
-bf_queue_info [] = notyet
-bf_queue_info [Obj player] = notyet
+bf_queue_info [] = notyet "queue_info"
+bf_queue_info [Obj player] = notyet "queue_info"
 
-bf_queued_tasks [] = notyet
-bf_kill_task [Int task_id] = notyet
+bf_queued_tasks [] = notyet "queued_tasks"
+bf_kill_task [Int task_id] = notyet "kill_task"
 
 bf_callers optional = do
   Stack frames <- gets stack
   return $ formatFrames include_line_numbers (tail frames)
   where [include_line_numbers] = booleanDefaults optional [False]
 
-bf_task_stack (Int task_id : optional) = notyet
+bf_task_stack (Int task_id : optional) = notyet "task_stack"
   where [include_line_numbers] = booleanDefaults optional [False]

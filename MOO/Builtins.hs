@@ -159,17 +159,17 @@ ctime time = do
 
 -- 4.4.7 Administrative Operations
 
-bf_dump_database [] = notyet
+bf_dump_database [] = notyet "dump_database"
 
-bf_shutdown optional = notyet
+bf_shutdown optional = notyet "shutdown"
   where (message : _) = maybeDefaults optional
 
-bf_load_server_options [] = notyet
+bf_load_server_options [] = notyet "load_server_options"
 
-bf_server_log (Str message : optional) = notyet
+bf_server_log (Str message : optional) = notyet "server_log"
   where [is_error] = booleanDefaults optional [False]
 
-bf_renumber [Obj object] = notyet
+bf_renumber [Obj object] = notyet "renumber"
 
 bf_reset_max_object [] = do
   checkWizard
@@ -185,5 +185,5 @@ bf_memory_usage [] = return $ Lst V.empty  -- ... nothing to see here
 
 bf_db_disk_size [] = raise E_QUOTA  -- not yet?
 
-bf_verb_cache_stats [] = notyet
-bf_log_cache_stats [] = notyet
+bf_verb_cache_stats [] = notyet "verb_cache_stats"
+bf_log_cache_stats [] = notyet "log_cache_stats"

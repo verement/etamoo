@@ -9,4 +9,4 @@ import MOO.Task
 data Connection
 
 bootPlayer :: ObjId -> MOO ()
-bootPlayer oid = notyet
+bootPlayer oid = notyet "bootPlayer"

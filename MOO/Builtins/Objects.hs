@@ -77,8 +77,8 @@ builtins = [
 
 -- 4.4.3.1 Fundamental Operations on Objects
 
-bf_create (Obj parent : owner) = notyet
-bf_chparent [Obj object, Obj new_parent] = notyet
+bf_create (Obj parent : owner) = notyet "create"
+bf_chparent [Obj object, Obj new_parent] = notyet "chparent"
 
 bf_valid [Obj object] = fmap (truthValue . isJust) $ getObject object
 
@@ -88,14 +88,14 @@ bf_parent [Obj object] =
 bf_children [Obj object] =
   fmap (Lst . V.fromList . map Obj . getChildren) $ checkValid object
 
-bf_recycle [Obj object] = notyet
-bf_object_bytes [Obj object] = notyet
+bf_recycle [Obj object] = notyet "recycle"
+bf_object_bytes [Obj object] = notyet "object_bytes"
 
 bf_max_object [] = fmap (Obj . maxObject) getDatabase
 
 -- 4.4.3.2 Object Movement
 
-bf_move [Obj what, Obj where_] = notyet
+bf_move [Obj what, Obj where_] = notyet "move"
 
 -- 4.4.3.3 Operations on Properties
 

@@ -109,7 +109,7 @@ compileStatements k (s:ss) = catchDebug $ case s of
                 body
               loop lineNumber var expr body
 
-  Fork lineNumber var delay body -> notyet
+  Fork lineNumber var delay body -> notyet "Fork"
 
   Break    name -> breakLoop    (fmap T.toCaseFold name)
   Continue name -> continueLoop (fmap T.toCaseFold name)

@@ -546,9 +546,9 @@ passException except callStack = do
 raiseException :: Exception -> MOO a
 raiseException except = passException except =<< gets stack
 
-notyet :: MOO a
-notyet = raiseException $
-         Exception (Err E_INVARG) "Not yet implemented" nothing
+notyet :: String -> MOO a
+notyet what = raiseException $
+              Exception (Err E_QUOTA) "Not yet implemented" (Str $ T.pack what)
 
 raise :: Error -> MOO a
 raise err = raiseException $ Exception (Err err) (error2text err) nothing
