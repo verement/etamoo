@@ -10,6 +10,8 @@ import Control.Monad.Cont (callCC)
 import MOO.Types
 import MOO.Task
 import MOO.Object
+import MOO.Parser
+import {-# SOURCE #-} MOO.Compiler
 import {-# SOURCE #-} MOO.Builtins
 import MOO.Builtins.Common
 
@@ -62,7 +64,22 @@ bf_function_info [Str name] =
     Nothing     -> raise E_INVARG
   where name' = T.toCaseFold name
 
-bf_eval [Str string] = notyet
+bf_eval [Str string] = do
+  checkProgrammer
+  case parse string of
+    Left errors   -> return $ Lst $ V.fromList
+                     [truthValue False,
+                      Lst $ V.fromList $ map (Str . T.pack) errors]
+    Right program -> do
+      (programmer, this, player) <- frame $ \frame ->
+        (permissions frame, initialThis frame, initialPlayer frame)
+      value <- runVerbFrame (compile program) initFrame {
+          variables     = Map.insert "player" (Obj player) $
+                          Map.insert "caller" (Obj this) $ variables initFrame
+        , permissions   = programmer
+        , initialPlayer = player
+        }
+      return $ Lst $ V.fromList [truthValue True, value]
 
 bf_set_task_perms [Obj who] = do
   checkPermission who

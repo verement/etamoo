@@ -25,6 +25,7 @@ module MOO.Task ( MOO
                 , getVerb
                 , findVerb
                 , callVerb
+                , runVerbFrame
                 , modifyProperty
                 , modifyVerb
                 , setBuiltinProperty
@@ -253,7 +254,7 @@ callVerb oid this name args = do
         , ("iobjstr", vars Map.! "iobjstr")
         , ("iobj"   , vars Map.! "iobj")
         ] ++ typeVars
-  pushFrame initFrame {
+  runVerbFrame (verbCode verb) initFrame {
       variables     = vars'
     , debugBit      = verbPermD verb
     , permissions   = verbOwner verb
@@ -263,7 +264,11 @@ callVerb oid this name args = do
     , initialThis   = this
     , initialPlayer = player
     }
-  value <- verbCode verb `catchException` \except callStack -> do
+
+runVerbFrame :: MOO Value -> StackFrame -> MOO Value
+runVerbFrame verbCode frame = do
+  pushFrame frame
+  value <- verbCode `catchException` \except callStack -> do
     popFrame
     passException except callStack
   popFrame

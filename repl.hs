@@ -1,4 +1,6 @@
 
+{-# LANGUAGE OverloadedStrings #-}
+
 module Main where
 
 import System.Console.Readline
@@ -17,6 +19,8 @@ import MOO.Builtins
 import MOO.Database
 import MOO.Database.LambdaMOO
 import MOO.Object
+
+import qualified Data.Map as Map
 
 main :: IO ()
 main =
@@ -53,7 +57,12 @@ addFrame frame st@State { stack = Stack frames } =
 mkTestFrame :: Database -> STM StackFrame
 mkTestFrame db = do
   wizards <- filterM isWizard $ allPlayers db
-  return initFrame { permissions = fromMaybe (-1) $ listToMaybe wizards }
+  let player = fromMaybe (-1) $ listToMaybe wizards
+  return initFrame {
+      variables     = Map.insert "player" (Obj player) $ variables initFrame
+    , permissions   = player
+    , initialPlayer = player
+    }
   where isWizard oid = fmap (maybe False objectWizard) $ dbObject oid db
 
 alterFrame :: TaskState -> (StackFrame -> StackFrame) -> TaskState
