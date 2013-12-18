@@ -32,7 +32,7 @@ module MOO.Task ( MOO
                 , reader
                 , local
                 , initFrame
-                , formatStack
+                , formatFrames
                 , pushFrame
                 , popFrame
                 , frame
@@ -390,9 +390,8 @@ initFrame = Frame {
   , lineNumber    = 0
 }
 
-formatStack :: Bool -> CallStack -> Value
-formatStack includeLineNumbers (Stack stack) =
-  Lst $ V.fromList $ map formatFrame stack
+formatFrames :: Bool -> [StackFrame] -> Value
+formatFrames includeLineNumbers = Lst . V.fromList . map formatFrame
   where formatFrame frame = Lst $ V.fromList $
                               Obj (initialThis   frame)
                             : Str (verbName      frame)

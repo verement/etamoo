@@ -105,7 +105,9 @@ bf_queue_info [Obj player] = notyet
 bf_queued_tasks [] = notyet
 bf_kill_task [Int task_id] = notyet
 
-bf_callers optional = fmap (formatStack include_line_numbers) $ gets stack
+bf_callers optional = do
+  Stack frames <- gets stack
+  return $ formatFrames include_line_numbers (tail frames)
   where [include_line_numbers] = booleanDefaults optional [False]
 
 bf_task_stack (Int task_id : optional) = notyet

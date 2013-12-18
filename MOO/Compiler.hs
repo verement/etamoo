@@ -133,10 +133,10 @@ compileStatements k (s:ss) = catchDebug $ case s of
 
           dispatch ((codes, var, handler):next)
             except@(Exception code message value)
-            | maybe True (code `elem`) codes = \(Stack callStack) -> do
-              Stack currentStack <- gets stack
-              let traceback = formatStack True $ Stack $ take stackLen callStack
-                  stackLen  = length callStack - length currentStack + 1
+            | maybe True (code `elem`) codes = \(Stack errorFrames) -> do
+              Stack currentFrames <- gets stack
+              let traceback = formatFrames True $ take stackLen errorFrames
+                  stackLen  = length errorFrames - length currentFrames + 1
                   errorInfo =
                     Lst $ V.fromList [code, Str message, value, traceback]
               maybe return storeVariable var errorInfo
