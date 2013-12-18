@@ -10,7 +10,6 @@ import Data.Text
 import Data.Maybe
 
 import MOO.Parser
-import MOO.AST
 import MOO.Compiler
 import MOO.Task
 import MOO.Types
@@ -54,7 +53,7 @@ addFrame frame st@State { stack = Stack frames } =
 mkTestFrame :: Database -> STM StackFrame
 mkTestFrame db = do
   wizards <- filterM isWizard $ allPlayers db
-  return $ initFrame True $ fromMaybe (-1) $ listToMaybe wizards
+  return initFrame { permissions = fromMaybe (-1) $ listToMaybe wizards }
   where isWizard oid = fmap (maybe False objectWizard) $ dbObject oid db
 
 alterFrame :: TaskState -> (StackFrame -> StackFrame) -> TaskState
@@ -90,9 +89,9 @@ evalP :: TVar Database -> String -> TaskState -> IO TaskState
 evalP db line state =
   case runParser program initParserState "" (pack line) of
     Left err -> putStr "Parse error" >> print err >> return state
-    Right (Program stmts) -> do
-      -- putStrLn $ "-- " ++ show stmts
-      task <- initTask db (compileStatements stmts)
+    Right program -> do
+      -- putStrLn $ "-- " ++ show program
+      task <- initTask db (compile program)
       fmap taskState $ evalPrint task { taskState = state }
 
 evalPrint :: Task -> IO Task

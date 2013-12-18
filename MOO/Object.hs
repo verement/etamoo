@@ -164,17 +164,7 @@ lookupProperty obj name = maybe (return Nothing) (fmap Just . readTVar) $
 lookupVerbRef :: Object -> Value -> Maybe (Int, TVar Verb)
 lookupVerbRef obj (Str name) =
   fmap (second snd) $ find matchVerb (zip [0..] $ objectVerbs obj)
-  where matchVerb (_, (names, _)) = any matchName names
-        matchName vname
-          | post == ""  = vname == name'
-          | post == "*" = pre   == preName
-          | otherwise   = pre   == preName &&
-                          T.take postNameLen post' == postName
-          where (pre, post)         = T.breakOn "*" vname
-                post'               = T.tail post
-                (preName, postName) = T.splitAt (T.length pre) name'
-                postNameLen         = T.length postName
-                name'               = T.toCaseFold name
+  where matchVerb (_, (names, _)) = verbNameMatch (T.toCaseFold name) names
 lookupVerbRef obj (Int index)
   | index' < 1        = Nothing
   | index' > numVerbs = Nothing

@@ -23,6 +23,8 @@ module MOO.Task ( MOO
                 , getObject
                 , getProperty
                 , getVerb
+                , findVerb
+                , callVerb
                 , modifyProperty
                 , modifyVerb
                 , setBuiltinProperty
@@ -203,6 +205,71 @@ getVerb obj desc@(Int index)
     maybe (raise E_VERBNF) return maybeVerb
 getVerb _ _ = raise E_TYPE
 
+findVerb :: (Verb -> Bool) -> StrT -> ObjId -> MOO (ObjId, Verb)
+findVerb acceptable name = findVerb'
+  where findVerb' oid = do
+          maybeObj <- getObject oid
+          case maybeObj of
+            Nothing  -> raise E_INVIND
+            Just obj -> do
+              maybeVerb <- searchVerbs (objectVerbs obj)
+              case maybeVerb of
+                Just verb -> return (oid, verb)
+                Nothing   -> maybe (raise E_VERBNF) findVerb' (objectParent obj)
+
+        searchVerbs ((names,verbTVar):rest) =
+          if verbNameMatch name' names
+          then do
+            verb <- liftSTM $ readTVar verbTVar
+            if acceptable verb
+              then return (Just verb)
+              else searchVerbs rest
+          else searchVerbs rest
+        searchVerbs [] = return Nothing
+
+        name' = T.toCaseFold name
+
+callVerb :: ObjId -> StrT -> [Value] -> MOO Value
+callVerb oid name args = do
+  (verbOid, verb) <- findVerb verbPermX name oid
+  thisFrame <- frame id
+  wizard <- isWizard (permissions thisFrame)
+  let this   = oid
+      player = if wizard
+               then case vars Map.! "player" of
+                 (Obj oid) -> oid
+                 _         -> initialPlayer thisFrame
+               else initialPlayer thisFrame
+      vars   = variables thisFrame
+      vars'  = Map.fromList $ [
+          ("this"   , Obj this)
+        , ("verb"   , Str name)
+        , ("args"   , Lst $ V.fromList args)
+        , ("caller" , Obj $ initialThis thisFrame)
+        , ("player" , Obj player)
+        , ("argstr" , vars Map.! "argstr")
+        , ("dobjstr", vars Map.! "dobjstr")
+        , ("dobj"   , vars Map.! "dobj")
+        , ("prepstr", vars Map.! "prepstr")
+        , ("iobjstr", vars Map.! "iobjstr")
+        , ("iobj"   , vars Map.! "iobj")
+        ] ++ typeVars
+  pushFrame initFrame {
+      variables     = vars'
+    , debugBit      = verbPermD verb
+    , permissions   = verbOwner verb
+
+    , verbName      = name
+    , verbLocation  = verbOid
+    , initialThis   = this
+    , initialPlayer = player
+    }
+  value <- verbCode verb `catchException` \except callStack -> do
+    popFrame
+    passException except callStack
+  popFrame
+  return value
+
 modifyProperty :: Object -> StrT -> (Property -> MOO Property) -> MOO ()
 modifyProperty obj name f =
   case lookupPropertyRef obj (T.toCaseFold name) of
@@ -292,8 +359,7 @@ instance Show Context where
   show TryFinally{} = "<TryFinally>"
 
 data StackFrame = Frame {
-    continuation  :: Continuation
-  , contextStack  :: [Context]
+    contextStack  :: [Context]
   , variables     :: Map Id Value
   , debugBit      :: Bool
   , permissions   :: ObjId
@@ -306,13 +372,11 @@ data StackFrame = Frame {
   , lineNumber    :: IntT
 } deriving Show
 
-initFrame :: Bool -> ObjId -> StackFrame
-initFrame debug programmer = Frame {
-    continuation  = Continuation return
-  , contextStack  = []
+initFrame = Frame {
+    contextStack  = []
   , variables     = mkInitVars
-  , debugBit      = debug
-  , permissions   = programmer
+  , debugBit      = True
+  , permissions   = -1
 
   , verbName      = ""
   , verbLocation  = -1
@@ -337,12 +401,10 @@ pushFrame :: StackFrame -> MOO ()
 pushFrame frame = modify $ \st@State { stack = Stack frames } ->
   st { stack = Stack (frame : frames) }
 
-popFrame :: Value -> MOO Value
-popFrame value = do
+popFrame :: MOO ()
+popFrame = do
   unwindContexts (const False)
-  (Continuation k) <- frame continuation
   modify $ \st@State { stack = Stack (_:frames) } -> st { stack = Stack frames }
-  k value
 
 currentFrame :: CallStack -> StackFrame
 currentFrame (Stack (frame:_)) = frame
@@ -428,7 +490,7 @@ continueLoop maybeName = do
   continue nothing
 
 mkInitVars :: Map Id Value
-mkInitVars = Map.fromList $ map (first T.toCaseFold) initVars
+mkInitVars = Map.fromList initVars
 
 initVars :: [(Id, Value)]
 initVars = [
@@ -448,7 +510,7 @@ initVars = [
   ] ++ typeVars
 
 typeVars :: [(Id, Value)]
-typeVars = [
+typeVars = map (first T.toCaseFold) [
     ("INT"  , Int $ typeCode TInt)
   , ("NUM"  , Int $ typeCode TInt)
   , ("FLOAT", Int $ typeCode TFlt)
@@ -502,9 +564,12 @@ checkProgrammer' perm = do
 checkProgrammer :: MOO ()
 checkProgrammer = checkProgrammer' =<< frame permissions
 
+isWizard :: ObjId -> MOO Bool
+isWizard oid = maybe False objectWizard `liftM` getObject oid
+
 checkWizard' :: ObjId -> MOO ()
 checkWizard' perm = do
-  wizard <- fmap (maybe False objectWizard) $ getObject perm
+  wizard <- isWizard perm
   unless wizard $ raise E_PERM
 
 checkWizard :: MOO ()

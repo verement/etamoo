@@ -22,6 +22,7 @@ import MOO.Verb
 import MOO.Network
 import MOO.Unparser
 import MOO.Parser
+import {-# SOURCE #-} MOO.Compiler
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
@@ -409,7 +410,10 @@ bf_set_verb_code [Obj object, verb_desc, Lst code] = do
     Left errors   -> return $ Lst $ V.fromList $ map (Str . T.pack) errors
     Right program -> do
       modifyVerb (object, obj) verb_desc $ \verb ->
-        return verb { verbProgram = program }
+        return verb {
+            verbProgram = program
+          , verbCode    = compile program
+        }
       return $ Lst V.empty
 
   where addLine :: ([StrT] -> [StrT]) -> Value -> MOO ([StrT] -> [StrT])

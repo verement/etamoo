@@ -21,6 +21,7 @@ import MOO.Object
 import MOO.Verb
 import MOO.Types
 import MOO.Parser
+import MOO.Compiler
 
 {-# ANN module "HLint: ignore Use camelCase" #-}
 
@@ -250,7 +251,10 @@ installProgram (oid, vnum, program) = do
       Nothing            -> fail $ doesNotExist "Verb"
       Just (_, verbTVar) -> liftIO $ atomically $ do
         verb <- readTVar verbTVar
-        writeTVar verbTVar verb { verbProgram = program }
+        writeTVar verbTVar verb {
+            verbProgram = program
+          , verbCode    = compile program
+        }
 
   where doesNotExist what = what ++ " for program " ++ desc ++ " does not exist"
         desc = "#" ++ show oid ++ ":" ++ show vnum

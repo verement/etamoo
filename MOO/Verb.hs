@@ -9,18 +9,21 @@ module MOO.Verb ( Verb (..)
                 , text2obj
                 , prep2text
                 , text2prep
+                , verbNameMatch
                 ) where
 
 import Data.Text (Text)
 
 import MOO.Types
 import MOO.AST
+import {-# SOURCE #-} MOO.Task
 
 import qualified Data.Text as T
 
 data Verb = Verb {
     verbNames          :: StrT
   , verbProgram        :: Program
+  , verbCode           :: MOO Value
 
   , verbOwner          :: ObjId
   , verbPermR          :: Bool
@@ -31,11 +34,12 @@ data Verb = Verb {
   , verbDirectObject   :: ObjSpec
   , verbPreposition    :: PrepSpec
   , verbIndirectObject :: ObjSpec
-} deriving Show
+}
 
 initVerb = Verb {
     verbNames          = ""
   , verbProgram        = Program []
+  , verbCode           = return nothing
 
   , verbOwner          = -1
   , verbPermR          = False
@@ -104,3 +108,13 @@ text2prep :: Text -> Maybe PrepSpec
 text2prep = flip lookup $ concatMap mkAssoc [minBound ..]
   where mkAssoc prepSpec =
           [(prep, prepSpec) | prep <- T.splitOn "/" $ prep2text prepSpec]
+
+verbNameMatch :: StrT -> [StrT] -> Bool
+verbNameMatch name = any matchName
+  where matchName vname
+          | post == ""  = name     == vname
+          | post == "*" = preName  == pre
+          | otherwise   = preName  == pre &&
+                          postName == T.take (T.length postName) (T.tail post)
+          where (pre, post)         = T.breakOn "*" vname
+                (preName, postName) = T.splitAt (T.length pre) name
