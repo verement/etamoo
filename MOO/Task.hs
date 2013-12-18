@@ -229,13 +229,12 @@ findVerb acceptable name = findVerb'
 
         name' = T.toCaseFold name
 
-callVerb :: ObjId -> StrT -> [Value] -> MOO Value
-callVerb oid name args = do
+callVerb :: ObjId -> ObjId -> StrT -> [Value] -> MOO Value
+callVerb oid this name args = do
   (verbOid, verb) <- findVerb verbPermX name oid
   thisFrame <- frame id
   wizard <- isWizard (permissions thisFrame)
-  let this   = oid
-      player = if wizard
+  let player = if wizard
                then case vars Map.! "player" of
                  (Obj oid) -> oid
                  _         -> initialPlayer thisFrame

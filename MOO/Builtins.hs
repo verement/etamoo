@@ -3,7 +3,7 @@
 
 module MOO.Builtins ( builtinFunctions, callBuiltin, verifyBuiltins ) where
 
-import Control.Monad (when, foldM)
+import Control.Monad (when, foldM, liftM, join)
 import Control.Monad.Reader (asks)
 import Data.Maybe (fromMaybe)
 import Data.Map (Map)
@@ -20,6 +20,7 @@ import MOO.Builtins.Common
 import MOO.Types
 import MOO.Task
 import MOO.Database
+import MOO.Object
 
 import MOO.Builtins.Values  as Values
 import MOO.Builtins.Objects as Objects
@@ -125,7 +126,13 @@ miscBuiltins = [
 
 -- 4.4.1 Object-Oriented Programming
 
-bf_pass args = notyet
+bf_pass args = do
+  (name, verbLoc, this) <- frame $ \frame ->
+    (verbName frame, verbLocation frame, initialThis frame)
+  maybeMaybeParent <- fmap objectParent `liftM` getObject verbLoc
+  case join maybeMaybeParent of
+    Nothing     -> raise E_VERBNF
+    Just parent -> callVerb parent this name args
 
 -- 4.4.5 Operations Involving Times and Dates
 

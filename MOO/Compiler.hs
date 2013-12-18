@@ -193,7 +193,7 @@ evaluate expr = catchDebug $ case expr of
       Str name -> return name
       _        -> raise E_TYPE
 
-    callVerb oid name =<< expand args
+    callVerb oid oid name =<< expand args
 
   BuiltinFunc func args -> callBuiltin (T.toCaseFold func) =<< expand args
 
