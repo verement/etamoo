@@ -371,20 +371,23 @@ statement = fmap Just someStatement <|> nullStatement <?> "statement"
 ifStatement :: MOOParser Statement
 ifStatement = do
   reserved "if"
-  lineNumber <- getLineNumber
-  cond <- parens expression
-  incLineNumber
-  body <- statements
+  (lineNumber, cond, body) <- ifThen
   elseIfs <- many elseIf
   elsePart <- option [] $ reserved "else" >> incLineNumber >> statements
   reserved "endif" >> incLineNumber
+
   return $ If lineNumber cond (Then body) elseIfs (Else elsePart)
-  where elseIf = do
-          reserved "elseif"
+
+  where ifThen = do
           lineNumber <- getLineNumber
           cond <- parens expression
           incLineNumber
           body <- statements
+          return (lineNumber, cond, body)
+
+        elseIf = do
+          reserved "elseif"
+          (lineNumber, cond, body) <- ifThen
           return $ ElseIf lineNumber cond body
 
 forStatement :: MOOParser Statement
@@ -396,9 +399,7 @@ forStatement = do
   forList lineNumber ident <|> forRange lineNumber ident
   where forList lineNumber ident = do
           expr <- parens expression
-          incLineNumber
-          body <- loopBody ident
-          reserved "endfor" >> incLineNumber
+          body <- forBody ident
           return $ ForList lineNumber ident expr body
 
         forRange lineNumber ident = do
@@ -407,21 +408,27 @@ forStatement = do
             symbol ".."
             end <- expression
             return (start, end)
-          incLineNumber
-          body <- loopBody ident
-          reserved "endfor" >> incLineNumber
+          body <- forBody ident
           return $ ForRange lineNumber ident range body
 
-        loopBody ident = between (pushLoopName $ Just ident) popLoopName
-                         statements
+        forBody ident = do
+          incLineNumber
+          body <- between (pushLoopName $ Just ident) popLoopName statements
+          reserved "endfor" >> incLineNumber
+          return body
 
-whileStatement :: MOOParser Statement
-whileStatement = do
-  reserved "while"
+blockStart :: MOOParser (Int, Maybe Id, Expr)
+blockStart = do
   lineNumber <- getLineNumber
   ident <- optionMaybe identifier
   expr <- parens expression
   incLineNumber
+  return (lineNumber, ident, expr)
+
+whileStatement :: MOOParser Statement
+whileStatement = do
+  reserved "while"
+  (lineNumber, ident, expr) <- blockStart
   body <- between (pushLoopName ident) popLoopName statements
   reserved "endwhile" >> incLineNumber
   return $ While lineNumber ident expr body
@@ -500,10 +507,7 @@ tryStatement = do
 forkStatement :: MOOParser Statement
 forkStatement = do
   reserved "fork"
-  lineNumber <- getLineNumber
-  ident <- optionMaybe identifier
-  expr <- parens expression
-  incLineNumber
+  (lineNumber, ident, expr) <- blockStart
   body <- between suspendLoopScope resumeLoopScope statements
   reserved "endfork" >> incLineNumber
   return $ Fork lineNumber ident expr body
@@ -550,10 +554,3 @@ parseNum str = parseInt str `mplus` parseFlt str
 
 parseObj :: Text -> Maybe Value
 parseObj = standalone objectLiteral
-
--- Testing ...
-
-test :: (Show a) => MOOParser a -> Text -> IO ()
-test p input = case runParser p initParserState "test" input of
-  Left err -> print err
-  Right v  -> print v
