@@ -6,6 +6,7 @@ module MOO.Database ( Database
                     , maxObject
                     , resetMaxObject
                     , setObjects
+                    , addObject
                     , modifyObject
                     , allPlayers
                     , setPlayer
@@ -60,6 +61,11 @@ setObjects :: [Maybe Object] -> Database -> IO Database
 setObjects objs db = do
   tvarObjs <- mapM newTVarIO objs
   return db { objects = V.fromList tvarObjs }
+
+addObject :: Object -> Database -> STM Database
+addObject obj db = do
+  objTVar <- newTVar (Just obj)
+  return db { objects = V.snoc (objects db) objTVar }
 
 modifyObject :: ObjId -> Database -> (Object -> STM Object) -> STM ()
 modifyObject oid db f =

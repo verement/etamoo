@@ -7,6 +7,7 @@ module MOO.Object ( Object (..)
                   , initProperty
                   , getParent
                   , getChildren
+                  , addChild
                   , builtinProperty
                   , isBuiltinProperty
                   , objectForMaybe
@@ -88,6 +89,10 @@ getParent = objectForMaybe . objectParent
 
 getChildren :: Object -> [ObjId]
 getChildren = IS.elems . objectChildren
+
+addChild :: Object -> ObjId -> Object
+addChild obj childOid =
+  obj { objectChildren = IS.insert childOid (objectChildren obj) }
 
 data Property = Property {
     propertyName      :: StrT

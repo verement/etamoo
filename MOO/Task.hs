@@ -26,10 +26,13 @@ module MOO.Task ( MOO
                 , getVerb
                 , findVerb
                 , callVerb
+                , callFromFunc
                 , runVerbFrame
                 , runTick
                 , modifyProperty
                 , modifyVerb
+                , readProperty
+                , writeProperty
                 , setBuiltinProperty
                 , reader
                 , local
@@ -57,6 +60,7 @@ module MOO.Task ( MOO
                 , checkWizard
                 , checkPermission
                 , checkValid
+                , checkFertile
                 , binaryString
                 , random
                 , delayIO
@@ -68,7 +72,7 @@ module MOO.Task ( MOO
 import Control.Monad.Cont
 import Control.Monad.State
 import Control.Monad.Reader
-import Control.Arrow (first)
+import Control.Arrow (first, (&&&))
 import Control.Concurrent.STM
 import System.Random hiding (random)
 import System.Time
@@ -217,17 +221,18 @@ getVerb obj desc@(Int index)
     maybe (raise E_VERBNF) return maybeVerb
 getVerb _ _ = raise E_TYPE
 
-findVerb :: (Verb -> Bool) -> StrT -> ObjId -> MOO (ObjId, Verb)
+findVerb :: (Verb -> Bool) -> StrT -> ObjId -> MOO (Maybe ObjId, Maybe Verb)
 findVerb acceptable name = findVerb'
   where findVerb' oid = do
           maybeObj <- getObject oid
           case maybeObj of
-            Nothing  -> raise E_INVIND
+            Nothing  -> return (Nothing, Nothing)
             Just obj -> do
               maybeVerb <- searchVerbs (objectVerbs obj)
               case maybeVerb of
-                Just verb -> return (oid, verb)
-                Nothing   -> maybe (raise E_VERBNF) findVerb' (objectParent obj)
+                Just verb -> return (Just oid, Just verb)
+                Nothing   -> maybe (return (Just oid, Nothing))
+                             findVerb' (objectParent obj)
 
         searchVerbs ((names,verbTVar):rest) =
           if verbNameMatch name' names
@@ -241,9 +246,8 @@ findVerb acceptable name = findVerb'
 
         name' = T.toCaseFold name
 
-callVerb :: ObjId -> ObjId -> StrT -> [Value] -> MOO Value
-callVerb oid this name args = do
-  (verbOid, verb) <- findVerb verbPermX name oid
+callVerb' :: (ObjId, Verb) -> ObjId -> StrT -> [Value] -> MOO Value
+callVerb' (verbOid, verb) this name args = do
   thisFrame <- frame id
   wizard <- isWizard (permissions thisFrame)
   let player = if wizard
@@ -275,6 +279,35 @@ callVerb oid this name args = do
     , initialThis   = this
     , initialPlayer = player
     }
+
+callVerb :: ObjId -> ObjId -> StrT -> [Value] -> MOO Value
+callVerb verbLoc this name args = do
+  (maybeOid, maybeVerb) <- findVerb verbPermX name verbLoc
+  case (maybeOid, maybeVerb) of
+    (Nothing     , _)         -> raise E_INVIND
+    (Just _      , Nothing)   -> raise E_VERBNF
+    (Just verbOid, Just verb) -> callVerb' (verbOid, verb) this name args
+
+callFromFunc :: StrT -> IntT -> ObjId -> StrT -> [Value] -> MOO (Maybe Value)
+callFromFunc func index oid name args = do
+  (maybeOid, maybeVerb) <- findVerb verbPermX name oid
+  case (maybeOid, maybeVerb) of
+    (Just verbOid, Just verb) -> do
+      (depthLeft, player) <- frame (depthLeft &&& initialPlayer)
+      pushFrame initFrame {
+          depthLeft     = depthLeft
+        , verbName      = func
+        , initialPlayer = player
+        , builtinFunc   = True
+        , lineNumber    = index
+        }
+      value <- callVerb' (verbOid, verb) oid name args `catchException`
+               \except callStack -> do
+                 popFrame
+                 passException except callStack
+      popFrame
+      return (Just value)
+    (_, _) -> return Nothing
 
 runVerbFrame :: MOO Value -> StackFrame -> MOO Value
 runVerbFrame verbCode verbFrame = do
@@ -316,6 +349,38 @@ modifyVerb (oid, obj) desc f =
         db <- getDatabase
         liftSTM $ modifyObject oid db $ \obj ->
           return $ replaceVerb obj index verb'
+
+readProperty :: ObjId -> StrT -> MOO (Maybe Value)
+readProperty oid name = do
+  maybeObj <- getObject oid
+  case maybeObj of
+    Nothing  -> return Nothing
+    Just obj -> maybe (search obj) (return . Just . ($ obj)) $
+                builtinProperty name
+  where search obj = do
+          maybeProp <- liftSTM $ lookupProperty obj name
+          case maybeProp of
+            Nothing   -> return Nothing
+            Just prop -> case propertyValue prop of
+              Nothing -> do
+                parentObj <- maybe (return Nothing) getObject (objectParent obj)
+                maybe (error $ "No inherited value for property " ++
+                       T.unpack name) search parentObj
+              just -> return just
+
+writeProperty :: ObjId -> StrT -> Value -> MOO ()
+writeProperty oid name value = do
+  maybeObj <- getObject oid
+  case maybeObj of
+    Nothing  -> return ()
+    Just obj ->
+      if isBuiltinProperty name
+      then setBuiltinProperty (oid, obj) name value
+      else case lookupPropertyRef obj name of
+        Nothing       -> return ()
+        Just propTVar -> liftSTM $ do
+          prop <- readTVar propTVar
+          writeTVar propTVar prop { propertyValue = Just value }
 
 setBuiltinProperty :: (ObjId, Object) -> StrT -> Value -> MOO ()
 setBuiltinProperty (oid, obj) "name" (Str name) = do
@@ -394,6 +459,7 @@ data StackFrame = Frame {
   , initialThis   :: ObjId
   , initialPlayer :: ObjId
 
+  , builtinFunc   :: Bool
   , lineNumber    :: IntT
 } deriving Show
 
@@ -410,6 +476,7 @@ initFrame = Frame {
   , initialThis   = -1
   , initialPlayer = -1
 
+  , builtinFunc   = False
   , lineNumber    = 0
 }
 
@@ -437,9 +504,12 @@ currentFrame (Stack (frame:_)) = frame
 currentFrame (Stack [])        = error "Empty call stack"
 
 previousFrame :: CallStack -> Maybe StackFrame
-previousFrame (Stack (_:frame:_)) = Just frame
-previousFrame (Stack [_])         = Nothing
-previousFrame (Stack [])          = error "Empty call stack"
+previousFrame (Stack (_:frames)) = previousFrame' frames
+  where previousFrame' (frame:frames)
+          | builtinFunc frame = previousFrame' frames
+          | otherwise         = Just frame
+        previousFrame' [] = Nothing
+previousFrame (Stack []) = error "Empty call stack"
 
 frame :: (StackFrame -> a) -> MOO a
 frame f = gets (f . currentFrame . stack)
@@ -591,7 +661,7 @@ checkProgrammer :: MOO ()
 checkProgrammer = checkProgrammer' =<< frame permissions
 
 isWizard :: ObjId -> MOO Bool
-isWizard oid = maybe False objectWizard `liftM` getObject oid
+isWizard = liftM (maybe False objectWizard) . getObject
 
 checkWizard' :: ObjId -> MOO ()
 checkWizard' perm = do
@@ -607,7 +677,14 @@ checkPermission who = do
   unless (perm == who) $ checkWizard' perm
 
 checkValid :: ObjId -> MOO Object
-checkValid oid = getObject oid >>= maybe (raise E_INVARG) return
+checkValid = getObject >=> maybe (raise E_INVARG) return
+
+checkFertile :: ObjId -> MOO ()
+checkFertile oid = do
+  maybeObj <- getObject oid
+  case maybeObj of
+    Nothing  -> raise E_PERM
+    Just obj -> unless (objectPermF obj) $ checkPermission (objectOwner obj)
 
 binaryString :: StrT -> MOO ByteString
 binaryString = maybe (raise E_INVARG) (return . BS.pack) . text2binary

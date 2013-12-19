@@ -77,7 +77,61 @@ builtins = [
 
 -- 4.4.3.1 Fundamental Operations on Objects
 
-bf_create (Obj parent : owner) = notyet "create"
+bf_create (Obj parent : optional) = do
+  maybeParent <- case parent of
+    -1  -> return Nothing
+    oid -> checkFertile oid >> return (Just oid)
+
+  db <- getDatabase
+  let newOid = maxObject db + 1
+
+  ownerOid <- case maybeOwner of
+    Nothing         -> frame permissions
+    Just (Obj (-1)) -> checkWizard         >> return newOid
+    Just (Obj oid)  -> checkPermission oid >> return oid
+
+  maybeQuota <- readProperty ownerOid "ownership_quota"
+  case maybeQuota of
+    Just (Int quota)
+      | quota <= 0 -> raise E_QUOTA
+      | otherwise  -> writeProperty ownerOid "ownership_quota" (Int $ quota - 1)
+    _ -> return ()
+
+  properties <- case maybeParent of
+    Nothing  -> return $ objectProperties initObject
+    Just oid -> do
+      -- add to parent's set of children
+      liftSTM $ modifyObject oid db $ \obj -> return $ addChild obj newOid
+
+      -- properties inherited from parent
+      Just parent <- getObject oid
+      HM.fromList `liftM` mapM mkProperty (HM.toList $ objectProperties parent)
+
+        where mkProperty (name, propTVar) = liftSTM $ do
+                prop <- readTVar propTVar
+                let prop' = prop {
+                        propertyValue     = Nothing
+                      , propertyInherited = True
+                      , propertyOwner     = if propertyPermC prop
+                                            then ownerOid
+                                            else propertyOwner prop
+                      }
+                propTVar' <- newTVar prop'
+                return (name, propTVar')
+
+  let newObj = initObject {
+          objectParent     = maybeParent
+        , objectOwner      = ownerOid
+        , objectProperties = properties
+        }
+
+  putDatabase =<< liftSTM (addObject newObj db)
+
+  callFromFunc "create" 0 newOid "initialize" []
+  return (Obj newOid)
+
+  where (maybeOwner : _) = maybeDefaults optional
+
 bf_chparent [Obj object, Obj new_parent] = notyet "chparent"
 
 bf_valid [Obj object] = (truthValue . isJust) `liftM` getObject object
