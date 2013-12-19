@@ -141,7 +141,7 @@ currentTime = do
   TOD t _ <- asks startTime
   return (fromIntegral t)
 
-bf_time [] = fmap Int currentTime
+bf_time [] = Int `liftM` currentTime
 
 bf_ctime []         = ctime =<< currentTime
 bf_ctime [Int time] = ctime time

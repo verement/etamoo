@@ -4,7 +4,7 @@
 module MOO.Builtins.Objects ( builtins ) where
 
 import Control.Concurrent.STM
-import Control.Monad (when, unless)
+import Control.Monad (when, unless, liftM)
 import Data.Maybe
 import Data.Set (Set)
 
@@ -80,18 +80,17 @@ builtins = [
 bf_create (Obj parent : owner) = notyet "create"
 bf_chparent [Obj object, Obj new_parent] = notyet "chparent"
 
-bf_valid [Obj object] = fmap (truthValue . isJust) $ getObject object
+bf_valid [Obj object] = (truthValue . isJust) `liftM` getObject object
 
-bf_parent [Obj object] =
-  fmap (Obj . getParent) $ checkValid object
+bf_parent [Obj object] = (Obj . getParent) `liftM` checkValid object
 
 bf_children [Obj object] =
-  fmap (Lst . V.fromList . map Obj . getChildren) $ checkValid object
+  (Lst . V.fromList . map Obj . getChildren) `liftM` checkValid object
 
 bf_recycle [Obj object] = notyet "recycle"
 bf_object_bytes [Obj object] = notyet "object_bytes"
 
-bf_max_object [] = fmap (Obj . maxObject) getDatabase
+bf_max_object [] = (Obj . maxObject) `liftM` getDatabase
 
 -- 4.4.3.2 Object Movement
 
@@ -102,7 +101,7 @@ bf_move [Obj what, Obj where_] = notyet "move"
 bf_properties [Obj object] = do
   obj <- checkValid object
   unless (objectPermR obj) $ checkPermission (objectOwner obj)
-  fmap (Lst . V.fromList . map Str) $ liftSTM $ definedProperties obj
+  (Lst . V.fromList . map Str) `liftM` liftSTM (definedProperties obj)
 
 bf_property_info [Obj object, Str prop_name] = do
   obj <- checkValid object
@@ -262,7 +261,7 @@ bf_clear_property [Obj object, Str prop_name] = do
 bf_verbs [Obj object] = do
   obj <- checkValid object
   unless (objectPermR obj) $ checkPermission (objectOwner obj)
-  fmap (Lst . V.fromList . map Str) $ liftSTM $ definedVerbs obj
+  (Lst . V.fromList . map Str) `liftM` liftSTM (definedVerbs obj)
 
 bf_verb_info [Obj object, verb_desc] = do
   obj <- checkValid object
@@ -402,7 +401,7 @@ bf_verb_code (Obj object : verb_desc : optional) = do
 bf_set_verb_code [Obj object, verb_desc, Lst code] = do
   obj <- checkValid object
   verb <- getVerb obj verb_desc
-  text <- fmap (T.concat . ($ [])) $ V.foldM addLine id code
+  text <- (T.concat . ($ [])) `liftM` V.foldM addLine id code
   unless (verbPermW verb) $ checkPermission (verbOwner verb)
   checkProgrammer
 
@@ -429,10 +428,10 @@ bf_disassemble [Obj object, verb_desc] = do
 
 -- 4.4.3.5 Operations on Player Objects
 
-bf_players [] = fmap (Lst . V.fromList . map Obj . allPlayers) getDatabase
+bf_players [] = (Lst . V.fromList . map Obj . allPlayers) `liftM` getDatabase
 
 bf_is_player [Obj object] =
-  fmap (truthValue . objectIsPlayer) $ checkValid object
+  (truthValue . objectIsPlayer) `liftM` checkValid object
 
 bf_set_player_flag [Obj object, value] = do
   checkValid object

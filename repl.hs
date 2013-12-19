@@ -6,7 +6,7 @@ module Main where
 import System.Console.Readline
 import System.Random
 import System.Environment
-import Control.Monad.Reader
+import Control.Monad
 import Control.Concurrent.STM
 import Data.Text
 import Data.Maybe
@@ -63,7 +63,7 @@ mkTestFrame db = do
     , permissions   = player
     , initialPlayer = player
     }
-  where isWizard oid = fmap (maybe False objectWizard) $ dbObject oid db
+  where isWizard oid = maybe False objectWizard `liftM` dbObject oid db
 
 alterFrame :: TaskState -> (StackFrame -> StackFrame) -> TaskState
 alterFrame st@State { stack = Stack (frame:stack) } f =
@@ -92,7 +92,7 @@ evalE db line state =
     Right expr -> do
       -- putStrLn $ "-- " ++ show expr
       task <- initTask db (evaluate expr)
-      fmap taskState $ evalPrint task { taskState = state }
+      taskState `liftM` evalPrint task { taskState = state }
 
 evalP :: TVar Database -> String -> TaskState -> IO TaskState
 evalP db line state =
@@ -101,7 +101,7 @@ evalP db line state =
     Right program -> do
       -- putStrLn $ "-- " ++ show program
       task <- initTask db (compile program)
-      fmap taskState $ evalPrint task { taskState = state }
+      taskState `liftM` evalPrint task { taskState = state }
 
 evalPrint :: Task -> IO Task
 evalPrint task = do

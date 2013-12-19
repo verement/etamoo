@@ -128,7 +128,7 @@ runTask task = do
   env <- initEnvironment task
   let comp   = taskComputation task
       comp'  = callCC $ \k ->
-        fmap Complete $ local (\r -> r { interruptHandler = Interrupt k }) comp
+        Complete `liftM` local (\r -> r { interruptHandler = Interrupt k }) comp
       state  = taskState task
       contM  = runReaderT comp' env
       stateM = runContT contM return
@@ -195,7 +195,7 @@ getDatabase = liftSTM . readTVar . taskDatabase =<< asks task
 
 putDatabase :: Database -> MOO ()
 putDatabase db = do
-  dbTVar <- fmap taskDatabase $ asks task
+  dbTVar <- taskDatabase `liftM` asks task
   liftSTM $ writeTVar dbTVar db
 
 getObject :: ObjId -> MOO (Maybe Object)
@@ -584,7 +584,7 @@ checkFloat flt
 
 checkProgrammer' :: ObjId -> MOO ()
 checkProgrammer' perm = do
-  programmer <- fmap (maybe False objectProgrammer) $ getObject perm
+  programmer <- maybe False objectProgrammer `liftM` getObject perm
   unless programmer $ raise E_PERM
 
 checkProgrammer :: MOO ()

@@ -25,6 +25,7 @@ module MOO.Object ( Object (..)
 
 import Control.Arrow (second)
 import Control.Concurrent.STM
+import Control.Monad (liftM)
 import Data.HashMap.Strict (HashMap)
 import Data.IntSet (IntSet)
 import Data.Maybe
@@ -134,7 +135,7 @@ setProperties :: [Property] -> Object -> IO Object
 setProperties props obj = do
   propHash <- mkHash props
   return obj { objectProperties = propHash }
-  where mkHash = fmap HM.fromList . mapM mkAssoc
+  where mkHash = liftM HM.fromList . mapM mkAssoc
         mkAssoc prop = do
           tvarProp <- newTVarIO prop
           return (propertyKey prop, tvarProp)

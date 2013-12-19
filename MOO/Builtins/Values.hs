@@ -3,7 +3,7 @@
 
 module MOO.Builtins.Values ( builtins ) where
 
-import Control.Monad (mplus, unless)
+import Control.Monad (mplus, unless, liftM)
 import Control.Exception (bracket)
 import Control.Concurrent.MVar (MVar, newMVar, takeMVar, putMVar)
 import System.IO.Unsafe (unsafePerformIO)
@@ -162,7 +162,7 @@ bf_value_hash [value] = do
 
 bf_random optional
   | mod <= 0  = raise E_INVARG
-  | otherwise = fmap Int $ random (1, mod)
+  | otherwise = Int `liftM` random (1, mod)
   where [Int mod] = defaults optional [Int maxBound]
 
 bf_min (Int x:xs) = minMaxInt min x xs
@@ -284,11 +284,11 @@ bf_decode_binary (Str bin_string : optional) =
           | otherwise  = [Str $ T.pack group]
           where group = g ""
 
-bf_encode_binary = fmap (Str . T.pack) . encodeBinary
+bf_encode_binary = liftM (Str . T.pack) . encodeBinary
 
 encodeBinary :: [Value] -> MOO String
 encodeBinary (Int n : args)
-  | n >= 0 && n <= 255 = fmap prepend $ encodeBinary args
+  | n >= 0 && n <= 255 = prepend `liftM` encodeBinary args
   | otherwise          = raise E_INVARG
   where c = toEnum n'
         n' = fromIntegral n
@@ -297,7 +297,7 @@ encodeBinary (Int n : args)
                 | otherwise      = \r -> '~' : hex (n' `div` 16)
                                              : hex (n' `mod` 16) : r
         hex = intToDigit  -- N.B. not uppercase
-encodeBinary (Str str : args) = fmap (encodeStr (T.unpack str) ++) $
+encodeBinary (Str str : args) = (encodeStr (T.unpack str) ++) `liftM`
                                 encodeBinary args
   where encodeStr ('~' :cs) = "~7e" ++ encodeStr cs
         encodeStr ('\t':cs) = "~09" ++ encodeStr cs
@@ -305,7 +305,7 @@ encodeBinary (Str str : args) = fmap (encodeStr (T.unpack str) ++) $
         encodeStr "" = ""
 encodeBinary (Lst list : args) = do
   listEncoding <- encodeBinary (V.toList list)
-  fmap (listEncoding ++) $ encodeBinary args
+  (listEncoding ++) `liftM` encodeBinary args
 encodeBinary (_:_) = raise E_INVARG
 encodeBinary []    = return ""
 
@@ -371,18 +371,18 @@ bf_substitute [Str template, Lst subs] =
           substitution _ = raise E_INVARG
 
       unless (valid start end && V.length replacements' == 9) $ raise E_INVARG
-      replacements <- fmap (substr start end :) $
-                      mapM substitution $ V.toList replacements'
+      replacements <- (substr start end :) `liftM`
+                      mapM substitution (V.toList replacements')
 
       let walk ('%':c:cs)
             | isDigit c = let i = fromEnum c - fromEnum '0'
-                          in fmap (replacements !! i ++) $ walk cs
-            | c == '%'  = fmap ("%" ++) $ walk cs
+                          in (replacements !! i ++) `liftM` walk cs
+            | c == '%'  = ("%" ++) `liftM` walk cs
             | otherwise = raise E_INVARG
-          walk (c:cs) = fmap ([c] ++) $ walk cs
+          walk (c:cs) = ([c] ++) `liftM` walk cs
           walk []     = return []
 
-      fmap (Str . T.pack) $ walk (T.unpack template)
+      (Str . T.pack) `liftM` walk (T.unpack template)
     _ -> raise E_INVARG
 
 foreign import ccall unsafe "static unistd.h crypt"
@@ -410,7 +410,7 @@ bf_crypt (Str text : optional)
           c1 <- randSaltChar
           c2 <- randSaltChar
           return $ T.pack [c1, c2]
-        randSaltChar = fmap (saltStuff !!) $ random (0, length saltStuff - 1)
+        randSaltChar = (saltStuff !!) `liftM` random (0, length saltStuff - 1)
         saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
         go salt = return $ Str $ T.pack $ crypt (T.unpack text) (T.unpack salt)
 
@@ -420,7 +420,7 @@ hash bs = Str $ T.pack $ show md5hash
 
 bf_string_hash [Str text] = return $ hash $ encodeUtf8 text
 
-bf_binary_hash [Str bin_string] = fmap hash $ binaryString bin_string
+bf_binary_hash [Str bin_string] = hash `liftM` binaryString bin_string
 
 -- 4.4.2.4 Operations on Lists
 
@@ -446,8 +446,8 @@ listInsert list index value
 
 listDelete :: LstT -> Int -> LstT
 listDelete list index
-  | index == 0           = V.create $ fmap VM.tail $ V.thaw list
-  | index == listLen - 1 = V.create $ fmap VM.init $ V.thaw list
+  | index == 0           = V.create $ VM.tail `liftM` V.thaw list
+  | index == listLen - 1 = V.create $ VM.init `liftM` V.thaw list
   | otherwise            = V.create $ do
     list' <- V.thaw list
     let moveLen = listLen - index - 1

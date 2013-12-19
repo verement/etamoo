@@ -5,7 +5,7 @@ module MOO.Compiler ( compile, evaluate ) where
 
 import Control.Monad.State (gets)
 import Control.Monad.Cont (callCC)
-import Control.Monad (when, unless, void)
+import Control.Monad (when, unless, void, liftM)
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -35,7 +35,7 @@ compileStatements k (s:ss) = catchDebug $ case s of
 
           compileIf ((lineNumber,cond,thens):conds) elses = do
             setLineNumber lineNumber
-            cond' <- fmap truthOf (evaluate cond)
+            cond' <- truthOf `liftM` evaluate cond
             if cond' then compileStatements k thens
               else compileIf conds elses
           compileIf [] elses = compileStatements k elses
@@ -128,7 +128,7 @@ compileStatements k (s:ss) = catchDebug $ case s of
     where compileExcepts (Except lineNumber var codes handler) = do
             codes' <- case codes of
               ANY        -> return Nothing
-              Codes args -> setLineNumber lineNumber >> fmap Just (expand args)
+              Codes args -> setLineNumber lineNumber >> Just `liftM` expand args
             return (codes', var, compileStatements k handler)
 
           dispatch ((codes, var, handler):next)
@@ -170,7 +170,7 @@ evaluate :: Expr -> MOO Value
 evaluate (Literal value) = return value
 evaluate expr@Variable{} = catchDebug $ fetch (lValue expr)
 evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
-  List args -> fmap (Lst . V.fromList) $ expand args
+  List args -> (Lst . V.fromList) `liftM` expand args
 
   PropRef{} -> fetch (lValue expr)
 
@@ -218,7 +218,7 @@ evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
   x `Or`  y -> do x' <- evaluate x
                   if truthOf x' then return x' else evaluate y
 
-  Not x -> fmap (truthValue . not . truthOf) $ evaluate x
+  Not x -> (truthValue . not . truthOf) `liftM` evaluate x
 
   x `Equal`        y -> equality   (==) x y
   x `NotEqual`     y -> equality   (/=) x y
@@ -230,7 +230,7 @@ evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
   Index{} -> fetch (lValue expr)
   Range{} -> fetch (lValue expr)
 
-  Length -> fmap (Int . fromIntegral) =<< reader indexLength
+  Length -> liftM (Int . fromIntegral) =<< reader indexLength
 
   item `In` list -> do
     item' <- evaluate item
@@ -243,7 +243,7 @@ evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
   Catch expr codes (Default dv) -> do
     codes' <- case codes of
       ANY        -> return Nothing
-      Codes args -> fmap Just (expand args)
+      Codes args -> Just `liftM` expand args
     evaluate expr `catchException` \except@(Exception code _ _) callStack ->
       if maybe True (code `elem`) codes'
         then maybe (return code) evaluate dv
@@ -484,10 +484,10 @@ scatterAssign items args = do
 expand :: [Arg] -> MOO [Value]
 expand (a:as) = case a of
   ArgNormal expr -> do a' <- evaluate expr
-                       fmap (a' :) $ expand as
+                       (a' :) `liftM` expand as
   ArgSplice expr -> do a' <- evaluate expr
                        case a' of
-                         Lst v -> fmap (V.toList v ++) $ expand as
+                         Lst v -> (V.toList v ++) `liftM` expand as
                          _     -> raise E_TYPE
 expand [] = return []
 

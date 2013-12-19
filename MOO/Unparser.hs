@@ -232,12 +232,12 @@ unparseExpr expr = case expr of
           return $ lhs' <> op <> rhs'
 
 unparseArgs :: [Arg] -> Unparser Text
-unparseArgs = fmap (T.intercalate ", ") . mapM unparseArg
+unparseArgs = liftM (T.intercalate ", ") . mapM unparseArg
   where unparseArg (ArgNormal expr) = unparseExpr expr
-        unparseArg (ArgSplice expr) = fmap ("@" <>) $ unparseExpr expr
+        unparseArg (ArgSplice expr) = ("@" <>) `liftM` unparseExpr expr
 
 unparseScatter :: [ScatItem] -> Unparser Text
-unparseScatter = fmap (T.intercalate ", ") . mapM unparseScat
+unparseScatter = liftM (T.intercalate ", ") . mapM unparseScat
   where unparseScat (ScatRequired var)             = return var
         unparseScat (ScatRest     var)             = return $ "@" <> var
         unparseScat (ScatOptional var Nothing)     = return $ "?" <> var

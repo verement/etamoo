@@ -87,13 +87,13 @@ bf_set_task_perms [Obj who] = do
   modifyFrame $ \frame -> frame { permissions = who }
   return nothing
 
-bf_caller_perms [] = fmap (Obj . objectForMaybe) $ caller permissions
+bf_caller_perms [] = (Obj . objectForMaybe) `liftM` caller permissions
 
 bf_ticks_left [] = (Int . fromIntegral) `liftM` gets ticksLeft
 
 bf_seconds_left [] = return (Int 5)  -- XXX can this be measured?
 
-bf_task_id [] = fmap (Int . taskId) $ asks task
+bf_task_id [] = (Int . taskId) `liftM` asks task
 
 bf_suspend optional = do
   value <- callCC $ interrupt . Suspend (fmap fromInt maybeSeconds) . Resume

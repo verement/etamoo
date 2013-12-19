@@ -286,7 +286,7 @@ rmatch Regexp {code = codeFP, extra = extraFP } string =
 {-# LINE 262 "MOO/Builtins/Match.hsc" #-}
 
 mkMatchResult :: CInt -> Ptr CInt -> IO MatchResult
-mkMatchResult rc ovec = fmap (MatchSucceeded . convert) $
+mkMatchResult rc ovec = (MatchSucceeded . convert) `liftM`
                         peekArray (n * 2) ovec
   where rc' = fromIntegral rc
         n   = if rc' == 0 || rc' > maxCaptures then maxCaptures else rc'

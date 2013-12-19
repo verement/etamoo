@@ -261,7 +261,7 @@ rmatch Regexp {code = codeFP, extra = extraFP } string =
   where options = #{const PCRE_NO_UTF8_CHECK}
 
 mkMatchResult :: CInt -> Ptr CInt -> IO MatchResult
-mkMatchResult rc ovec = fmap (MatchSucceeded . convert) $
+mkMatchResult rc ovec = (MatchSucceeded . convert) `liftM`
                         peekArray (n * 2) ovec
   where rc' = fromIntegral rc
         n   = if rc' == 0 || rc' > maxCaptures then maxCaptures else rc'
