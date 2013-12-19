@@ -262,9 +262,8 @@ evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
                                 _     -> return $ truthValue (a `op` b)
 
 fetchVariable :: Id -> MOO Value
-fetchVariable var = do
-  vars <- frame variables
-  maybe (raise E_VARNF) return $ Map.lookup var vars
+fetchVariable var =
+  maybe (raise E_VARNF) return . Map.lookup var =<< frame variables
 
 storeVariable :: Id -> Value -> MOO Value
 storeVariable var value = do
@@ -472,7 +471,7 @@ scatterAssign items args = do
                                     walk items (V.tail args) (noptAvail - 1)
               | otherwise     -> do
                 case opt of Nothing   -> return ()
-                            Just expr -> void $ evaluate expr >>= assign var
+                            Just expr -> void $ assign var =<< evaluate expr
                 walk items args noptAvail
             ScatRest var -> do
               let (s, r) = V.splitAt nrest args

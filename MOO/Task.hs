@@ -128,7 +128,7 @@ runTask task = do
   env <- initEnvironment task
   let comp   = taskComputation task
       comp'  = callCC $ \k ->
-        fmap Complete $ local (\r -> r { interruptHandler = k }) comp
+        fmap Complete $ local (\r -> r { interruptHandler = Interrupt k }) comp
       state  = taskState task
       contM  = runReaderT comp' env
       stateM = runContT contM return
@@ -137,9 +137,12 @@ runTask task = do
   runDelayed $ delayedIO state'
   return (result, task { taskState = state' { delayedIO = mempty }})
 
+newtype InterruptHandler = Interrupt (TaskDisposition -> MOO TaskDisposition)
+
 interrupt :: TaskDisposition -> MOO a
 interrupt disp = do
-  asks interruptHandler >>= ($ disp)
+  Interrupt handler <- asks interruptHandler
+  handler disp
   error "Returned from interrupt handler"
 
 newtype DelayedIO = DelayedIO { runDelayed :: IO () }
@@ -155,8 +158,8 @@ delayIO io = do
 
 data Environment = Env {
     task             :: Task
-  , interruptHandler :: TaskDisposition -> MOO TaskDisposition
   , startTime        :: ClockTime
+  , interruptHandler :: InterruptHandler
   , exceptionHandler :: ExceptionHandler
   , indexLength      :: MOO Int
 }
@@ -166,8 +169,8 @@ initEnvironment task = do
   startTime <- getClockTime
   return Env {
       task             = task
-    , interruptHandler = error "Undefined interrupt handler"
     , startTime        = startTime
+    , interruptHandler = error "Undefined interrupt handler"
     , exceptionHandler = Handler $ \e cs -> interrupt (Abort e cs)
     , indexLength      = error "Invalid index context"
   }
