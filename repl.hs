@@ -119,5 +119,8 @@ evalPrint task = do
     Abort (Exception _ m v) _ -> do
       putStrLn $ "** " ++ unpack m ++ formatValue v
       return task'
+    Timeout resource _ -> do
+      putStrLn $ "!! Task ran out of " ++ show resource
+      return task'
   where formatValue (Int 0) = ""
         formatValue v = " [" ++ unpack (toLiteral v) ++ "]"

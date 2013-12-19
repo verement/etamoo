@@ -2,16 +2,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module MOO.Task ( MOO
-                , Task ( .. )
-                , TaskDisposition ( .. )
-                , Resume ( .. )
-                , DelayedIO ( .. )
-                , Environment ( .. )
-                , TaskState ( .. )
-                , CallStack ( .. )
-                , Continuation ( .. )
-                , StackFrame ( .. )
-                , Exception ( .. )
+                , Task(..)
+                , TaskDisposition(..)
+                , Resource(..)
+                , Resume(..)
+                , DelayedIO(..)
+                , Environment(..)
+                , TaskState(..)
+                , CallStack(..)
+                , Continuation(..)
+                , StackFrame(..)
+                , Exception(..)
                 , initTask
                 , runTask
                 , interrupt
@@ -26,6 +27,7 @@ module MOO.Task ( MOO
                 , findVerb
                 , callVerb
                 , runVerbFrame
+                , runTick
                 , modifyProperty
                 , modifyVerb
                 , setBuiltinProperty
@@ -111,11 +113,15 @@ initTask db comp = do
   }
 
 data TaskDisposition = Complete Value
-                     | Abort Exception CallStack
                      | Suspend (Maybe IntT) Resume
-                     | Read Resume
+                     | Read                 Resume
+                     | Abort    Exception CallStack
+                     | Timeout  Resource  CallStack
 
 newtype Resume = Resume (Value -> MOO Value)
+
+data Resource = Ticks | Seconds
+              deriving Show
 
 runTask :: Task -> IO (TaskDisposition, Task)
 runTask task = do
@@ -167,14 +173,16 @@ initEnvironment task = do
   }
 
 data TaskState = State {
-    stack     :: CallStack
+    ticksLeft :: Int
+  , stack     :: CallStack
   , randomGen :: StdGen
   , delayedIO :: DelayedIO
 }
 
 initState :: StdGen -> TaskState
 initState gen = State {
-    stack     = Stack []
+    ticksLeft = 30000
+  , stack     = Stack []
   , randomGen = gen
   , delayedIO = mempty
 }
@@ -266,13 +274,21 @@ callVerb oid this name args = do
     }
 
 runVerbFrame :: MOO Value -> StackFrame -> MOO Value
-runVerbFrame verbCode frame = do
-  pushFrame frame
+runVerbFrame verbCode verbFrame = do
+  depthLeft <- frame depthLeft
+  unless (depthLeft > 0) $ raise E_MAXREC
+  pushFrame verbFrame { depthLeft = depthLeft - 1 }
   value <- verbCode `catchException` \except callStack -> do
     popFrame
     passException except callStack
   popFrame
   return value
+
+runTick :: MOO ()
+runTick = do
+  ticksLeft <- gets ticksLeft
+  unless (ticksLeft > 0) $ interrupt . Timeout Ticks =<< gets stack
+  modify $ \st -> st { ticksLeft = ticksLeft - 1 }
 
 modifyProperty :: Object -> StrT -> (Property -> MOO Property) -> MOO ()
 modifyProperty obj name f =
@@ -363,7 +379,9 @@ instance Show Context where
   show TryFinally{} = "<TryFinally>"
 
 data StackFrame = Frame {
-    contextStack  :: [Context]
+    depthLeft     :: Int
+
+  , contextStack  :: [Context]
   , variables     :: Map Id Value
   , debugBit      :: Bool
   , permissions   :: ObjId
@@ -377,7 +395,9 @@ data StackFrame = Frame {
 } deriving Show
 
 initFrame = Frame {
-    contextStack  = []
+    depthLeft     = 50
+
+  , contextStack  = []
   , variables     = mkInitVars
   , debugBit      = True
   , permissions   = -1

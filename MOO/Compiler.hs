@@ -27,7 +27,7 @@ compileStatements k (s:ss) = catchDebug $ case s of
     evaluate expr
     compileStatements k ss
 
-  If lineNumber cond (Then thens) elseIfs (Else elses) -> do
+  If lineNumber cond (Then thens) elseIfs (Else elses) -> runTick >> do
     compileIf ((lineNumber, cond, thens) : map elseIf elseIfs) elses
     compileStatements k ss
 
@@ -55,7 +55,7 @@ compileStatements k (s:ss) = catchDebug $ case s of
     compileStatements k ss
 
     where var' = T.toCaseFold var
-          loop var (elt:elts) body = do
+          loop var (elt:elts) body = runTick >> do
             storeVariable var elt
             callCC $ \continue -> do
               setLoopContinue (Continuation continue)
@@ -82,7 +82,7 @@ compileStatements k (s:ss) = catchDebug $ case s of
     where var' = T.toCaseFold var
           loop var ty i end body
             | i > end   = return nothing
-            | otherwise = do
+            | otherwise = runTick >> do
               storeVariable var (ty i)
               callCC $ \continue -> do
                 setLoopContinue (Continuation continue)
@@ -99,7 +99,7 @@ compileStatements k (s:ss) = catchDebug $ case s of
     compileStatements k ss
 
     where var' = fmap T.toCaseFold var
-          loop lineNumber var expr body = do
+          loop lineNumber var expr body = runTick >> do
             setLineNumber lineNumber
             expr' <- expr
             maybe return storeVariable var expr'
@@ -109,13 +109,13 @@ compileStatements k (s:ss) = catchDebug $ case s of
                 body
               loop lineNumber var expr body
 
-  Fork lineNumber var delay body -> notyet "Fork"
+  Fork lineNumber var delay body -> runTick >> notyet "Fork"
 
   Break    name -> breakLoop    (fmap T.toCaseFold name)
   Continue name -> continueLoop (fmap T.toCaseFold name)
 
-  Return _          Nothing     -> k nothing
-  Return lineNumber (Just expr) -> do
+  Return _          Nothing     -> runTick >> k nothing
+  Return lineNumber (Just expr) -> runTick >> do
     setLineNumber lineNumber
     k =<< evaluate expr
 
@@ -167,12 +167,12 @@ catchDebug action =
     if debug then passException except callStack else return code
 
 evaluate :: Expr -> MOO Value
-evaluate expr = catchDebug $ case expr of
-  Literal value -> return value
-  List    args  -> fmap (Lst . V.fromList) $ expand args
+evaluate (Literal value) = return value
+evaluate expr@Variable{} = catchDebug $ fetch (lValue expr)
+evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
+  List args -> fmap (Lst . V.fromList) $ expand args
 
-  Variable{} -> fetch (lValue expr)
-  PropRef{}  -> fetch (lValue expr)
+  PropRef{} -> fetch (lValue expr)
 
   Assign what expr -> store (lValue what) =<< evaluate expr
 

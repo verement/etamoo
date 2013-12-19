@@ -3,8 +3,9 @@
 
 module MOO.Builtins.Tasks ( builtins ) where
 
+import Control.Monad (liftM)
 import Control.Monad.Reader (asks)
-import Control.Monad.State (gets)
+import Control.Monad.State (gets, modify)
 import Control.Monad.Cont (callCC)
 
 import MOO.Types
@@ -88,13 +89,17 @@ bf_set_task_perms [Obj who] = do
 
 bf_caller_perms [] = fmap (Obj . objectForMaybe) $ caller permissions
 
-bf_ticks_left [] = notyet "ticks_left"
-bf_seconds_left [] = notyet "seconds_left"
+bf_ticks_left [] = (Int . fromIntegral) `liftM` gets ticksLeft
+
+bf_seconds_left [] = return (Int 5)  -- XXX can this be measured?
 
 bf_task_id [] = fmap (Int . taskId) $ asks task
 
-bf_suspend [Int seconds] = callCC $ interrupt . Suspend (Just seconds) . Resume
-bf_suspend []            = callCC $ interrupt . Suspend Nothing        . Resume
+bf_suspend optional = do
+  value <- callCC $ interrupt . Suspend (fmap fromInt maybeSeconds) . Resume
+  modify $ \st -> st { ticksLeft = 15000 }
+  return value
+  where (maybeSeconds : _) = maybeDefaults optional
 
 bf_resume (Int task_id : optional) = notyet "resume"
   where [value] = defaults optional [nothing]
