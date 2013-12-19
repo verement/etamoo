@@ -89,19 +89,18 @@ evalE db line state =
   case runParser (between whiteSpace eof expression)
        initParserState "" (pack line) of
     Left err -> putStr "Parse error " >> print err >> return state
-    Right expr -> do
-      -- putStrLn $ "-- " ++ show expr
-      task <- initTask db (evaluate expr)
-      taskState `liftM` evalPrint task { taskState = state }
+    Right expr -> eval state =<< initTask db (evaluate expr)
 
 evalP :: TVar Database -> String -> TaskState -> IO TaskState
 evalP db line state =
   case runParser program initParserState "" (pack line) of
     Left err -> putStr "Parse error" >> print err >> return state
-    Right program -> do
-      -- putStrLn $ "-- " ++ show program
-      task <- initTask db (compile program)
-      taskState `liftM` evalPrint task { taskState = state }
+    Right program -> eval state =<< initTask db (compile program)
+
+eval :: TaskState -> Task -> IO TaskState
+eval state task = taskState `liftM`
+                  evalPrint task { taskState = state {
+                                      ticksLeft = ticksLeft (taskState task) } }
 
 evalPrint :: Task -> IO Task
 evalPrint task = do
