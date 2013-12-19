@@ -36,6 +36,20 @@ data Verb = Verb {
   , verbIndirectObject :: ObjSpec
 }
 
+instance Sizeable Verb where
+  storageBytes verb =
+    storageBytes (verbNames          verb) +
+    storageBytes (verbProgram        verb) * 2 +
+    -- storageBytes (verbCode           verb) +
+    storageBytes (verbOwner          verb) +
+    storageBytes (verbPermR          verb) +
+    storageBytes (verbPermW          verb) +
+    storageBytes (verbPermX          verb) +
+    storageBytes (verbPermD          verb) +
+    storageBytes (verbDirectObject   verb) +
+    storageBytes (verbPreposition    verb) +
+    storageBytes (verbIndirectObject verb)
+
 initVerb = Verb {
     verbNames          = ""
   , verbProgram        = Program []
@@ -56,6 +70,9 @@ data ObjSpec = ObjNone
              | ObjAny
              | ObjThis
              deriving (Enum, Bounded, Show)
+
+instance Sizeable ObjSpec where
+  storageBytes _ = storageBytes ()
 
 obj2text :: ObjSpec -> Text
 obj2text ObjNone = "none"
@@ -84,6 +101,9 @@ data PrepSpec = PrepAny
               | PrepAs
               | PrepOffOffof
               deriving (Enum, Bounded, Show)
+
+instance Sizeable PrepSpec where
+  storageBytes _ = storageBytes ()
 
 prep2text :: PrepSpec -> Text
 prep2text PrepAny                    = "any"

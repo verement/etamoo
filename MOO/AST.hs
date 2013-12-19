@@ -20,6 +20,9 @@ import MOO.Types
 newtype Program = Program [Statement]
                 deriving Show
 
+instance Sizeable Program where
+  storageBytes (Program stmts) = storageBytes stmts
+
 data Statement = Expression !Int Expr
                | If         !Int Expr Then [ElseIf] Else
                | ForList    !Int Id  Expr        [Statement]
@@ -39,6 +42,42 @@ newtype Else    = Else             [Statement]             deriving Show
 
 data    Except  = Except !Int (Maybe Id) Codes [Statement] deriving Show
 newtype Finally = Finally                      [Statement] deriving Show
+
+instance Sizeable Statement where
+  storageBytes (Expression line expr) =
+    storageBytes () + storageBytes line + storageBytes expr
+  storageBytes (If line expr (Then thens) elseIfs (Else elses)) =
+    storageBytes () + storageBytes line + storageBytes expr +
+    storageBytes thens + storageBytes elseIfs + storageBytes elses
+  storageBytes (ForList line var expr body) =
+    storageBytes () + storageBytes line + storageBytes var +
+    storageBytes expr + storageBytes body
+  storageBytes (ForRange line var range body) =
+    storageBytes () + storageBytes line + storageBytes var +
+    storageBytes range + storageBytes body
+  storageBytes (While line var expr body) =
+    storageBytes () + storageBytes line + storageBytes var +
+    storageBytes expr + storageBytes body
+  storageBytes (Fork line var expr body) =
+    storageBytes () + storageBytes line + storageBytes var +
+    storageBytes expr + storageBytes body
+  storageBytes (Break    var) = storageBytes () + storageBytes var
+  storageBytes (Continue var) = storageBytes () + storageBytes var
+  storageBytes (Return line expr) =
+    storageBytes () + storageBytes line + storageBytes expr
+  storageBytes (TryExcept body excepts) =
+    storageBytes () + storageBytes body + storageBytes excepts
+  storageBytes (TryFinally body (Finally finally)) =
+    storageBytes () + storageBytes body + storageBytes finally
+
+instance Sizeable ElseIf where
+  storageBytes (ElseIf line expr body) =
+    storageBytes () + storageBytes line + storageBytes expr + storageBytes body
+
+instance Sizeable Except where
+  storageBytes (Except line var codes body) =
+    storageBytes () + storageBytes line + storageBytes var +
+    storageBytes codes + storageBytes body
 
 data Expr = Literal Value
           | List [Arg]
@@ -82,17 +121,75 @@ data Expr = Literal Value
 
           deriving Show
 
+instance Sizeable Expr where
+  storageBytes (Literal value) = storageBytes () + storageBytes value
+  storageBytes (List args)     = storageBytes () + storageBytes args
+  storageBytes (Variable var)  = storageBytes () + storageBytes var
+  storageBytes (PropRef obj name) =
+    storageBytes () + storageBytes obj + storageBytes name
+  storageBytes (Assign lhs rhs) =
+    storageBytes () + storageBytes lhs + storageBytes rhs
+  storageBytes (ScatterAssign scats expr) =
+    storageBytes () + storageBytes scats + storageBytes expr
+  storageBytes (VerbCall obj name args) =
+    storageBytes () + storageBytes obj + storageBytes name + storageBytes args
+  storageBytes (BuiltinFunc name args) =
+    storageBytes () + storageBytes name + storageBytes args
+  storageBytes (Index  x y) = storageBytes () + storageBytes x + storageBytes y
+  storageBytes (Range  x y) = storageBytes () + storageBytes x + storageBytes y
+  storageBytes  Length      = storageBytes ()
+  storageBytes (In     x y) = storageBytes () + storageBytes x + storageBytes y
+  storageBytes (Plus   x y) = storageBytes () + storageBytes x + storageBytes y
+  storageBytes (Minus  x y) = storageBytes () + storageBytes x + storageBytes y
+  storageBytes (Times  x y) = storageBytes () + storageBytes x + storageBytes y
+  storageBytes (Divide x y) = storageBytes () + storageBytes x + storageBytes y
+  storageBytes (Remain x y) = storageBytes () + storageBytes x + storageBytes y
+  storageBytes (Power  x y) = storageBytes () + storageBytes x + storageBytes y
+  storageBytes (Negate x)   = storageBytes () + storageBytes x
+  storageBytes (Conditional x y z) =
+    storageBytes () + storageBytes x + storageBytes y + storageBytes z
+  storageBytes (And    x y) = storageBytes () + storageBytes x + storageBytes y
+  storageBytes (Or     x y) = storageBytes () + storageBytes x + storageBytes y
+  storageBytes (Not    x)   = storageBytes () + storageBytes x
+  storageBytes (Equal  x y) = storageBytes () + storageBytes x + storageBytes y
+  storageBytes (NotEqual x y) =
+    storageBytes () + storageBytes x + storageBytes y
+  storageBytes (LessThan x y) =
+    storageBytes () + storageBytes x + storageBytes y
+  storageBytes (LessEqual x y) =
+    storageBytes () + storageBytes x + storageBytes y
+  storageBytes (GreaterThan x y) =
+    storageBytes () + storageBytes x + storageBytes y
+  storageBytes (GreaterEqual x y) =
+    storageBytes () + storageBytes x + storageBytes y
+  storageBytes (Catch expr codes (Default dv)) =
+    storageBytes () + storageBytes expr + storageBytes codes + storageBytes dv
+
 data    Codes   = ANY | Codes [Arg]    deriving Show
 newtype Default = Default (Maybe Expr) deriving Show
+
+instance Sizeable Codes where
+  storageBytes ANY          = storageBytes ()
+  storageBytes (Codes args) = storageBytes () + storageBytes args
 
 data Arg = ArgNormal Expr
          | ArgSplice Expr
          deriving Show
 
+instance Sizeable Arg where
+  storageBytes (ArgNormal expr) = storageBytes () + storageBytes expr
+  storageBytes (ArgSplice expr) = storageBytes () + storageBytes expr
+
 data ScatItem = ScatRequired Id
               | ScatOptional Id (Maybe Expr)
               | ScatRest     Id
               deriving Show
+
+instance Sizeable ScatItem where
+  storageBytes (ScatRequired var) = storageBytes () + storageBytes var
+  storageBytes (ScatOptional var expr) =
+    storageBytes () + storageBytes var + storageBytes expr
+  storageBytes (ScatRest     var) = storageBytes () + storageBytes var
 
 isLValue :: Expr -> Bool
 isLValue (Range e _)  = isLValue' e

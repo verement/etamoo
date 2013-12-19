@@ -12,6 +12,7 @@ module MOO.Types ( IntT
                  , Type(..)
                  , Value(..)
                  , Error(..)
+                 , Sizeable(..)
                  , nothing
                  , fromInt
                  , fromFlt
@@ -37,10 +38,46 @@ import Data.Word
 import Data.Text (Text)
 import Data.Vector (Vector)
 import Data.Char (isAscii, isPrint, isDigit)
+import Foreign.Storable (sizeOf)
 
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
+
+class Sizeable t where
+  storageBytes :: t -> Int
+
+instance Sizeable () where
+  storageBytes _ = sizeOf (0 :: Int)
+
+instance Sizeable Bool where
+  storageBytes = sizeOf
+
+instance Sizeable Int where
+  storageBytes = sizeOf
+
+instance Sizeable Int32 where
+  storageBytes = sizeOf
+
+instance Sizeable Double where
+  storageBytes = sizeOf
+
+instance Sizeable Text where
+  storageBytes t = sizeOf 'x' * (T.length t + 1)
+
+instance Sizeable a => Sizeable (Vector a) where
+  storageBytes v = V.sum (V.map storageBytes v)
+
+instance Sizeable a => Sizeable [a] where
+  storageBytes = foldr bytes (storageBytes ())
+    where bytes x s = s + storageBytes () + storageBytes x
+
+instance Sizeable a => Sizeable (Maybe a) where
+  storageBytes Nothing  = storageBytes ()
+  storageBytes (Just x) = storageBytes () + storageBytes x
+
+instance (Sizeable a, Sizeable b) => Sizeable (a, b) where
+  storageBytes (x, y) = storageBytes () + storageBytes x + storageBytes y
 
 type IntT = Int32
 type FltT = Double
@@ -59,6 +96,16 @@ data Value = Int !IntT
            | Err !ErrT
            | Lst !LstT
            deriving Show
+
+instance Sizeable Value where
+  storageBytes value = case value of
+    Int x -> box + storageBytes x
+    Flt x -> box + storageBytes x
+    Str x -> box + storageBytes x
+    Obj x -> box + storageBytes x
+    Err x -> box + storageBytes x
+    Lst x -> box + storageBytes x
+    where box = storageBytes ()
 
 nothing :: Value
 nothing = truthValue False
@@ -134,6 +181,9 @@ data Error = E_NONE
            | E_QUOTA
            | E_FLOAT
            deriving (Eq, Ord, Enum, Bounded, Show)
+
+instance Sizeable Error where
+  storageBytes _ = storageBytes ()
 
 truthOf :: Value -> Bool
 truthOf (Int x) = case x of 0   -> False; _ -> True

@@ -62,6 +62,35 @@ data Object = Object {
   , objectVerbs      :: [([StrT], TVar Verb)]
 }
 
+instance Sizeable IntSet where
+  storageBytes x = storageBytes () + storageBytes (0 :: Int) * IS.size x
+
+instance (Sizeable k, Sizeable v) => Sizeable (HashMap k v) where
+  storageBytes = HM.foldrWithKey bytes (storageBytes ())
+    where bytes k v s = s + storageBytes k + storageBytes v
+
+instance Sizeable (TVar a) where
+  storageBytes _ = storageBytes ()
+
+instance Sizeable Object where
+  -- this does not capture the size of defined properties or verbs, as these
+  -- are tucked behind TVars and cannot be read outside the STM monad
+  storageBytes obj =
+    storageBytes (objectIsPlayer   obj) +
+    storageBytes (objectParent     obj) +
+    storageBytes (objectChildren   obj) +
+    storageBytes (objectName       obj) +
+    storageBytes (objectOwner      obj) +
+    storageBytes (objectLocation   obj) +
+    storageBytes (objectContents   obj) +
+    storageBytes (objectProgrammer obj) +
+    storageBytes (objectWizard     obj) +
+    storageBytes (objectPermR      obj) +
+    storageBytes (objectPermW      obj) +
+    storageBytes (objectPermF      obj) +
+    storageBytes (objectProperties obj) +
+    storageBytes (objectVerbs      obj)
+
 initObject = Object {
     objectIsPlayer   = False
   , objectParent     = Nothing
@@ -104,6 +133,16 @@ data Property = Property {
   , propertyPermW     :: Bool
   , propertyPermC     :: Bool
 } deriving Show
+
+instance Sizeable Property where
+  storageBytes prop =
+    storageBytes (propertyName      prop) +
+    storageBytes (propertyValue     prop) +
+    storageBytes (propertyInherited prop) +
+    storageBytes (propertyOwner     prop) +
+    storageBytes (propertyPermR     prop) +
+    storageBytes (propertyPermW     prop) +
+    storageBytes (propertyPermC     prop)
 
 initProperty = Property {
     propertyName      = ""

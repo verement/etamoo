@@ -142,7 +142,17 @@ bf_children [Obj object] =
   (Lst . V.fromList . map Obj . getChildren) `liftM` checkValid object
 
 bf_recycle [Obj object] = notyet "recycle"
-bf_object_bytes [Obj object] = notyet "object_bytes"
+
+bf_object_bytes [Obj object] = do
+  checkWizard
+  obj <- checkValid object
+
+  propertyBytes <- liftM storageBytes $ liftSTM $
+                   mapM readTVar $ HM.elems (objectProperties obj)
+  verbBytes     <- liftM storageBytes $ liftSTM $
+                   mapM (readTVar . snd) $ objectVerbs obj
+
+  return $ Int $ fromIntegral $ storageBytes obj + propertyBytes + verbBytes
 
 bf_max_object [] = (Obj . maxObject) `liftM` getDatabase
 

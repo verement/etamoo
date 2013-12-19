@@ -8,7 +8,6 @@ import Control.Exception (bracket)
 import Control.Concurrent.MVar (MVar, newMVar, takeMVar, putMVar)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf (printf)
-import Foreign.Storable (sizeOf)
 import Foreign.C (CString, withCString, peekCString)
 import Data.Maybe (fromJust)
 import Data.Text.Encoding (encodeUtf8)
@@ -143,16 +142,7 @@ bf_tofloat [value] = tofloat value
 
 bf_equal [value1, value2] = return $ truthValue (value1 `equal` value2)
 
-bf_value_bytes [value] = return $ Int $ fromIntegral $ value_bytes value
-  where value_bytes value = case value of
-          -- Make stuff up ...
-          Int x -> box + sizeOf x
-          Flt x -> box + sizeOf x
-          Obj x -> box + sizeOf x
-          Str t -> box + sizeOf 'x' * (T.length t + 1)
-          Err _ -> box + sizeOf (0 :: Int)
-          Lst v -> box + V.sum (V.map value_bytes v)
-        box = 8
+bf_value_bytes [value] = return $ Int $ fromIntegral $ storageBytes value
 
 bf_value_hash [value] = do
   literal <- bf_toliteral [value]
