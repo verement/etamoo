@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module MOO.Command ( Command(..)
+                   , parseWords
                    , parseCommand
                    ) where
 
@@ -79,8 +80,12 @@ data Command = Command {
   , commandIObjStr  :: Text
   } deriving Show
 
+parseWords :: Text -> [Text]
+parseWords argstr = args
+  where Right args = parse commandWords "" argstr
+
 parseCommand :: Text -> Command
 parseCommand cmd = Command verb args argstr dobjstr prepSpec prepstr iobjstr
-  where Right (verb, argstr) = parse command      "" $ replaceCharCommand cmd
-        Right  args          = parse commandWords "" argstr
+  where Right (verb, argstr) = parse command "" $ replaceCharCommand cmd
+        args = parseWords argstr
         (dobjstr, (prepSpec, prepstr), iobjstr) = matchPrep args
