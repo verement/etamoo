@@ -6,3 +6,5 @@
 repl
 hlint.html
 *.db
+\#*#
+.#*
