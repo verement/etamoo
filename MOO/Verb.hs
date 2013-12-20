@@ -1,14 +1,15 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Verb ( Verb (..)
+module MOO.Verb ( Verb(..)
                 , ObjSpec
-                , PrepSpec
+                , PrepSpec(..)
                 , initVerb
                 , obj2text
                 , text2obj
                 , prep2text
                 , text2prep
+                , prepPhrases
                 , verbNameMatch
                 ) where
 
@@ -128,6 +129,12 @@ text2prep :: Text -> Maybe PrepSpec
 text2prep = flip lookup $ concatMap mkAssoc [minBound ..]
   where mkAssoc prepSpec =
           [(prep, prepSpec) | prep <- T.splitOn "/" $ prep2text prepSpec]
+
+prepPhrases :: [(PrepSpec, [Text])]
+prepPhrases = [ (prepSpec, T.words prepPhrase)
+              | prepSpec   <- [succ PrepNone ..]
+              , prepPhrase <- T.splitOn "/" $ prep2text prepSpec
+              ]
 
 verbNameMatch :: StrT -> [StrT] -> Bool
 verbNameMatch name = any matchName
