@@ -33,8 +33,9 @@ commandWord = do
   return (T.concat word)
 
   where wordChar = T.singleton `liftM` satisfy nonspecial <|>
-                   T.pack      `liftM` quotedChars   <|>
-                   T.singleton `liftM` backslashChar
+                   T.pack      `liftM` quotedChars        <|>
+                   T.singleton `liftM` backslashChar      <|>
+                   trailingBackslash
 
         nonspecial '\"' = False
         nonspecial '\\' = False
@@ -42,13 +43,14 @@ commandWord = do
 
         quotedChars     = between (char '"') quoteEnd $
                           many (noneOf "\"\\" <|> backslashChar)
-        quoteEnd        = void (char '"') <|> eof <|> try (char '\\' >> eof)
+        quoteEnd        = void (char '"') <|> eof <|> void trailingBackslash
 
         backslashChar   = try (char '\\' >> anyChar)
 
+        trailingBackslash = try (char '\\' >> eof) >> return ""
+
 commandWords :: Parser [Text]
-commandWords = between spaces end $ many commandWord
-  where end = eof <|> try (char '\\' >> eof)
+commandWords = between spaces eof $ many commandWord
 
 command :: Parser (Text, Text)
 command = between spaces eof $ do
