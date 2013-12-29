@@ -4,10 +4,11 @@
 module MOO.Builtins.Objects ( builtins ) where
 
 import Control.Concurrent.STM
-import Control.Monad (when, unless, liftM)
+import Control.Monad (when, unless, liftM, void)
 import Data.Maybe
 import Data.Set (Set)
 
+import qualified Data.IntSet as IS
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.HashMap.Strict as HM
@@ -158,7 +159,66 @@ bf_max_object [] = (Obj . maxObject) `liftM` getDatabase
 
 -- 4.4.3.2 Object Movement
 
-bf_move [Obj what, Obj where_] = notyet "move"
+bf_move [Obj what, Obj where_] = do
+  what' <- checkValid what
+  where' <- case where_ of
+    -1  -> return Nothing
+    oid -> Just `liftM` checkValid oid
+  checkPermission (objectOwner what')
+
+  when (isJust where') $ do
+    accepted <- maybe False truthOf `liftM`
+                callFromFunc "move" 0 where_ "accept" [Obj what]
+    unless accepted $ do
+      wizard <- isWizard =<< frame permissions
+      unless wizard $ raise E_NACC
+
+  let newWhere = case where_ of
+        -1  -> Nothing
+        oid -> Just oid
+
+  maybeWhat <- getObject what
+  case maybeWhat of
+    Nothing      -> return ()
+    Just whatObj -> unless (objectLocation whatObj == newWhere) $ do
+      maybeWhere <- getObject where_
+      when (isNothing newWhere || isJust maybeWhere) $ do
+        checkRecurse what where_
+
+        let oldWhere = objectLocation whatObj
+        db <- getDatabase
+
+        liftSTM $ modifyObject what db $ \obj ->
+          return obj { objectLocation = newWhere }
+        case oldWhere of
+          Nothing        -> return ()
+          Just oldWhere' -> liftSTM $ modifyObject oldWhere' db $ \obj ->
+            return obj { objectContents = IS.delete what (objectContents obj) }
+        case newWhere of
+          Nothing        -> return ()
+          Just newWhere' -> liftSTM $ modifyObject newWhere' db $ \obj ->
+            return obj { objectContents = IS.insert what (objectContents obj) }
+
+        case oldWhere of
+          Nothing        -> return ()
+          Just oldWhere' ->
+            void $ callFromFunc "move" 1 oldWhere' "exitfunc" [Obj what]
+
+        maybeWhat <- getObject what
+        case maybeWhat of
+          Nothing      -> return ()
+          Just whatObj ->
+            when (objectLocation whatObj == newWhere) $
+            void $ callFromFunc "move" 2 where_ "enterfunc" [Obj what]
+
+  return nothing
+
+  where checkRecurse what loc = do
+          when (loc == what) $ raise E_RECMOVE
+          maybeLoc <- getObject loc
+          case objectLocation `fmap` maybeLoc of
+            Just (Just oid) -> checkRecurse what oid
+            _               -> return ()
 
 -- 4.4.3.3 Operations on Properties
 

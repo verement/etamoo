@@ -55,6 +55,7 @@ module MOO.Task ( MOO
                 , raiseException
                 , notyet
                 , raise
+                , isWizard
                 , checkFloat
                 , checkProgrammer
                 , checkWizard
