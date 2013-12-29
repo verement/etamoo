@@ -289,8 +289,8 @@ callVerb verbLoc this name args = do
     (Just _      , Nothing)   -> raise E_VERBNF
     (Just verbOid, Just verb) -> callVerb' (verbOid, verb) this name args
 
-callFromFunc :: StrT -> IntT -> ObjId -> StrT -> [Value] -> MOO (Maybe Value)
-callFromFunc func index oid name args = do
+callFromFunc :: StrT -> IntT -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
+callFromFunc func index (oid, name) args = do
   (maybeOid, maybeVerb) <- findVerb verbPermX name oid
   case (maybeOid, maybeVerb) of
     (Just verbOid, Just verb) -> do

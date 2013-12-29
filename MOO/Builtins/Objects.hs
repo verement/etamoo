@@ -128,7 +128,7 @@ bf_create (Obj parent : optional) = do
 
   putDatabase =<< liftSTM (addObject newObj db)
 
-  callFromFunc "create" 0 newOid "initialize" []
+  callFromFunc "create" 0 (newOid, "initialize") []
   return (Obj newOid)
 
   where (maybeOwner : _) = maybeDefaults optional
@@ -168,7 +168,7 @@ bf_move [Obj what, Obj where_] = do
 
   when (isJust where') $ do
     accepted <- maybe False truthOf `liftM`
-                callFromFunc "move" 0 where_ "accept" [Obj what]
+                callFromFunc "move" 0 (where_, "accept") [Obj what]
     unless accepted $ do
       wizard <- isWizard =<< frame permissions
       unless wizard $ raise E_NACC
@@ -202,14 +202,14 @@ bf_move [Obj what, Obj where_] = do
         case oldWhere of
           Nothing        -> return ()
           Just oldWhere' ->
-            void $ callFromFunc "move" 1 oldWhere' "exitfunc" [Obj what]
+            void $ callFromFunc "move" 1 (oldWhere', "exitfunc") [Obj what]
 
         maybeWhat <- getObject what
         case maybeWhat of
           Nothing      -> return ()
           Just whatObj ->
             when (objectLocation whatObj == newWhere) $
-            void $ callFromFunc "move" 2 where_ "enterfunc" [Obj what]
+            void $ callFromFunc "move" 2 (where_, "enterfunc") [Obj what]
 
   return nothing
 
