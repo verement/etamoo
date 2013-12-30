@@ -19,6 +19,7 @@ import MOO.Builtins
 import MOO.Database
 import MOO.Database.LambdaMOO
 import MOO.Object
+import MOO.Command
 
 import qualified Data.Map as Map
 
@@ -82,7 +83,13 @@ run _ ":stack" state = print (stack state) >> return state
 
 run db (';':';':line) state = evalP db line state
 run db (';'    :line) state = evalE db line state
-run db          line  state = evalE db line state
+run db          line  state = evalC db line state
+
+evalC :: TVar Database -> String -> TaskState -> IO TaskState
+evalC db line state@State { stack = Stack (frame:_) } = do
+  let player  = initialPlayer frame
+      command = parseCommand (pack line)
+  eval state =<< initTask db (runCommand player command)
 
 evalE :: TVar Database -> String -> TaskState -> IO TaskState
 evalE db line state =

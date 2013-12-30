@@ -2,13 +2,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module MOO.Verb ( Verb(..)
-                , ObjSpec
+                , ObjSpec(..)
                 , PrepSpec(..)
                 , initVerb
                 , obj2text
                 , text2obj
+                , objMatch
                 , prep2text
                 , text2prep
+                , prepMatch
                 , prepPhrases
                 , verbNameMatch
                 ) where
@@ -84,6 +86,12 @@ text2obj :: Text -> Maybe ObjSpec
 text2obj = flip lookup $ map mkAssoc [minBound ..]
   where mkAssoc objSpec = (obj2text objSpec, objSpec)
 
+objMatch :: ObjId -> ObjSpec -> ObjId -> Bool
+objMatch _    ObjNone (-1) = True
+objMatch _    ObjNone _    = False
+objMatch _    ObjAny  _    = True
+objMatch this ObjThis oid  = oid == this
+
 data PrepSpec = PrepAny
               | PrepNone
               | PrepWithUsing
@@ -101,7 +109,7 @@ data PrepSpec = PrepAny
               | PrepIs
               | PrepAs
               | PrepOffOffof
-              deriving (Enum, Bounded, Show)
+              deriving (Enum, Bounded, Eq, Show)
 
 instance Sizeable PrepSpec where
   storageBytes _ = storageBytes ()
@@ -129,6 +137,10 @@ text2prep :: Text -> Maybe PrepSpec
 text2prep = flip lookup $ concatMap mkAssoc [minBound ..]
   where mkAssoc prepSpec =
           [(prep, prepSpec) | prep <- T.splitOn "/" $ prep2text prepSpec]
+
+prepMatch :: PrepSpec -> PrepSpec -> Bool
+prepMatch PrepAny _  = True
+prepMatch vp      cp = vp == cp
 
 prepPhrases :: [(PrepSpec, [Text])]
 prepPhrases = [ (prepSpec, T.words prepPhrase)

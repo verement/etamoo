@@ -5,7 +5,8 @@ module MOO.Network ( Connection
                    ) where
 
 import MOO.Types
-import MOO.Task
+import {-# SOURCE #-} MOO.Task
+
 import qualified Data.Text as T
 
 data Connection

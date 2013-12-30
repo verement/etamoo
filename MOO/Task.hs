@@ -25,6 +25,7 @@ module MOO.Task ( MOO
                 , getProperty
                 , getVerb
                 , findVerb
+                , callCommandVerb
                 , callVerb
                 , callFromFunc
                 , runVerbFrame
@@ -91,6 +92,7 @@ import MOO.Types
 import {-# SOURCE #-} MOO.Database
 import MOO.Object
 import MOO.Verb
+import MOO.Command
 
 type MOO = ReaderT Environment
            (ContT TaskDisposition
@@ -246,6 +248,34 @@ findVerb acceptable name = findVerb'
         searchVerbs [] = return Nothing
 
         name' = T.toCaseFold name
+
+callCommandVerb :: ObjId -> (ObjId, Verb) -> ObjId ->
+                   Command -> (ObjId, ObjId) -> MOO Value
+callCommandVerb player (verbOid, verb) this command (dobj, iobj) = do
+  let vars = Map.fromList $ [
+          ("player" , Obj player)
+        , ("this"   , Obj this)
+        , ("caller" , Obj player)
+        , ("verb"   , Str $ commandVerb   command)
+        , ("argstr" , Str $ commandArgStr command)
+        , ("args"   , Lst $ V.fromList $ map Str $ commandArgs command)
+        , ("dobjstr", Str $ commandDObjStr command)
+        , ("dobj"   , Obj dobj)
+        , ("prepstr", Str $ commandPrepStr command)
+        , ("iobjstr", Str $ commandIObjStr command)
+        , ("iobj"   , Obj iobj)
+        ] ++ typeVars
+
+  runVerbFrame (verbCode verb) initFrame {
+      variables     = vars
+    , debugBit      = verbPermD verb
+    , permissions   = verbOwner verb
+
+    , verbName      = commandVerb command
+    , verbLocation  = verbOid
+    , initialThis   = this
+    , initialPlayer = player
+    }
 
 callVerb' :: (ObjId, Verb) -> ObjId -> StrT -> [Value] -> MOO Value
 callVerb' (verbOid, verb) this name args = do
