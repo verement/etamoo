@@ -5,6 +5,7 @@ module MOO.Builtins.Network ( builtins ) where
 
 import MOO.Types
 import MOO.Task
+import MOO.Network
 import MOO.Builtins.Common
 
 import qualified Data.Text as T
@@ -53,7 +54,7 @@ bf_connected_seconds [Obj player] = notyet "connected_seconds"
 bf_idle_seconds [Obj player] = notyet "idle_seconds"
 
 bf_notify (Obj conn : Str string : optional) = do
-  delayIO (putStrLn $ T.unpack string)
+  notify conn string
   return $ truthValue True
   where [no_flush] = booleanDefaults optional [False]
 
