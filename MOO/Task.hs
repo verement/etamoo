@@ -28,6 +28,7 @@ module MOO.Task ( MOO
                 , callCommandVerb
                 , callVerb
                 , callFromFunc
+                , evalFromFunc
                 , runVerbFrame
                 , runTick
                 , modifyProperty
@@ -323,22 +324,25 @@ callFromFunc :: StrT -> IntT -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
 callFromFunc func index (oid, name) args = do
   (maybeOid, maybeVerb) <- findVerb verbPermX name oid
   case (maybeOid, maybeVerb) of
-    (Just verbOid, Just verb) -> do
-      (depthLeft, player) <- frame (depthLeft &&& initialPlayer)
-      pushFrame initFrame {
-          depthLeft     = depthLeft
-        , verbName      = func
-        , initialPlayer = player
-        , builtinFunc   = True
-        , lineNumber    = index
-        }
-      value <- callVerb' (verbOid, verb) oid name args `catchException`
-               \except callStack -> do
-                 popFrame
-                 passException except callStack
-      popFrame
-      return (Just value)
-    (_, _) -> return Nothing
+    (Just verbOid, Just verb) -> liftM Just $ evalFromFunc func index $
+                                 callVerb' (verbOid, verb) oid name args
+    (_           , _)         -> return Nothing
+
+evalFromFunc :: StrT -> IntT -> MOO Value -> MOO Value
+evalFromFunc func index code = do
+  (depthLeft, player) <- frame (depthLeft &&& initialPlayer)
+  pushFrame initFrame {
+      depthLeft     = depthLeft
+    , verbName      = func
+    , initialPlayer = player
+    , builtinFunc   = True
+    , lineNumber    = index
+    }
+  value <- code `catchException` \except callStack -> do
+    popFrame
+    passException except callStack
+  popFrame
+  return value
 
 runVerbFrame :: MOO Value -> StackFrame -> MOO Value
 runVerbFrame verbCode verbFrame = do

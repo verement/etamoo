@@ -74,12 +74,13 @@ bf_eval [Str string] = do
     Right program -> do
       (programmer, this, player) <- frame $ \frame ->
         (permissions frame, initialThis frame, initialPlayer frame)
-      value <- runVerbFrame (compile program) initFrame {
-          variables     = Map.insert "player" (Obj player) $
-                          Map.insert "caller" (Obj this) $ variables initFrame
-        , permissions   = programmer
-        , initialPlayer = player
-        }
+      value <- evalFromFunc "eval" 0 $
+        runVerbFrame (compile program) initFrame {
+            variables     = Map.insert "player" (Obj player) $
+                            Map.insert "caller" (Obj this) $ variables initFrame
+          , permissions   = programmer
+          , initialPlayer = player
+          }
       return $ Lst $ V.fromList [truthValue True, value]
 
 bf_set_task_perms [Obj who] = do
