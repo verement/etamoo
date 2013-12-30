@@ -520,7 +520,7 @@ bf_verb_code (Obj object : verb_desc : optional) = do
              unparse fully_paren indent (verbProgram verb)
   return $ Lst $ V.fromList $ map Str code
 
-  where [fully_paren, indent] = booleanDefaults optional [False, False]
+  where [fully_paren, indent] = booleanDefaults optional [False, True]
 
 bf_set_verb_code [Obj object, verb_desc, Lst code] = do
   obj <- checkValid object
