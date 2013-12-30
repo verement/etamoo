@@ -136,7 +136,11 @@ prep2text PrepOffOffof               = "off/off of"
 text2prep :: Text -> Maybe PrepSpec
 text2prep = flip lookup $ concatMap mkAssoc [minBound ..]
   where mkAssoc prepSpec =
-          [(prep, prepSpec) | prep <- T.splitOn "/" $ prep2text prepSpec]
+          [ (prep, prepSpec) | prep <- T.splitOn "/" $ prep2text prepSpec ] ++
+          [ (T.pack $ show index, prepSpec)
+          | let index = fromEnum prepSpec - fromEnum (succ PrepNone)
+          , index >= 0
+          ]
 
 prepMatch :: PrepSpec -> PrepSpec -> Bool
 prepMatch PrepAny _  = True
