@@ -134,12 +134,11 @@ unparseExpr expr = case expr of
   PropRef (Literal (Obj 0)) (Literal (Str name))
     | isIdentifier name -> return $ "$" <> name
   PropRef obj name -> do
-    obj' <- parenL expr obj
-    dot <- case obj of
-      Literal Int{} -> return " ."  -- avoid digits followed by dot (-> float)
-      _             -> return  "."
+    obj' <- case obj of
+      Literal Int{} -> paren obj  -- avoid digits followed by dot (-> float)
+      _             -> parenL expr obj
     name' <- unparseNameExpr name
-    return $ obj' <> dot <> name'
+    return $ obj' <> "." <> name'
 
   Assign lhs rhs -> do
     lhs' <- unparseExpr lhs
@@ -196,13 +195,14 @@ unparseExpr expr = case expr of
   -- Right-associative operators
   Power        lhs rhs -> binaryR lhs " ^ "  rhs
 
-  Negate lhs -> do
-    lhs' <- parenL expr lhs
-    return $ "-" <> lhs'
+  Negate lhs@(Literal x)                | numeric x -> negateParen lhs
+  Negate lhs@(Literal x `Index` _)      | numeric x -> negateParen lhs
+  Negate lhs@(Literal x `Range` _)      | numeric x -> negateParen lhs
+  Negate lhs@(Literal Flt{} `PropRef` _)            -> negateParen lhs
+  Negate lhs@(VerbCall (Literal x) _ _) | numeric x -> negateParen lhs
+  Negate lhs -> ("-" <>) `liftM` parenL expr lhs
 
-  Not lhs -> do
-    lhs' <- parenL expr lhs
-    return $ "!" <> lhs'
+  Not lhs -> ("!" <>) `liftM` parenL expr lhs
 
   Conditional cond lhs rhs -> do
     cond' <- parenR expr cond
@@ -231,6 +231,13 @@ unparseExpr expr = case expr of
           rhs' <- parenL expr rhs
           return $ lhs' <> op <> rhs'
 
+        numeric :: Value -> Bool
+        numeric Int{} = True
+        numeric Flt{} = True
+        numeric _     = False
+
+        negateParen = liftM ("-" <>) . paren
+
 unparseArgs :: [Arg] -> Unparser Text
 unparseArgs = liftM (T.intercalate ", ") . mapM unparseArg
   where unparseArg (ArgNormal expr) = unparseExpr expr
@@ -252,20 +259,24 @@ unparseNameExpr expr = do
   expr' <- unparseExpr expr
   return $ "(" <> expr' <> ")"
 
-paren :: (Int -> Int -> Bool) -> Expr -> Expr -> Unparser Text
-paren cmp parent child = do
+paren :: Expr -> Unparser Text
+paren expr = do
+  expr' <- unparseExpr expr
+  return $ "(" <> expr' <> ")"
+
+mightParen :: (Int -> Int -> Bool) -> Expr -> Expr -> Unparser Text
+mightParen cmp parent child = do
   fullyParenthesizing <- asks fullyParenthesizing
   if (fullyParenthesizing && precedence child < precedence PropRef{}) ||
      (precedence parent `cmp` precedence child)
-    then do child' <- unparseExpr child
-            return $ "(" <> child' <> ")"
+    then paren child
     else unparseExpr child
 
 parenL :: Expr -> Expr -> Unparser Text
-parenL = paren (>)
+parenL = mightParen (>)
 
 parenR :: Expr -> Expr -> Unparser Text
-parenR = paren (>=)
+parenR = mightParen (>=)
 
 isIdentifier :: StrT -> Bool
 isIdentifier name = isIdentifier' (T.unpack name) && not (isKeyword name)
