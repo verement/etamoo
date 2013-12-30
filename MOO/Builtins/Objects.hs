@@ -24,6 +24,7 @@ import MOO.Network
 import MOO.Unparser
 import MOO.Parser
 import {-# SOURCE #-} MOO.Compiler
+import MOO.AST
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
@@ -548,7 +549,8 @@ bf_disassemble [Obj object, verb_desc] = do
   verb <- getVerb obj verb_desc
   unless (verbPermR verb) $ checkPermission (verbOwner verb)
 
-  return $ Lst V.empty  -- nothing to see here
+  let Program statements = verbProgram verb
+  return $ Lst $ V.fromList $ map (Str . T.pack . show) statements
 
 -- 4.4.3.5 Operations on Player Objects
 
