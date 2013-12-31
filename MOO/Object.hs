@@ -8,6 +8,7 @@ module MOO.Object ( Object (..)
                   , getParent
                   , getChildren
                   , addChild
+                  , builtinProperties
                   , builtinProperty
                   , isBuiltinProperty
                   , objectForMaybe
@@ -154,6 +155,13 @@ initProperty = Property {
   , propertyPermW     = False
   , propertyPermC     = False
 }
+
+builtinProperties :: [StrT]
+builtinProperties = [ "name", "owner"
+                    , "location", "contents"
+                    , "programmer", "wizard"
+                    , "r", "w", "f"
+                    ]
 
 builtinProperty :: StrT -> Maybe (Object -> Value)
 builtinProperty "name"       = Just (Str . objectName)

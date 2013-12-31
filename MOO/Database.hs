@@ -1,6 +1,11 @@
 
+{-# LANGUAGE OverloadedStrings #-}
+
 module MOO.Database ( Database
+                    , ServerOptions(..)
+                    , serverOptions
                     , initDatabase
+                    , systemObject
                     , dbObjectRef
                     , dbObject
                     , maxObject
@@ -10,30 +15,40 @@ module MOO.Database ( Database
                     , modifyObject
                     , allPlayers
                     , setPlayer
+                    , getServerOption
+                    , getServerOption'
+                    , loadServerOptions
                     ) where
 
 import Control.Concurrent.STM
+import Control.Monad (forM, liftM)
+import Data.Monoid ((<>))
 import Data.Vector (Vector)
 import Data.IntSet (IntSet)
-import Data.Map (Map)
+import Data.Set (Set)
 
-import qualified Data.Vector as V
 import qualified Data.IntSet as IS
+import qualified Data.Map as M
+import qualified Data.Set as S
+import qualified Data.Vector as V
 
 import MOO.Types
 import MOO.Object
 import MOO.Task
+import {-# SOURCE #-} MOO.Builtins (builtinFunctions)
 
 data Database = Database {
-    objects     :: Vector (TVar (Maybe Object))
-  , players     :: IntSet
-  , queuedTasks :: [Task]
+    objects       :: Vector (TVar (Maybe Object))
+  , players       :: IntSet
+  , serverOptions :: ServerOptions
+  , queuedTasks   :: [Task]
 }
 
 initDatabase = Database {
-    objects     = V.empty
-  , players     = IS.empty
-  , queuedTasks = []
+    objects       = V.empty
+  , players       = IS.empty
+  , serverOptions = undefined
+  , queuedTasks   = []
 }
 
 dbObjectRef :: ObjId -> Database -> Maybe (TVar (Maybe Object))
@@ -112,7 +127,7 @@ data ServerOptions = Options {
   , maxStackDepth :: IntT
     -- The maximum number of levels of nested verb calls.
 
-  , queuedTaskLimit :: IntT
+  , queuedTaskLimit :: Maybe IntT
     -- The default maximum number of tasks a player can have.
 
   , nameLookupTimeout :: IntT
@@ -123,12 +138,102 @@ data ServerOptions = Options {
     -- The maximum number of seconds to wait for an outbound network
     -- connection to successfully open.
 
-  , protectProperty :: Map StrT Bool
+  , protectProperty :: Set Id
     -- Restrict reading of built-in property to wizards.
 
-  , protectFunction :: Map StrT Bool
+  , protectFunction :: Set Id
     -- Restrict use of built-in function to wizards.
 
   , supportNumericVerbnameStrings :: Bool
     -- Enables use of an obsolete verb-naming mechanism.
 }
+
+systemObject :: ObjId
+systemObject = 0
+
+getServerOptions :: ObjId -> MOO (Id -> MOO (Maybe Value))
+getServerOptions oid = do
+  serverOptions <- readProperty oid "server_options"
+  return $ case serverOptions of
+    Just (Obj oid) -> readProperty oid
+    _              -> const (return Nothing)
+
+getServerOption :: Id -> MOO (Maybe Value)
+getServerOption = getServerOption' systemObject
+
+getServerOption' :: ObjId -> Id -> MOO (Maybe Value)
+getServerOption' oid option = getServerOptions oid >>= ($ option)
+
+getProtected :: (Id -> MOO (Maybe Value)) -> [Id] -> MOO (Set Id)
+getProtected getOption ids = do
+  maybes <- forM ids $ liftM (fmap truthOf) . getOption . ("protect_" <>)
+  return $ S.fromList [ id | (id, Just True) <- zip ids maybes ]
+
+loadServerOptions :: MOO ()
+loadServerOptions = do
+  option <- getServerOptions systemObject
+
+  bgSeconds <- option "bg_seconds"
+  bgTicks   <- option "bg_ticks"
+  fgSeconds <- option "fg_seconds"
+  fgTicks   <- option "fg_ticks"
+
+  maxStackDepth   <- option "max_stack_depth"
+  queuedTaskLimit <- option "queued_task_limit"
+
+  connectTimeout         <- option "connect_timeout"
+  outboundConnectTimeout <- option "outbound_connect_timeout"
+  nameLookupTimeout      <- option "name_lookup_timeout"
+
+  defaultFlushCommand <- option "default_flush_command"
+
+  supportNumericVerbnameStrings <- option "support_numeric_verbname_strings"
+
+  protectProperty <- getProtected option builtinProperties
+  protectFunction <- getProtected option (M.keys builtinFunctions)
+
+  let options = Options {
+          bgSeconds = case bgSeconds of
+             Just (Int secs) | secs >= 1 -> secs
+             _                           -> 3
+        , bgTicks = case bgTicks of
+             Just (Int ticks) | ticks >= 100 -> ticks
+             _                               -> 15000
+        , fgSeconds = case fgSeconds of
+             Just (Int secs) | secs >= 1 -> secs
+             _                           -> 5
+        , fgTicks = case fgTicks of
+             Just (Int ticks) | ticks >= 100 -> ticks
+             _                               -> 30000
+
+        , maxStackDepth = case maxStackDepth of
+             Just (Int depth) | depth > 50 -> depth
+             _                             -> 50
+        , queuedTaskLimit = case queuedTaskLimit of
+             Just (Int limit) | limit >= 0 -> Just limit
+             _                             -> Nothing
+
+        , connectTimeout = case connectTimeout of
+             Just (Int secs) | secs > 0 -> secs
+             _                          -> 300
+        , outboundConnectTimeout = case outboundConnectTimeout of
+             Just (Int secs) | secs > 0 -> secs
+             _                          -> 5
+        , nameLookupTimeout = case nameLookupTimeout of
+             Just (Int secs) | secs >= 0 -> secs
+             _                           -> 5
+
+        , defaultFlushCommand = case defaultFlushCommand of
+             Just (Str cmd) -> cmd
+             _              -> ".flush"
+
+        , supportNumericVerbnameStrings = case supportNumericVerbnameStrings of
+             Just v -> truthOf v
+             _      -> False
+
+        , protectProperty = protectProperty
+        , protectFunction = protectFunction
+        }
+
+  db <- getDatabase
+  putDatabase db { serverOptions = options }

@@ -164,7 +164,7 @@ bf_dump_database [] = notyet "dump_database"
 bf_shutdown optional = notyet "shutdown"
   where (message : _) = maybeDefaults optional
 
-bf_load_server_options [] = notyet "load_server_options"
+bf_load_server_options [] = checkWizard >> loadServerOptions >> return nothing
 
 bf_server_log (Str message : optional) = notyet "server_log"
   where [is_error] = booleanDefaults optional [False]
