@@ -21,7 +21,7 @@ type Unparser = ReaderT UnparserEnv (Writer Text)
 data UnparserEnv = UnparserEnv {
     fullyParenthesizing :: Bool
   , indenting           :: Bool
-  , indentation         :: StrT
+  , indentation         :: Text
 }
 
 initUnparserEnv = UnparserEnv {
@@ -89,9 +89,7 @@ tellStatement stmt = case stmt of
     indent >> tell "endtry\n"
 
     where tellExcept (Except _ var codes handler) = do
-            indent >> tell "except"
-            maybeTellVar var
-            tell " ("
+            indent >> tell "except" >> maybeTellVar var >> tell " ("
             case codes of
               ANY        -> tell "ANY"
               Codes args -> tell =<< unparseArgs args
