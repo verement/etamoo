@@ -62,6 +62,7 @@ mkTestFrame db = do
   return initFrame {
       variables     = Map.insert "player" (Obj player) $ variables initFrame
     , permissions   = player
+    , verbFullName  = "REPL"
     , initialPlayer = player
     }
   where isWizard oid = maybe False objectWizard `liftM` dbObject oid db
@@ -122,11 +123,19 @@ evalPrint task = do
     Suspend (Just s) (Resume k) -> do
       putStrLn $ ".. Suspended for " ++ show s ++ " seconds"
       evalPrint task' { taskComputation = k nothing }
-    Abort (Exception _ m v) _ -> do
+    Abort exception@(Exception _ m v) callStack -> do
+      notifyLines $ formatTraceback exception callStack
       putStrLn $ "** " ++ unpack m ++ formatValue v
       return task'
-    Timeout resource _ -> do
-      putStrLn $ "!! Task ran out of " ++ show resource
+    Timeout resource callStack -> do
+      let message   = "Task ran out of " ++ show resource
+          exception = Exception undefined (pack message) undefined
+      notifyLines $ formatTraceback exception callStack
+      putStrLn $ "!! " ++ message
       return task'
+
   where formatValue (Int 0) = ""
         formatValue v = " [" ++ unpack (toLiteral v) ++ "]"
+
+        notifyLines :: [Text] -> IO ()
+        notifyLines = mapM_ (putStrLn . unpack)

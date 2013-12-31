@@ -66,6 +66,7 @@ module MOO.Task ( MOO
                 , checkFertile
                 , binaryString
                 , random
+                , formatTraceback
                 , delayIO
                 , runContT
                 , evalStateT
@@ -75,14 +76,15 @@ module MOO.Task ( MOO
 import Control.Monad.Cont
 import Control.Monad.State
 import Control.Monad.Reader
+import Control.Monad.Writer
 import Control.Arrow (first, (&&&))
 import Control.Concurrent.STM
 import System.Random hiding (random)
 import System.Time
 import Data.ByteString (ByteString)
 import Data.Map (Map)
-import Data.Monoid
 import Data.Maybe (isNothing)
+import Data.Text (Text)
 
 import qualified Data.Map as Map
 import qualified Data.Text as T
@@ -273,6 +275,7 @@ callCommandVerb player (verbOid, verb) this command (dobj, iobj) = do
     , permissions   = verbOwner verb
 
     , verbName      = commandVerb command
+    , verbFullName  = verbNames verb
     , verbLocation  = verbOid
     , initialThis   = this
     , initialPlayer = player
@@ -307,6 +310,7 @@ callVerb' (verbOid, verb) this name args = do
     , permissions   = verbOwner verb
 
     , verbName      = name
+    , verbFullName  = verbNames verb
     , verbLocation  = verbOid
     , initialThis   = this
     , initialPlayer = player
@@ -490,6 +494,7 @@ data StackFrame = Frame {
   , permissions   :: ObjId
 
   , verbName      :: StrT
+  , verbFullName  :: StrT
   , verbLocation  :: ObjId
   , initialThis   :: ObjId
   , initialPlayer :: ObjId
@@ -506,7 +511,8 @@ initFrame = Frame {
   , debugBit      = True
   , permissions   = -1
 
-  , verbName      = ""
+  , verbName      = T.empty
+  , verbFullName  = T.empty
   , verbLocation  = -1
   , initialThis   = -1
   , initialPlayer = -1
@@ -730,3 +736,28 @@ random range = do
   let (r, g') = randomR range g
   modify $ \st -> st { randomGen = g' }
   return r
+
+formatTraceback :: Exception -> CallStack -> [Text]
+formatTraceback (Exception _ message _) (Stack frames) =
+  T.splitOn "\n" $ execWriter (traceback frames)
+
+  where traceback (frame:frames) = do
+          describeVerb frame
+          tell $ ":  " <> message
+          traceback' frames
+        traceback [] = traceback' []
+
+        traceback' (frame:frames) = do
+          tell "\n... called from "
+          describeVerb frame
+          traceback' frames
+        traceback' [] = tell "\n(End of traceback)"
+
+        describeVerb Frame { builtinFunc = False
+                           , verbLocation = loc, verbFullName = name
+                           , initialThis = this, lineNumber = line } = do
+          tell $ "#" <> T.pack (show loc) <> ":" <> name
+          when (loc /= this) $ tell $ " (this == #" <> T.pack (show this) <> ")"
+          when (line > 0) $ tell $ ", line " <> T.pack (show line)
+        describeVerb Frame { builtinFunc = True, verbName = name } =
+          tell $ "built-in function " <> name <> "()"

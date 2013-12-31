@@ -79,6 +79,7 @@ bf_eval [Str string] = do
             variables     = Map.insert "player" (Obj player) $
                             Map.insert "caller" (Obj this) $ variables initFrame
           , permissions   = programmer
+          , verbFullName  = "Input to EVAL"
           , initialPlayer = player
           }
       return $ Lst $ V.fromList [truthValue True, value]
