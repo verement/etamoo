@@ -22,6 +22,7 @@ import MOO.Types
 import MOO.Task
 import MOO.Database
 import MOO.Object
+import MOO.Version
 
 import MOO.Builtins.Values  as Values
 import MOO.Builtins.Objects as Objects
@@ -173,8 +174,7 @@ bf_reset_max_object [] = do
 
 -- 4.4.8 Server Statistics and Miscellaneous Information
 
-bf_server_version [] = return $ Str server_version
-  where server_version = "2.0"
+bf_server_version [] = return (Str serverVersionText)
 
 bf_memory_usage [] = return $ Lst V.empty  -- ... nothing to see here
 
