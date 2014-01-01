@@ -80,11 +80,11 @@ import Control.Monad.Writer
 import Control.Arrow (first, (&&&))
 import Control.Concurrent.STM
 import System.Random hiding (random)
-import System.Time
 import Data.ByteString (ByteString)
 import Data.Map (Map)
 import Data.Maybe (isNothing)
 import Data.Text (Text)
+import Data.Time
 
 import qualified Data.Map as Map
 import qualified Data.Text as T
@@ -168,7 +168,7 @@ delayIO io = do
 
 data Environment = Env {
     task             :: Task
-  , startTime        :: ClockTime
+  , startTime        :: UTCTime
   , interruptHandler :: InterruptHandler
   , exceptionHandler :: ExceptionHandler
   , indexLength      :: MOO Int
@@ -176,7 +176,7 @@ data Environment = Env {
 
 initEnvironment :: Task -> IO Environment
 initEnvironment task = do
-  startTime <- getClockTime
+  startTime <- getCurrentTime
   return Env {
       task             = task
     , startTime        = startTime

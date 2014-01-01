@@ -8,9 +8,10 @@ import Control.Monad.Reader (asks)
 import Data.Maybe (fromMaybe)
 import Data.Map (Map)
 import Data.List (transpose, inits)
-import System.Time
-import System.Locale (defaultTimeLocale)
+import Data.Time (formatTime, utcToLocalZonedTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import System.IO.Unsafe (unsafePerformIO)
+import System.Locale (defaultTimeLocale)
 
 import qualified Data.Map as Map
 import qualified Data.Text as T
@@ -137,9 +138,7 @@ bf_pass args = do
 -- 4.4.5 Operations Involving Times and Dates
 
 currentTime :: MOO IntT
-currentTime = do
-  TOD t _ <- asks startTime
-  return (fromIntegral t)
+currentTime = (floor . utcTimeToPOSIXSeconds) `liftM` asks startTime
 
 bf_time [] = Int `liftM` currentTime
 
@@ -147,15 +146,11 @@ bf_ctime []         = ctime =<< currentTime
 bf_ctime [Int time] = ctime time
 
 ctime :: IntT -> MOO Value
-ctime time = do
-  let caltime = unsafePerformIO $ toCalendarTime $ TOD (fromIntegral time) 0
-  return $ Str $ patch $ formatCalendarTime defaultTimeLocale format caltime
-  where format = "%a %b %d %H:%M:%S %Y %Z"
-        patch str = T.pack $
-                    if str !! 8 == '0'
-                    then let (s, r) = splitAt 8 str
-                         in s ++ " " ++ tail r
-                    else str
+ctime time =
+  return $ Str $ T.pack $ formatTime defaultTimeLocale format zonedTime
+  where format    = "%a %b %_d %T %Y %Z"
+        zonedTime = unsafePerformIO $ utcToLocalZonedTime utcTime
+        utcTime   = posixSecondsToUTCTime (fromIntegral time)
 
 -- 4.4.7 Administrative Operations
 
