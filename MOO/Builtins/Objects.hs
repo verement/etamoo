@@ -289,7 +289,7 @@ bf_set_property_info [Obj object, Str prop_name, Lst info] = do
       unless (objectPermW obj) $ checkPermission (objectOwner obj)
 
       when (propertyInherited prop) $ raise E_INVARG
-      flip traverseDescendants object $ \obj ->
+      unless (newName' == oldName') $ flip traverseDescendants object $ \obj ->
         when (isJust $ lookupPropertyRef obj newName') $ raise E_INVARG
 
       setInfo
