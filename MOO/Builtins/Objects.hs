@@ -318,6 +318,7 @@ bf_add_property [Obj object, Str prop_name, value, Lst info] = do
   unless (objectPermW obj) $ checkPermission (objectOwner obj)
   checkPermission owner
 
+  when (isBuiltinProperty name) $ raise E_INVARG
   flip traverseDescendants object $ \obj ->
     when (isJust $ lookupPropertyRef obj name) $ raise E_INVARG
 
