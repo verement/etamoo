@@ -22,7 +22,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Text as T
 import qualified Data.ByteString as BS
 
-{-# ANN module "HLint: ignore Avoid lambda" #-}
+{-# ANN module ("HLint: ignore Avoid lambda" :: String) #-}
 
 
 {-# LINE 26 "MOO/Builtins/Match.hsc" #-}
@@ -77,7 +77,7 @@ data RewriteState = StateBase
                   | StateCsetInit2
                   | StateCset
 
-{-# ANN translate "HLint: ignore Use list literal" #-}
+{-# ANN translate ("HLint: ignore Use list literal" :: String) #-}
 
 translate :: Text -> ByteString
 translate = encodeUtf8 . T.pack . concat . rewrite . T.unpack
