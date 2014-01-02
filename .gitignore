@@ -4,6 +4,7 @@
 *.hi-boot
 *_stub.h
 repl
+etamoo
 hlint.html
 *.db
 \#*#

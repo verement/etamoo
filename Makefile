@@ -2,6 +2,9 @@
 repl: FORCE MOO/Builtins/Match.hs
 	ghc $(OPT) --make -threaded -rtsopts repl.hs -lcrypt -lpcre
 
+etamoo: FORCE MOO/Builtins/Match.hs
+	ghc $(OPT) --make -threaded -rtsopts etamoo.hs -lcrypt -lpcre
+
 MOO/Builtins/Match.hs: MOO/Builtins/Match.hsc
 	hsc2hs $<
 
