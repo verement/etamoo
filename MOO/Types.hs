@@ -186,8 +186,8 @@ instance Sizeable Error where
   storageBytes _ = storageBytes ()
 
 truthOf :: Value -> Bool
-truthOf (Int x) = case x of 0   -> False; _ -> True
-truthOf (Flt x) = case x of 0.0 -> False; _ -> True
+truthOf (Int x) = x /= 0
+truthOf (Flt x) = x /= 0.0
 truthOf (Str t) = not (T.null t)
 truthOf (Lst v) = not (V.null v)
 truthOf _       = False
