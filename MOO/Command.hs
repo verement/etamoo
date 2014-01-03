@@ -24,17 +24,6 @@ import MOO.Object
 import MOO.Verb
 import MOO.Network
 
-replaceCharCommand :: Text -> Text
-replaceCharCommand cmd
-  | T.null begin = cmd
-  | otherwise    = case T.head begin of
-    '"' -> T.concat [whitespace, "say "  , rest]
-    ':' -> T.concat [whitespace, "emote ", rest]
-    ';' -> T.concat [whitespace, "eval " , rest]
-    _   -> cmd
-  where (whitespace, begin) = T.span isSpace cmd
-        rest = T.tail begin
-
 commandWord :: Parser Text
 commandWord = do
   word <- many1 wordChar
@@ -61,9 +50,15 @@ commandWord = do
 commandWords :: Parser [Text]
 commandWords = between spaces eof $ many commandWord
 
+builtinCommand :: Parser Text
+builtinCommand = say <|> emote <|> eval
+  where say   = char '\"' >> return "say"
+        emote = char ':'  >> return "emote"
+        eval  = char ';'  >> return "eval"
+
 command :: Parser (Text, Text)
 command = between spaces eof $ do
-  verb <- commandWord <|> return ""
+  verb <- builtinCommand <|> commandWord <|> return ""
   argstr <- T.pack `liftM` many anyChar
   return (verb, argstr)
 
@@ -94,7 +89,7 @@ parseWords argstr = args
 
 parseCommand :: Text -> Command
 parseCommand cmd = Command verb args argstr dobjstr prepSpec prepstr iobjstr
-  where Right (verb, argstr) = parse command "" $ replaceCharCommand cmd
+  where Right (verb, argstr) = parse command "" cmd
         args = parseWords argstr
         (dobjstr, (prepSpec, prepstr), iobjstr) = matchPrep args
 
