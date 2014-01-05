@@ -119,7 +119,7 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
     setLineNumber lineNumber
     yield =<< evaluate expr
 
-  TryExcept body excepts -> do
+  TryExcept body excepts -> runTick >> do
     excepts' <- mapM compileExcepts excepts
 
     compile' body `catchException` dispatch excepts'
@@ -143,7 +143,7 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
             | otherwise = dispatch next except
           dispatch [] except = passException except
 
-  TryFinally body (Finally finally) -> do
+  TryFinally body (Finally finally) -> runTick >> do
     let finally' = compile' finally
     pushTryFinallyContext finally'
 
