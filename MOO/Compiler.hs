@@ -3,13 +3,13 @@
 
 module MOO.Compiler ( compile, evaluate ) where
 
-import Control.Monad.State (gets)
-import Control.Monad.Cont (callCC)
 import Control.Monad (when, unless, void, liftM)
+import Control.Monad.Cont (callCC)
+import Control.Monad.State (gets)
 
+import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Vector as V
-import qualified Data.Map as Map
 
 import MOO.Types
 import MOO.AST
@@ -264,12 +264,12 @@ evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
 
 fetchVariable :: Id -> MOO Value
 fetchVariable var =
-  maybe (raise E_VARNF) return . Map.lookup var =<< frame variables
+  maybe (raise E_VARNF) return . M.lookup var =<< frame variables
 
 storeVariable :: Id -> Value -> MOO Value
 storeVariable var value = do
   modifyFrame $ \frame ->
-    frame { variables = Map.insert var value (variables frame) }
+    frame { variables = M.insert var value (variables frame) }
   return value
 
 fetchProperty :: (ObjT, StrT) -> MOO Value
