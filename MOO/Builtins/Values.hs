@@ -1,5 +1,5 @@
 
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, ForeignFunctionInterface #-}
 
 module MOO.Builtins.Values ( builtins ) where
 
