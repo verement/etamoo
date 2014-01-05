@@ -1,4 +1,6 @@
 
+{-# LANGUAGE ForeignFunctionInterface, EmptyDataDecls #-}
+
 module MOO.Builtins.Match ( MatchResult(..)
                           , newRegexp
                           , match
@@ -13,7 +15,6 @@ import Control.Concurrent.MVar
 import Data.Text (Text)
 import Data.Text.Encoding
 import Data.ByteString (ByteString, useAsCString, useAsCStringLen)
-import Data.Bits
 import Data.IORef
 import System.IO.Unsafe (unsafePerformIO)
 

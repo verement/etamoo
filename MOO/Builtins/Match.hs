@@ -1,6 +1,8 @@
 {-# LINE 1 "MOO/Builtins/Match.hsc" #-}
 
 {-# LINE 2 "MOO/Builtins/Match.hsc" #-}
+{-# LANGUAGE ForeignFunctionInterface, EmptyDataDecls #-}
+
 module MOO.Builtins.Match ( MatchResult(..)
                           , newRegexp
                           , match
@@ -15,7 +17,6 @@ import Control.Concurrent.MVar
 import Data.Text (Text)
 import Data.Text.Encoding
 import Data.ByteString (ByteString, useAsCString, useAsCStringLen)
-import Data.Bits
 import Data.IORef
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -25,7 +26,7 @@ import qualified Data.ByteString as BS
 {-# ANN module ("HLint: ignore Avoid lambda" :: String) #-}
 
 
-{-# LINE 26 "MOO/Builtins/Match.hsc" #-}
+{-# LINE 27 "MOO/Builtins/Match.hsc" #-}
 
 data PCRE
 data PCREExtra
@@ -167,26 +168,26 @@ newRegexp regexp caseMatters =
       extra <- pcre_study code 0 errorPtr
       if extra == nullPtr
         then do extraFP <- mallocForeignPtrBytes 32
-{-# LINE 167 "MOO/Builtins/Match.hsc" #-}
+{-# LINE 168 "MOO/Builtins/Match.hsc" #-}
                 withForeignPtr extraFP $ \extra ->
                   (\hsc_ptr -> pokeByteOff hsc_ptr 0) extra (0 :: CULong)
-{-# LINE 169 "MOO/Builtins/Match.hsc" #-}
+{-# LINE 170 "MOO/Builtins/Match.hsc" #-}
                 return extraFP
         else newForeignPtr pcre_free_study extra
 
     setExtraFlags extraFP = withForeignPtr extraFP $ \extra -> do
       (\hsc_ptr -> pokeByteOff hsc_ptr 8)           extra matchLimit
-{-# LINE 174 "MOO/Builtins/Match.hsc" #-}
-      (\hsc_ptr -> pokeByteOff hsc_ptr 20) extra matchLimitRecursion
 {-# LINE 175 "MOO/Builtins/Match.hsc" #-}
-      flags <- (\hsc_ptr -> peekByteOff hsc_ptr 0) extra
+      (\hsc_ptr -> pokeByteOff hsc_ptr 20) extra matchLimitRecursion
 {-# LINE 176 "MOO/Builtins/Match.hsc" #-}
-      (\hsc_ptr -> pokeByteOff hsc_ptr 0) extra $ flags .|. (0 :: CULong)
+      flags <- (\hsc_ptr -> peekByteOff hsc_ptr 0) extra
 {-# LINE 177 "MOO/Builtins/Match.hsc" #-}
-        .|. 2
+      (\hsc_ptr -> pokeByteOff hsc_ptr 0) extra $ flags .|. (0 :: CULong)
 {-# LINE 178 "MOO/Builtins/Match.hsc" #-}
-        .|. 16
+        .|. 2
 {-# LINE 179 "MOO/Builtins/Match.hsc" #-}
+        .|. 16
+{-# LINE 180 "MOO/Builtins/Match.hsc" #-}
 
     matchLimit          = 100000 :: CULong
     matchLimitRecursion =   5000 :: CULong
@@ -198,12 +199,12 @@ newRegexp regexp caseMatters =
             patch  c   = [c]
 
     options = 10240
-{-# LINE 190 "MOO/Builtins/Match.hsc" #-}
+{-# LINE 191 "MOO/Builtins/Match.hsc" #-}
       -- allow PCRE to optimize .* at beginning of pattern by implicit anchor
       .|. 4
-{-# LINE 192 "MOO/Builtins/Match.hsc" #-}
-      .|. if caseMatters then 0 else 1
 {-# LINE 193 "MOO/Builtins/Match.hsc" #-}
+      .|. if caseMatters then 0 else 1
+{-# LINE 194 "MOO/Builtins/Match.hsc" #-}
 
 maxCaptures = 10
 ovecLen     = maxCaptures * 3
@@ -227,11 +228,11 @@ match Regexp { code = codeFP, extra = extraFP } string =
   allocaArray ovecLen    $ \ovec           -> do
 
     flags <- (\hsc_ptr -> peekByteOff hsc_ptr 0) extra
-{-# LINE 216 "MOO/Builtins/Match.hsc" #-}
-    (\hsc_ptr -> pokeByteOff hsc_ptr 0) extra $ flags .&. complement (0 :: CULong)
 {-# LINE 217 "MOO/Builtins/Match.hsc" #-}
-      .&. complement 4
+    (\hsc_ptr -> pokeByteOff hsc_ptr 0) extra $ flags .&. complement (0 :: CULong)
 {-# LINE 218 "MOO/Builtins/Match.hsc" #-}
+      .&. complement 4
+{-# LINE 219 "MOO/Builtins/Match.hsc" #-}
     poke pcre_callout nullFunPtr
 
     rc <- pcre_exec code extra cstring (fromIntegral len) 0 options
@@ -239,12 +240,12 @@ match Regexp { code = codeFP, extra = extraFP } string =
     if rc < 0
       then case rc of
         -1 -> return MatchFailed
-{-# LINE 225 "MOO/Builtins/Match.hsc" #-}
+{-# LINE 226 "MOO/Builtins/Match.hsc" #-}
         _                           -> return MatchAborted
       else mkMatchResult rc ovec
 
   where options = 8192
-{-# LINE 229 "MOO/Builtins/Match.hsc" #-}
+{-# LINE 230 "MOO/Builtins/Match.hsc" #-}
 
 rmatch :: Regexp -> ByteString -> IO MatchResult
 rmatch Regexp {code = codeFP, extra = extraFP } string =
@@ -258,14 +259,14 @@ rmatch Regexp {code = codeFP, extra = extraFP } string =
     rdRef <- newIORef RmatchData { rmatchResult = 0, rmatchOvec = rOvec }
     bracket (newStablePtr rdRef) freeStablePtr $ \sp -> do
       (\hsc_ptr -> pokeByteOff hsc_ptr 12) extra sp
-{-# LINE 242 "MOO/Builtins/Match.hsc" #-}
+{-# LINE 243 "MOO/Builtins/Match.hsc" #-}
 
       flags <- (\hsc_ptr -> peekByteOff hsc_ptr 0) extra
-{-# LINE 244 "MOO/Builtins/Match.hsc" #-}
-      (\hsc_ptr -> pokeByteOff hsc_ptr 0) extra $ flags .|. (0 :: CULong)
 {-# LINE 245 "MOO/Builtins/Match.hsc" #-}
-              .|. 4
+      (\hsc_ptr -> pokeByteOff hsc_ptr 0) extra $ flags .|. (0 :: CULong)
 {-# LINE 246 "MOO/Builtins/Match.hsc" #-}
+              .|. 4
+{-# LINE 247 "MOO/Builtins/Match.hsc" #-}
 
       bracket (mkCallout rmatchCallout) freeHaskellFunPtr $ \callout -> do
         poke pcre_callout callout
@@ -275,7 +276,7 @@ rmatch Regexp {code = codeFP, extra = extraFP } string =
         if rc < 0
           then case rc of
             -1 -> do
-{-# LINE 255 "MOO/Builtins/Match.hsc" #-}
+{-# LINE 256 "MOO/Builtins/Match.hsc" #-}
               rd <- readIORef rdRef
               if valid rd
                 then mkMatchResult (rmatchResult rd) (rmatchOvec rd)
@@ -283,7 +284,7 @@ rmatch Regexp {code = codeFP, extra = extraFP } string =
             _ -> return MatchAborted
           else mkMatchResult rc ovec
   where options = 8192
-{-# LINE 262 "MOO/Builtins/Match.hsc" #-}
+{-# LINE 263 "MOO/Builtins/Match.hsc" #-}
 
 mkMatchResult :: CInt -> Ptr CInt -> IO MatchResult
 mkMatchResult rc ovec = (MatchSucceeded . convert) `liftM`
@@ -304,13 +305,13 @@ valid RmatchData { rmatchResult = rc } = rc /= 0
 rmatchCallout :: Callout
 rmatchCallout block = do
   rdRef <- deRefStablePtr =<< (\hsc_ptr -> peekByteOff hsc_ptr 36) block
-{-# LINE 282 "MOO/Builtins/Match.hsc" #-}
+{-# LINE 283 "MOO/Builtins/Match.hsc" #-}
   rd <- readIORef rdRef
 
   currentPos <- (\hsc_ptr -> peekByteOff hsc_ptr 24) block
-{-# LINE 285 "MOO/Builtins/Match.hsc" #-}
-  startMatch <- (\hsc_ptr -> peekByteOff hsc_ptr 20)      block
 {-# LINE 286 "MOO/Builtins/Match.hsc" #-}
+  startMatch <- (\hsc_ptr -> peekByteOff hsc_ptr 20)      block
+{-# LINE 287 "MOO/Builtins/Match.hsc" #-}
 
   let ovec = rmatchOvec rd
   ovec0 <- peekElemOff ovec 0
@@ -324,9 +325,9 @@ rmatchCallout block = do
     pokeElemOff ovec 1 currentPos
 
     offsetVector <- (\hsc_ptr -> peekByteOff hsc_ptr 8) block
-{-# LINE 299 "MOO/Builtins/Match.hsc" #-}
-    captureTop   <- (\hsc_ptr -> peekByteOff hsc_ptr 28)   block
 {-# LINE 300 "MOO/Builtins/Match.hsc" #-}
+    captureTop   <- (\hsc_ptr -> peekByteOff hsc_ptr 28)   block
+{-# LINE 301 "MOO/Builtins/Match.hsc" #-}
 
     copyArray (ovec         `advancePtr` 2)
               (offsetVector `advancePtr` 2)
