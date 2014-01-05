@@ -22,7 +22,7 @@ import MOO.Types
 import MOO.Parser
 import MOO.Compiler
 
-{-# ANN module "HLint: ignore Use camelCase" #-}
+{-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
 loadLMDatabase :: FilePath -> IO (Either ParseError Database)
 loadLMDatabase dbFile = do

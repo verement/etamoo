@@ -1,0 +1,17 @@
+#! /bin/sh -e
+
+cabal configure "$@" --builddir=dist
+
+case "$1" in
+    -h|--help|-\?)
+	exit ;;
+esac
+
+cabal configure "$@" --builddir=dist/.test --verbose=0  \
+    --disable-optimization
+
+cabal configure "$@" --builddir=dist/.prof --verbose=0  \
+    --enable-executable-profiling
+
+cabal configure "$@" --builddir=dist/.llvm --verbose=0  \
+    --flags=llvm

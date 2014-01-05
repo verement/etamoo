@@ -8,8 +8,10 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.Maybe
 import Data.Text
+import Network (withSocketsDo)
 import System.Console.Haskeline
 import System.Environment
+import System.Posix (installHandler, sigPIPE, Handler(..))
 
 import MOO.Parser
 import MOO.Compiler
@@ -24,7 +26,9 @@ import MOO.Command
 import qualified Data.Map as M
 
 main :: IO ()
-main =
+main = withSocketsDo $ do
+  installHandler sigPIPE Ignore Nothing
+
   case verifyBuiltins of
     Left  err -> putStrLn $ "Built-in function verification failed: " ++ err
     Right n   -> do

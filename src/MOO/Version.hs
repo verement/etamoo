@@ -6,11 +6,10 @@ module MOO.Version ( serverVersion
 import Data.Text
 import Data.Version
 
+import Paths_EtaMOO
+
 serverVersion :: Version
-serverVersion = Version {
-    versionBranch = [2,0,0]
-  , versionTags   = ["alpha"]
-  }
+serverVersion = version
 
 serverVersionText :: Text
 serverVersionText = pack (showVersion serverVersion)
