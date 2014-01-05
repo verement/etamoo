@@ -18,27 +18,27 @@ import MOO.Builtins
 import MOO.Object
 
 compile :: Program -> MOO Value
-compile (Program stmts) = callCC $ \k -> compileStatements k stmts
+compile (Program stmts) = callCC $ compileStatements stmts
 
-compileStatements :: (Value -> MOO Value) -> [Statement] -> MOO Value
-compileStatements k (s:ss) = catchDebug $ case s of
+compileStatements :: [Statement] -> (Value -> MOO Value) -> MOO Value
+compileStatements (statement:rest) yield = catchDebug $ case statement of
   Expression lineNumber expr -> do
     setLineNumber lineNumber
     evaluate expr
-    compileStatements k ss
+    compile' rest
 
   If lineNumber cond (Then thens) elseIfs (Else elses) -> runTick >> do
     compileIf ((lineNumber, cond, thens) : map elseIf elseIfs) elses
-    compileStatements k ss
+    compile' rest
 
     where elseIf (ElseIf lineNumber cond thens) = (lineNumber, cond, thens)
 
           compileIf ((lineNumber,cond,thens):conds) elses = do
             setLineNumber lineNumber
             cond' <- truthOf `liftM` evaluate cond
-            if cond' then compileStatements k thens
+            if cond' then compile' thens
               else compileIf conds elses
-          compileIf [] elses = compileStatements k elses
+          compileIf [] elses = compile' elses
 
   ForList lineNumber var expr body -> do
     setLineNumber lineNumber
@@ -49,10 +49,10 @@ compileStatements k (s:ss) = catchDebug $ case s of
 
     callCC $ \break -> do
       pushLoopContext (Just var') (Continuation break)
-      loop var' elts (compileStatements k body)
+      loop var' elts (compile' body)
     popContext
 
-    compileStatements k ss
+    compile' rest
 
     where var' = T.toCaseFold var
           loop var (elt:elts) body = runTick >> do
@@ -74,10 +74,10 @@ compileStatements k (s:ss) = catchDebug $ case s of
 
     callCC $ \break -> do
       pushLoopContext (Just var') (Continuation break)
-      loop var' ty s e (compileStatements k body)
+      loop var' ty s e (compile' body)
     popContext
 
-    compileStatements k ss
+    compile' rest
 
     where var' = T.toCaseFold var
           loop var ty i end body
@@ -92,11 +92,11 @@ compileStatements k (s:ss) = catchDebug $ case s of
   While lineNumber var expr body -> do
     callCC $ \break -> do
       pushLoopContext var' (Continuation break)
-      loop lineNumber var' (evaluate expr) (compileStatements k body)
+      loop lineNumber var' (evaluate expr) (compile' body)
       return nothing
     popContext
 
-    compileStatements k ss
+    compile' rest
 
     where var' = fmap T.toCaseFold var
           loop lineNumber var expr body = runTick >> do
@@ -114,22 +114,22 @@ compileStatements k (s:ss) = catchDebug $ case s of
   Break    name -> breakLoop    (fmap T.toCaseFold name)
   Continue name -> continueLoop (fmap T.toCaseFold name)
 
-  Return _          Nothing     -> runTick >> k nothing
+  Return _          Nothing     -> runTick >> yield nothing
   Return lineNumber (Just expr) -> runTick >> do
     setLineNumber lineNumber
-    k =<< evaluate expr
+    yield =<< evaluate expr
 
   TryExcept body excepts -> do
     excepts' <- mapM compileExcepts excepts
 
-    compileStatements k body `catchException` dispatch excepts'
-    compileStatements k ss
+    compile' body `catchException` dispatch excepts'
+    compile' rest
 
     where compileExcepts (Except lineNumber var codes handler) = do
             codes' <- case codes of
               ANY        -> return Nothing
               Codes args -> setLineNumber lineNumber >> Just `liftM` expand args
-            return (codes', var, compileStatements k handler)
+            return (codes', var, compile' handler)
 
           dispatch ((codes, var, handler):next)
             except@(Exception code message value)
@@ -144,10 +144,10 @@ compileStatements k (s:ss) = catchDebug $ case s of
           dispatch [] except = passException except
 
   TryFinally body (Finally finally) -> do
-    let finally' = compileStatements k finally
+    let finally' = compile' finally
     pushTryFinallyContext finally'
 
-    compileStatements k body `catchException` \except callStack -> do
+    compile' body `catchException` \except callStack -> do
       popContext
       finally'
       passException except callStack
@@ -155,9 +155,11 @@ compileStatements k (s:ss) = catchDebug $ case s of
     popContext
     finally'
 
-    compileStatements k ss
+    compile' rest
 
-compileStatements _ [] = return nothing
+  where compile' ss = compileStatements ss yield
+
+compileStatements [] _ = return nothing
 
 catchDebug :: MOO Value -> MOO Value
 catchDebug action =
