@@ -35,6 +35,7 @@ module MOO.Types ( IntT
                  , stringList
                  , objectList
                  , listSet
+                 , endOfTime
                  ) where
 
 import Control.Concurrent (ThreadId)
@@ -43,6 +44,7 @@ import Data.Int
 import Data.Map (Map)
 import Data.Text (Text)
 import Data.Time (UTCTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Vector (Vector)
 import Data.Word
 import Foreign.Storable (sizeOf)
@@ -315,3 +317,10 @@ objectList = fromListBy Obj
 
 listSet :: LstT -> Int -> Value -> LstT
 listSet v i value = V.modify (\m -> VM.write m (i - 1) value) v
+
+-- | This is the last UTC time value representable as a 32-bit
+-- seconds-since-1970 value. Unfortunately it is used as a sentinel value in
+-- LambdaMOO to represent the starting time of indefinitely suspended tasks,
+-- so we really can't support time values beyond this point... yet.
+endOfTime :: UTCTime
+endOfTime = posixSecondsToUTCTime $ fromIntegral (maxBound :: Int32)

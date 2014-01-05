@@ -120,23 +120,27 @@ bf_suspend optional = do
       | otherwise -> return (Just $ fromIntegral secs * 1000000)
     Just (Flt secs)
       | secs < 0  -> raise E_INVARG
-      | otherwise -> return (Just $ ceiling $ secs * 1000000)
+      | otherwise -> return (Just $ ceiling    $ secs * 1000000)
     Nothing -> return Nothing
 
-  task <- asks task
   state <- get
 
+  estimatedWakeup <- case maybeMicroseconds of
+    Just usecs
+      | time < now || time > endOfTime -> raise E_INVARG
+      | otherwise                      -> return time
+      where now = startTime state
+            time = (fromIntegral usecs / 1000000) `addUTCTime` now
+
+    Nothing -> return endOfTime  -- XXX this is a sad wart in need of remedy
+
   resumeTMVar <- liftSTM newEmptyTMVar
+  task <- asks task
 
   let wake value = do
         now <- getCurrentTime
         atomically $ putTMVar resumeTMVar (now, value)
 
-      estimatedWakeup = case maybeMicroseconds of
-        Just usecs -> (fromIntegral usecs / 1000000) `addUTCTime`
-                      startTime state
-        Nothing    -> posixSecondsToUTCTime $ fromIntegral (maxBound :: Int32)
-                      -- XXX this is a sad wart in need of remedy
       task' = task {
           taskStatus = Suspended (Wake wake)
         , taskState  = state { startTime = estimatedWakeup }
@@ -157,7 +161,7 @@ bf_suspend optional = do
 
   putTask task' { taskStatus = Running }
 
-  modify $ \state -> state { ticksLeft = 15000, startTime = now }
+  modify $ \state -> state { ticksLeft = 15000, startTime = now }  -- XXX ticks
 
   case value of
     Err error -> raise error

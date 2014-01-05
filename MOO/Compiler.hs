@@ -118,7 +118,7 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
         | otherwise -> return (fromIntegral secs * 1000000)
       Flt secs
         | secs < 0  -> raise E_INVARG
-        | otherwise -> return (ceiling $ secs * 1000000)
+        | otherwise -> return (ceiling    $ secs * 1000000)
       _ -> raise E_TYPE
 
     world <- getWorld

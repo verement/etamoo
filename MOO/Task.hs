@@ -397,9 +397,16 @@ runTask task = do
 
 forkTask :: TaskId -> Integer -> MOO Value -> MOO ()
 forkTask taskId usecs code = do
-  task <- asks task
   state <- get
+
+  let now = startTime state
+      estimatedWakeup = (fromIntegral usecs / 1000000) `addUTCTime` now
+
+  when (estimatedWakeup < now || estimatedWakeup > endOfTime) $ raise E_INVARG
+
+  task <- asks task
   gen <- newRandomGen
+
   let frame = currentFrame (stack state)
 
       frame' = frame {
@@ -411,8 +418,7 @@ forkTask taskId usecs code = do
       state' = initState {
           ticksLeft = 15000  -- XXX
         , stack     = Stack [frame']
-        , startTime = (fromIntegral usecs / 1000000) `addUTCTime`
-                      startTime state
+        , startTime = estimatedWakeup
         , randomGen = gen
         }
 
