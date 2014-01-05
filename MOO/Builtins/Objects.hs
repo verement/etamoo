@@ -4,15 +4,15 @@
 module MOO.Builtins.Objects ( builtins ) where
 
 import Control.Concurrent.STM
-import Control.Monad (when, unless, liftM, void)
+import Control.Monad (when, unless, liftM, void, join)
 import Data.Maybe
 import Data.Set (Set)
 
+import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
+import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Vector as V
-import qualified Data.HashMap.Strict as HM
-import qualified Data.Set as S
 
 import MOO.Builtins.Common
 import MOO.Database
@@ -217,22 +217,25 @@ bf_move [Obj what, Obj where_] = do
   where checkRecurse what loc = do
           when (loc == what) $ raise E_RECMOVE
           maybeLoc <- getObject loc
-          case objectLocation `fmap` maybeLoc of
-            Just (Just oid) -> checkRecurse what oid
-            _               -> return ()
+          case join $ objectLocation `fmap` maybeLoc of
+            Just oid -> checkRecurse what oid
+            Nothing  -> return ()
 
 -- 4.4.3.3 Operations on Properties
 
 bf_properties [Obj object] = do
   obj <- checkValid object
   unless (objectPermR obj) $ checkPermission (objectOwner obj)
+
   (Lst . V.fromList . map Str) `liftM` liftSTM (definedProperties obj)
 
 bf_property_info [Obj object, Str prop_name] = do
   obj <- checkValid object
   prop <- getProperty obj prop_name
   unless (propertyPermR prop) $ checkPermission (propertyOwner prop)
+
   return $ Lst $ V.fromList [Obj $ propertyOwner prop, Str $ perms prop]
+
   where perms prop = T.pack $ concat [['r' | propertyPermR prop],
                                       ['w' | propertyPermW prop],
                                       ['c' | propertyPermC prop]]
@@ -349,6 +352,7 @@ bf_add_property [Obj object, Str prop_name, value, Lst info] = do
          addInheritedProperty inheritedProp) $ getChildren obj
 
   return nothing
+
   where name = T.toCaseFold prop_name
 
 bf_delete_property [Obj object, Str prop_name] = do
@@ -356,10 +360,13 @@ bf_delete_property [Obj object, Str prop_name] = do
   unless (objectPermW obj) $ checkPermission (objectOwner obj)
   prop <- getProperty obj prop_name
   when (propertyInherited prop) $ raise E_PROPNF
+
   db <- getDatabase
   flip (modifyDescendants db) object $ \obj ->
     return obj { objectProperties = HM.delete name (objectProperties obj) }
+
   return nothing
+
   where name = T.toCaseFold prop_name
 
 bf_is_clear_property [Obj object, Str prop_name] = do
@@ -367,34 +374,39 @@ bf_is_clear_property [Obj object, Str prop_name] = do
   if isBuiltinProperty prop_name
     then return $ truthValue False
     else do
-    prop <- getProperty obj prop_name
-    unless (propertyPermR prop) $ checkPermission (propertyOwner prop)
-    return (truthValue $ isNothing $ propertyValue prop)
+      prop <- getProperty obj prop_name
+      unless (propertyPermR prop) $ checkPermission (propertyOwner prop)
+
+      return (truthValue $ isNothing $ propertyValue prop)
 
 bf_clear_property [Obj object, Str prop_name] = do
   obj <- checkValid object
   if isBuiltinProperty prop_name
     then raise E_PERM
     else do
-    modifyProperty obj prop_name $ \prop -> do
-      unless (propertyPermW prop) $ checkPermission (propertyOwner prop)
-      unless (propertyInherited prop) $ raise E_INVARG
-      return prop { propertyValue = Nothing }
-    return nothing
+      modifyProperty obj prop_name $ \prop -> do
+        unless (propertyPermW prop) $ checkPermission (propertyOwner prop)
+        unless (propertyInherited prop) $ raise E_INVARG
+        return prop { propertyValue = Nothing }
+
+      return nothing
 
 -- 4.4.3.4 Operations on Verbs
 
 bf_verbs [Obj object] = do
   obj <- checkValid object
   unless (objectPermR obj) $ checkPermission (objectOwner obj)
+
   (Lst . V.fromList . map Str) `liftM` liftSTM (definedVerbs obj)
 
 bf_verb_info [Obj object, verb_desc] = do
   obj <- checkValid object
   verb <- getVerb obj verb_desc
   unless (verbPermR verb) $ checkPermission (verbOwner verb)
+
   return $ Lst $ V.fromList
     [Obj $ verbOwner verb, Str $ perms verb, Str $ verbNames verb]
+
   where perms verb = T.pack $ concat [['r' | verbPermR verb],
                                       ['w' | verbPermW verb],
                                       ['x' | verbPermX verb],
@@ -441,7 +453,9 @@ bf_verb_args [Obj object, verb_desc] = do
   obj <- checkValid object
   verb <- getVerb obj verb_desc
   unless (verbPermR verb) $ checkPermission (verbOwner verb)
+
   return $ Lst $ V.fromList [Str $ dobj verb, Str $ prep verb, Str $ iobj verb]
+
   where dobj = obj2text  . verbDirectObject
         iobj = obj2text  . verbIndirectObject
         prep = prep2text . verbPreposition
@@ -497,6 +511,7 @@ bf_add_verb [Obj object, Lst info, Lst args] = do
 
   db <- getDatabase
   liftSTM $ modifyObject object db $ addVerb definedVerb
+
   return $ Int $ fromIntegral $ length (objectVerbs obj) + 1
 
 bf_delete_verb [Obj object, verb_desc] = do
@@ -563,10 +578,14 @@ bf_is_player [Obj object] =
 bf_set_player_flag [Obj object, value] = do
   checkValid object
   checkWizard
+
   db <- getDatabase
   liftSTM $ modifyObject object db $
     \obj -> return obj { objectIsPlayer = isPlayer }
   putDatabase $ setPlayer isPlayer object db
+
   unless isPlayer $ bootPlayer object
+
   return nothing
+
   where isPlayer = truthOf value
