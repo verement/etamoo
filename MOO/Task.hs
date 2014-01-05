@@ -87,7 +87,7 @@ import Data.Maybe (isNothing)
 import Data.Text (Text)
 import Data.Time
 
-import qualified Data.Map as Map
+import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.ByteString as BS
@@ -160,12 +160,11 @@ newtype DelayedIO = DelayedIO { runDelayed :: IO () }
 
 instance Monoid DelayedIO where
   mempty = DelayedIO $ return ()
-  (DelayedIO a) `mappend` (DelayedIO b) = DelayedIO (a >> b)
+  DelayedIO a `mappend` DelayedIO b = DelayedIO (a >> b)
 
 delayIO :: IO () -> MOO ()
-delayIO io = do
-  existing <- gets delayedIO
-  modify $ \st -> st { delayedIO = existing `mappend` DelayedIO io }
+delayIO io = modify $ \state ->
+  state { delayedIO = delayedIO state `mappend` DelayedIO io }
 
 data Environment = Env {
     task             :: Task
@@ -287,7 +286,7 @@ callVerb' (verbOid, verb) this name args = do
   thisFrame <- frame id
   wizard <- isWizard (permissions thisFrame)
   let player = if wizard
-               then case vars Map.! "player" of
+               then case vars M.! "player" of
                  (Obj oid) -> oid
                  _         -> initialPlayer thisFrame
                else initialPlayer thisFrame
@@ -298,12 +297,12 @@ callVerb' (verbOid, verb) this name args = do
         , ("args"   , fromList args)
         , ("caller" , Obj $ initialThis thisFrame)
         , ("player" , Obj player)
-        , ("argstr" , vars Map.! "argstr")
-        , ("dobjstr", vars Map.! "dobjstr")
-        , ("dobj"   , vars Map.! "dobj")
-        , ("prepstr", vars Map.! "prepstr")
-        , ("iobjstr", vars Map.! "iobjstr")
-        , ("iobj"   , vars Map.! "iobj")
+        , ("argstr" , vars M.! "argstr")
+        , ("dobjstr", vars M.! "dobjstr")
+        , ("dobj"   , vars M.! "dobj")
+        , ("prepstr", vars M.! "prepstr")
+        , ("iobjstr", vars M.! "iobjstr")
+        , ("iobj"   , vars M.! "iobj")
         ]
   runVerbFrame (verbCode verb) initFrame {
       variables     = vars'
@@ -325,7 +324,7 @@ callVerb verbLoc this name args = do
     (Just _      , Nothing)   -> raise E_VERBNF
     (Just verbOid, Just verb) -> callVerb' (verbOid, verb) this name args
 
-callFromFunc :: StrT -> IntT -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
+callFromFunc :: Id -> IntT -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
 callFromFunc func index (oid, name) args = do
   (maybeOid, maybeVerb) <- findVerb verbPermX name oid
   case (maybeOid, maybeVerb) of
@@ -333,7 +332,7 @@ callFromFunc func index (oid, name) args = do
                                  callVerb' (verbOid, verb) oid name args
     (_           , _)         -> return Nothing
 
-evalFromFunc :: StrT -> IntT -> MOO Value -> MOO Value
+evalFromFunc :: Id -> IntT -> MOO Value -> MOO Value
 evalFromFunc func index code = do
   (depthLeft, player) <- frame (depthLeft &&& initialPlayer)
   pushFrame initFrame {
@@ -358,13 +357,14 @@ runVerbFrame verbCode verbFrame = do
     popFrame
     passException except callStack
   popFrame
+
   return value
 
 runTick :: MOO ()
 runTick = do
   ticksLeft <- gets ticksLeft
   unless (ticksLeft > 0) $ interrupt . Timeout Ticks =<< gets stack
-  modify $ \st -> st { ticksLeft = ticksLeft - 1 }
+  modify $ \state -> state { ticksLeft = ticksLeft - 1 }
 
 modifyProperty :: Object -> StrT -> (Property -> MOO Property) -> MOO ()
 modifyProperty obj name f =
@@ -533,17 +533,18 @@ formatFrames includeLineNumbers = fromListBy formatFrame
                             : [Int $ lineNumber frame | includeLineNumbers]
 
 pushFrame :: StackFrame -> MOO ()
-pushFrame frame = modify $ \st@State { stack = Stack frames } ->
-  st { stack = Stack (frame : frames) }
+pushFrame frame = modify $ \state@State { stack = Stack frames } ->
+  state { stack = Stack (frame : frames) }
 
 popFrame :: MOO ()
 popFrame = do
   unwindContexts (const False)
-  modify $ \st@State { stack = Stack (_:frames) } -> st { stack = Stack frames }
+  modify $ \state@State { stack = Stack (_:frames) } ->
+    state { stack = Stack frames }
 
 currentFrame :: CallStack -> StackFrame
 currentFrame (Stack (frame:_)) = frame
-currentFrame (Stack [])        = error "Empty call stack"
+currentFrame (Stack [])        = error "currentFrame: Empty call stack"
 
 previousFrame :: CallStack -> Maybe StackFrame
 previousFrame (Stack (_:frames)) = previousFrame' frames
@@ -551,7 +552,7 @@ previousFrame (Stack (_:frames)) = previousFrame' frames
           | builtinFunc frame = previousFrame' frames
           | otherwise         = Just frame
         previousFrame' [] = Nothing
-previousFrame (Stack []) = error "Empty call stack"
+previousFrame (Stack []) = error "previousFrame: Empty call stack"
 
 frame :: (StackFrame -> a) -> MOO a
 frame f = gets (f . currentFrame . stack)
@@ -560,8 +561,8 @@ caller :: (StackFrame -> a) -> MOO (Maybe a)
 caller f = gets (fmap f . previousFrame . stack)
 
 modifyFrame :: (StackFrame -> StackFrame) -> MOO ()
-modifyFrame f = modify $ \st@State { stack = Stack (frame:stack) } ->
-  st { stack = Stack (f frame : stack) }
+modifyFrame f = modify $ \state@State { stack = Stack (frame:stack) } ->
+  state { stack = Stack (f frame : stack) }
 
 setLineNumber :: Int -> MOO ()
 setLineNumber lineNumber = modifyFrame $ \frame ->
@@ -628,7 +629,7 @@ continueLoop maybeName = do
   continue nothing
 
 initVariables :: Map Id Value
-initVariables = Map.fromList $ [
+initVariables = M.fromList $ [
     ("player" , Obj (-1))
   , ("this"   , Obj (-1))
   , ("caller" , Obj (-1))
@@ -655,7 +656,7 @@ initVariables = Map.fromList $ [
           ]
 
 mkVariables :: [(Id, Value)] -> Map Id Value
-mkVariables = foldr (uncurry Map.insert) initVariables
+mkVariables = foldr (uncurry M.insert) initVariables
 
 newtype ExceptionHandler = Handler (Exception -> CallStack -> MOO Value)
 
@@ -732,9 +733,8 @@ binaryString = maybe (raise E_INVARG) (return . BS.pack) . text2binary
 
 random :: (Random a) => (a, a) -> MOO a
 random range = do
-  g <- gets randomGen
-  let (r, g') = randomR range g
-  modify $ \st -> st { randomGen = g' }
+  (r, gen) <- randomR range `liftM` gets randomGen
+  modify $ \state -> state { randomGen = gen }
   return r
 
 formatTraceback :: Exception -> CallStack -> [Text]

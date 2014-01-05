@@ -5,15 +5,15 @@ module MOO.Builtins ( builtinFunctions, callBuiltin, verifyBuiltins ) where
 
 import Control.Monad (when, foldM, liftM, join)
 import Control.Monad.Reader (asks)
-import Data.Maybe (fromMaybe)
-import Data.Map (Map)
 import Data.List (transpose, inits)
+import Data.Map (Map)
+import Data.Maybe (fromMaybe)
 import Data.Time (formatTime, utcToLocalZonedTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Locale (defaultTimeLocale)
 
-import qualified Data.Map as Map
+import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Vector as V
 
@@ -33,11 +33,11 @@ import MOO.Builtins.Tasks   as Tasks
 
 builtinFunctions :: Map Id (Builtin, Info)
 builtinFunctions =
-  Map.fromList $ miscBuiltins ++
+  M.fromList $ miscBuiltins ++
   Values.builtins ++ Objects.builtins ++ Network.builtins ++ Tasks.builtins
 
 callBuiltin :: Id -> [Value] -> MOO Value
-callBuiltin func args = case Map.lookup func builtinFunctions of
+callBuiltin func args = case M.lookup func builtinFunctions of
   Just (bf, info) -> checkArgs info args >> bf args
   Nothing -> raiseException $
              Exception (Err E_INVARG) "Unknown built-in function" (Str func)
@@ -61,7 +61,7 @@ callBuiltin func args = case Map.lookup func builtinFunctions of
 -- Internal consistency verification
 
 verifyBuiltins :: Either String Int
-verifyBuiltins = foldM accum 0 $ Map.assocs builtinFunctions
+verifyBuiltins = foldM accum 0 $ M.assocs builtinFunctions
   where accum a b = valid b >>= Right . (+ a)
         valid (name, (func, Info min max types _))
           | name /= T.toCaseFold name         = invalid "name not case-folded"
@@ -133,8 +133,8 @@ bf_pass args = do
     (verbName frame, verbLocation frame, initialThis frame)
   maybeMaybeParent <- fmap objectParent `liftM` getObject verbLoc
   case join maybeMaybeParent of
-    Nothing     -> raise E_VERBNF
     Just parent -> callVerb parent this name args
+    Nothing     -> raise E_VERBNF
 
 -- 4.4.5 Operations Involving Times and Dates
 

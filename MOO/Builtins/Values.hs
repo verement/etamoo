@@ -314,8 +314,8 @@ runMatch match subject pattern case_matters = do
                        (T.pack $ "Invalid pattern: " ++ err)
                        (Int $ fromIntegral at)
     Right regexp -> do
-      let result = unsafePerformIO $ match regexp (encodeUtf8 subject)  -- *
-      -- * This will need revisiting to support arbitrary Unicode
+      let result = unsafePerformIO $ match regexp (encodeUtf8 subject)  -- XXX
+      -- XXX This will need revisiting to support arbitrary Unicode
       case result of
         MatchFailed            -> return (Lst V.empty)
         MatchAborted           -> raise E_QUOTA

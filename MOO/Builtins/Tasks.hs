@@ -16,7 +16,7 @@ import {-# SOURCE #-} MOO.Compiler
 import {-# SOURCE #-} MOO.Builtins
 import MOO.Builtins.Common
 
-import qualified Data.Map as Map
+import qualified Data.Map as M
 import qualified Data.Text as T
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
@@ -58,10 +58,9 @@ formatInfo (name, (_, Info min max types _)) =
            , fromListBy (Int . typeCode) types
            ]
 
-bf_function_info [] = return $ fromListBy formatInfo $
-                      Map.assocs builtinFunctions
+bf_function_info [] = return $ fromListBy formatInfo $ M.assocs builtinFunctions
 bf_function_info [Str name] =
-  case Map.lookup name' builtinFunctions of
+  case M.lookup name' builtinFunctions of
     Just detail -> return $ formatInfo (name', detail)
     Nothing     -> raise E_INVARG
   where name' = T.toCaseFold name
@@ -76,8 +75,8 @@ bf_eval [Str string] = do
         (permissions frame, initialThis frame, initialPlayer frame)
       value <- evalFromFunc "eval" 0 $
         runVerbFrame (compile program) initFrame {
-            variables     = Map.insert "player" (Obj player) $
-                            Map.insert "caller" (Obj this) $ variables initFrame
+            variables     = M.insert "player" (Obj player) $
+                            M.insert "caller" (Obj this) $ variables initFrame
           , permissions   = programmer
           , verbFullName  = "Input to EVAL"
           , initialPlayer = player

@@ -50,8 +50,8 @@ repLoop db state = do
       run db line state >>= repLoop db
 
 addFrame :: StackFrame -> TaskState -> TaskState
-addFrame frame st@State { stack = Stack frames } =
-  st { stack = Stack (frame : frames) }
+addFrame frame state@State { stack = Stack frames } =
+  state { stack = Stack (frame : frames) }
 
 mkTestFrame :: Database -> STM StackFrame
 mkTestFrame db = do
@@ -66,8 +66,8 @@ mkTestFrame db = do
   where isWizard oid = maybe False objectWizard `liftM` dbObject oid db
 
 alterFrame :: TaskState -> (StackFrame -> StackFrame) -> TaskState
-alterFrame st@State { stack = Stack (frame:stack) } f =
-  st { stack = Stack (f frame : stack) }
+alterFrame state@State { stack = Stack (frame:stack) } f =
+  state { stack = Stack (f frame : stack) }
 
 run :: TVar Database -> String -> TaskState -> IO TaskState
 run _ ":+d" state = return $ alterFrame state $
