@@ -35,7 +35,6 @@ import Data.List (find)
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
-import qualified Data.Vector as V
 import qualified Data.IntSet as IS
 
 import MOO.Types
@@ -167,8 +166,7 @@ builtinProperty :: StrT -> Maybe (Object -> Value)
 builtinProperty "name"       = Just (Str . objectName)
 builtinProperty "owner"      = Just (Obj . objectOwner)
 builtinProperty "location"   = Just (Obj . objectForMaybe . objectLocation)
-builtinProperty "contents"   = Just (Lst . V.fromList
-                                     . map Obj . IS.elems . objectContents)
+builtinProperty "contents"   = Just (objectList . IS.elems . objectContents)
 builtinProperty "programmer" = Just (truthValue . objectProgrammer)
 builtinProperty "wizard"     = Just (truthValue . objectWizard)
 builtinProperty "r"          = Just (truthValue . objectPermR)

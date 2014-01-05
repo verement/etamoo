@@ -13,7 +13,6 @@ import Data.IntSet (IntSet)
 import System.IO (hFlush, stdout)
 
 import qualified Data.Text as T
-import qualified Data.Vector as V
 import qualified Data.IntSet as IS
 
 import MOO.Database
@@ -68,7 +67,7 @@ lmDatabase = do
     installUsers users
 
     liftIO $ putStrLn $ "Players: " ++
-      T.unpack (toLiteral $ Lst $ V.fromList $ sort $ map Obj users)
+      T.unpack (toLiteral $ objectList $ sort users)
 
     local (\r -> r { users = IS.fromList users }) $ do
       liftIO $ putStrLn "Reading objects..."
@@ -386,7 +385,7 @@ valueFromVar (LMInt int)   = Right $ Just (Int int)
 valueFromVar (LMFloat flt) = Right $ Just (Flt flt)
 valueFromVar (LMList list) = do
   elems <- mapM valueFromVar list
-  return $ Just (Lst $ V.fromList $ catMaybes elems)
+  return $ Just (fromList $ catMaybes elems)
 valueFromVar var           = Left var
 
 read_var :: DBParser LMVar

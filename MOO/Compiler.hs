@@ -137,8 +137,7 @@ compileStatements k (s:ss) = catchDebug $ case s of
               Stack currentFrames <- gets stack
               let traceback = formatFrames True $ take stackLen errorFrames
                   stackLen  = length errorFrames - length currentFrames + 1
-                  errorInfo =
-                    Lst $ V.fromList [code, Str message, value, traceback]
+                  errorInfo = fromList [code, Str message, value, traceback]
               maybe return storeVariable var errorInfo
               handler
             | otherwise = dispatch next except
@@ -170,7 +169,7 @@ evaluate :: Expr -> MOO Value
 evaluate (Literal value) = return value
 evaluate expr@Variable{} = catchDebug $ fetch (lValue expr)
 evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
-  List args -> (Lst . V.fromList) `liftM` expand args
+  List args -> fromList `liftM` expand args
 
   PropRef{} -> fetch (lValue expr)
 

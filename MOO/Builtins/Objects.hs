@@ -140,8 +140,7 @@ bf_valid [Obj object] = (truthValue . isJust) `liftM` getObject object
 
 bf_parent [Obj object] = (Obj . getParent) `liftM` checkValid object
 
-bf_children [Obj object] =
-  (Lst . V.fromList . map Obj . getChildren) `liftM` checkValid object
+bf_children [Obj object] = (objectList . getChildren) `liftM` checkValid object
 
 bf_recycle [Obj object] = notyet "recycle"
 
@@ -227,14 +226,14 @@ bf_properties [Obj object] = do
   obj <- checkValid object
   unless (objectPermR obj) $ checkPermission (objectOwner obj)
 
-  (Lst . V.fromList . map Str) `liftM` liftSTM (definedProperties obj)
+  stringList `liftM` liftSTM (definedProperties obj)
 
 bf_property_info [Obj object, Str prop_name] = do
   obj <- checkValid object
   prop <- getProperty obj prop_name
   unless (propertyPermR prop) $ checkPermission (propertyOwner prop)
 
-  return $ Lst $ V.fromList [Obj $ propertyOwner prop, Str $ perms prop]
+  return $ fromList [Obj $ propertyOwner prop, Str $ perms prop]
 
   where perms prop = T.pack $ concat [['r' | propertyPermR prop],
                                       ['w' | propertyPermW prop],
@@ -397,14 +396,14 @@ bf_verbs [Obj object] = do
   obj <- checkValid object
   unless (objectPermR obj) $ checkPermission (objectOwner obj)
 
-  (Lst . V.fromList . map Str) `liftM` liftSTM (definedVerbs obj)
+  stringList `liftM` liftSTM (definedVerbs obj)
 
 bf_verb_info [Obj object, verb_desc] = do
   obj <- checkValid object
   verb <- getVerb obj verb_desc
   unless (verbPermR verb) $ checkPermission (verbOwner verb)
 
-  return $ Lst $ V.fromList
+  return $ fromList
     [Obj $ verbOwner verb, Str $ perms verb, Str $ verbNames verb]
 
   where perms verb = T.pack $ concat [['r' | verbPermR verb],
@@ -454,7 +453,7 @@ bf_verb_args [Obj object, verb_desc] = do
   verb <- getVerb obj verb_desc
   unless (verbPermR verb) $ checkPermission (verbOwner verb)
 
-  return $ Lst $ V.fromList [Str $ dobj verb, Str $ prep verb, Str $ iobj verb]
+  return $ stringList [dobj verb, prep verb, iobj verb]
 
   where dobj = obj2text  . verbDirectObject
         iobj = obj2text  . verbIndirectObject
@@ -535,7 +534,7 @@ bf_verb_code (Obj object : verb_desc : optional) = do
 
   let code = init $ T.splitOn "\n" $
              unparse fully_paren indent (verbProgram verb)
-  return $ Lst $ V.fromList $ map Str code
+  return (stringList code)
 
   where [fully_paren, indent] = booleanDefaults optional [False, True]
 
@@ -547,7 +546,7 @@ bf_set_verb_code [Obj object, verb_desc, Lst code] = do
   checkProgrammer
 
   case parse text of
-    Left errors   -> return $ Lst $ V.fromList $ map (Str . T.pack) errors
+    Left errors   -> return $ fromListBy (Str . T.pack) errors
     Right program -> do
       modifyVerb (object, obj) verb_desc $ \verb ->
         return verb {
@@ -566,11 +565,11 @@ bf_disassemble [Obj object, verb_desc] = do
   unless (verbPermR verb) $ checkPermission (verbOwner verb)
 
   let Program statements = verbProgram verb
-  return $ Lst $ V.fromList $ map (Str . T.pack . show) statements
+  return $ fromListBy (Str . T.pack . show) statements
 
 -- 4.4.3.5 Operations on Player Objects
 
-bf_players [] = (Lst . V.fromList . map Obj . allPlayers) `liftM` getDatabase
+bf_players [] = (objectList . allPlayers) `liftM` getDatabase
 
 bf_is_player [Obj object] =
   (truthValue . objectIsPlayer) `liftM` checkValid object

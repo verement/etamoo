@@ -260,8 +260,8 @@ bf_strcmp [Str str1, Str str2] =
 bf_decode_binary (Str bin_string : optional) =
   maybe (raise E_INVARG) (return . mkResult) $ text2binary bin_string
   where [fully] = booleanDefaults optional [False]
-        mkResult | fully     = Lst . V.fromList . map (Int . fromIntegral)
-                 | otherwise = Lst . V.fromList . groupPrinting ("" ++)
+        mkResult | fully     = fromListBy (Int . fromIntegral)
+                 | otherwise = fromList . groupPrinting ("" ++)
         groupPrinting g (w:ws)
           | validStrChar c = groupPrinting (g [c] ++) ws
           | null group     = Int (fromIntegral w) : groupPrinting g ws
@@ -323,17 +323,17 @@ runMatch match subject pattern case_matters = do
           let (m : offs)   = offsets
               (start, end) = convert m
               replacements = repls 9 offs
-          in return $ Lst $ V.fromList
-             [Int start, Int end, Lst $ V.fromList replacements, Str subject]
+          in return $ fromList
+             [Int start, Int end, fromList replacements, Str subject]
 
   where -- convert from 0-based open interval to 1-based closed one
         convert (s,e)  = (1 + fromIntegral s, fromIntegral e)
 
         repls :: Int -> [(Int, Int)] -> [Value]
         repls n (r:rs) = let (s,e) = convert r
-                         in Lst (V.fromList [Int s, Int e]) : repls (n - 1) rs
+                         in fromList [Int s, Int e] : repls (n - 1) rs
         repls n []
-          | n > 0      = Lst (V.fromList [Int 0, Int (-1)]) : repls (n - 1) []
+          | n > 0      = fromList [Int 0, Int (-1)] : repls (n - 1) []
           | otherwise  = []
 
 bf_substitute [Str template, Lst subs] =

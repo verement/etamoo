@@ -259,13 +259,13 @@ callCommandVerb player (verbOid, verb) this command (dobj, iobj) = do
           ("player" , Obj player)
         , ("this"   , Obj this)
         , ("caller" , Obj player)
-        , ("verb"   , Str $ commandVerb   command)
-        , ("argstr" , Str $ commandArgStr command)
-        , ("args"   , Lst $ V.fromList $ map Str $ commandArgs command)
-        , ("dobjstr", Str $ commandDObjStr command)
+        , ("verb"   , Str        $ commandVerb    command)
+        , ("argstr" , Str        $ commandArgStr  command)
+        , ("args"   , stringList $ commandArgs    command)
+        , ("dobjstr", Str        $ commandDObjStr command)
         , ("dobj"   , Obj dobj)
-        , ("prepstr", Str $ commandPrepStr command)
-        , ("iobjstr", Str $ commandIObjStr command)
+        , ("prepstr", Str        $ commandPrepStr command)
+        , ("iobjstr", Str        $ commandIObjStr command)
         , ("iobj"   , Obj iobj)
         ] ++ typeVars
 
@@ -294,7 +294,7 @@ callVerb' (verbOid, verb) this name args = do
       vars'  = Map.fromList $ [
           ("this"   , Obj this)
         , ("verb"   , Str name)
-        , ("args"   , Lst $ V.fromList args)
+        , ("args"   , fromList args)
         , ("caller" , Obj $ initialThis thisFrame)
         , ("player" , Obj player)
         , ("argstr" , vars Map.! "argstr")
@@ -522,8 +522,8 @@ initFrame = Frame {
 }
 
 formatFrames :: Bool -> [StackFrame] -> Value
-formatFrames includeLineNumbers = Lst . V.fromList . map formatFrame
-  where formatFrame frame = Lst $ V.fromList $
+formatFrames includeLineNumbers = fromListBy formatFrame
+  where formatFrame frame = fromList $
                               Obj (initialThis   frame)
                             : Str (verbName      frame)
                             : Obj (permissions   frame)

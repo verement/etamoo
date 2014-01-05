@@ -30,6 +30,10 @@ module MOO.Types ( IntT
                  , error2text
                  , text2binary
                  , validStrChar
+                 , fromList
+                 , fromListBy
+                 , stringList
+                 , objectList
                  , listSet
                  ) where
 
@@ -275,6 +279,18 @@ text2binary = translate . T.unpack
 
 validStrChar :: Char -> Bool
 validStrChar c = isAscii c && (isPrint c || c == '\t')
+
+fromList :: [Value] -> Value
+fromList = Lst . V.fromList
+
+fromListBy :: (a -> Value) -> [a] -> Value
+fromListBy f = fromList . map f
+
+stringList :: [StrT] -> Value
+stringList = fromListBy Str
+
+objectList :: [ObjT] -> Value
+objectList = fromListBy Obj
 
 listSet :: LstT -> Int -> Value -> LstT
 listSet v i value = V.modify (\m -> VM.write m (i - 1) value) v

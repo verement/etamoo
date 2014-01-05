@@ -18,7 +18,6 @@ import MOO.Builtins.Common
 
 import qualified Data.Map as Map
 import qualified Data.Text as T
-import qualified Data.Vector as V
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
@@ -53,12 +52,14 @@ bf_call_function (Str func_name : args) =
 
 formatInfo :: (Id, (Builtin, Info)) -> Value
 formatInfo (name, (_, Info min max types _)) =
-  Lst $ V.fromList
-  [Str name, Int $ fromIntegral min, Int $ maybe (-1) fromIntegral max,
-   Lst $ V.fromList $ map (Int . typeCode) types]
+  fromList [ Str name
+           , Int $ fromIntegral min
+           , Int $ maybe (-1) fromIntegral max
+           , fromListBy (Int . typeCode) types
+           ]
 
-bf_function_info [] = return $ Lst $ V.fromList $
-                      map formatInfo $ Map.assocs builtinFunctions
+bf_function_info [] = return $ fromListBy formatInfo $
+                      Map.assocs builtinFunctions
 bf_function_info [Str name] =
   case Map.lookup name' builtinFunctions of
     Just detail -> return $ formatInfo (name', detail)
@@ -68,9 +69,8 @@ bf_function_info [Str name] =
 bf_eval [Str string] = do
   checkProgrammer
   case parse string of
-    Left errors   -> return $ Lst $ V.fromList
-                     [truthValue False,
-                      Lst $ V.fromList $ map (Str . T.pack) errors]
+    Left errors   -> return $ fromList [truthValue False,
+                                        fromListBy (Str . T.pack) errors]
     Right program -> do
       (programmer, this, player) <- frame $ \frame ->
         (permissions frame, initialThis frame, initialPlayer frame)
@@ -82,7 +82,7 @@ bf_eval [Str string] = do
           , verbFullName  = "Input to EVAL"
           , initialPlayer = player
           }
-      return $ Lst $ V.fromList [truthValue True, value]
+      return $ fromList [truthValue True, value]
 
 bf_set_task_perms [Obj who] = do
   checkPermission who
