@@ -22,7 +22,7 @@ import MOO.Types
 import {-# SOURCE #-} MOO.Task
 import MOO.Object
 import MOO.Verb
-import MOO.Network
+import {-# SOURCE #-} MOO.Network
 
 commandWord :: Parser Text
 commandWord = do
@@ -172,8 +172,9 @@ instance Monoid Match where
   _       `mappend` ExactMatch = ExactMatch
   match   `mappend` _          = match
 
-runCommand :: ObjId -> Command -> MOO Value
-runCommand player command = do
+runCommand :: Command -> MOO Value
+runCommand command = do
+  player <- getPlayer
   dobj <- matchObject player (commandDObjStr command)
   iobj <- matchObject player (commandIObjStr command)
 

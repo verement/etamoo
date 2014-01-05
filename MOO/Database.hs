@@ -41,14 +41,12 @@ data Database = Database {
     objects       :: Vector (TVar (Maybe Object))
   , players       :: IntSet
   , serverOptions :: ServerOptions
-  , queuedTasks   :: [Task]
 }
 
 initDatabase = Database {
     objects       = V.empty
   , players       = IS.empty
   , serverOptions = undefined
-  , queuedTasks   = []
 }
 
 dbObjectRef :: ObjId -> Database -> Maybe (TVar (Maybe Object))

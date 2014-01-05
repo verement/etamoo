@@ -4,7 +4,7 @@
 module MOO.Builtins ( builtinFunctions, callBuiltin, verifyBuiltins ) where
 
 import Control.Monad (when, foldM, liftM, join)
-import Control.Monad.Reader (asks)
+import Control.Monad.State (gets)
 import Data.List (transpose, inits)
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
@@ -139,7 +139,7 @@ bf_pass args = do
 -- 4.4.5 Operations Involving Times and Dates
 
 currentTime :: MOO IntT
-currentTime = (floor . utcTimeToPOSIXSeconds) `liftM` asks startTime
+currentTime = (floor . utcTimeToPOSIXSeconds) `liftM` gets startTime
 
 bf_time [] = Int `liftM` currentTime
 

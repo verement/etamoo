@@ -109,7 +109,28 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
                 body
               loop lineNumber var expr body
 
-  Fork lineNumber var delay body -> runTick >> notyet "Fork"
+  Fork lineNumber var delay body -> runTick >> do
+    setLineNumber lineNumber
+    delay' <- evaluate delay
+    usecs <- case delay' of
+      Int secs
+        | secs < 0  -> raise E_INVARG
+        | otherwise -> return (fromIntegral secs * 1000000)
+      Flt secs
+        | secs < 0  -> raise E_INVARG
+        | otherwise -> return (ceiling $ secs * 1000000)
+      _ -> raise E_TYPE
+
+    world <- getWorld
+    gen <- newRandomGen
+    taskId <- liftSTM $ newTaskId world gen
+    case var of
+      Just ident -> void $ storeVariable ident (Int $ fromIntegral taskId)
+      Nothing    -> return ()
+
+    forkTask taskId usecs (compileStatements body return)
+
+    compile' rest
 
   Break    name -> breakLoop    (fmap T.toCaseFold name)
   Continue name -> continueLoop (fmap T.toCaseFold name)

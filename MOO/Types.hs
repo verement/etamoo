@@ -37,13 +37,18 @@ module MOO.Types ( IntT
                  , listSet
                  ) where
 
-import Data.Int
-import Data.Word
-import Data.Text (Text)
-import Data.Vector (Vector)
+import Control.Concurrent (ThreadId)
 import Data.Char (isAscii, isPrint, isDigit)
+import Data.Int
+import Data.Map (Map)
+import Data.Text (Text)
+import Data.Time (UTCTime)
+import Data.Vector (Vector)
+import Data.Word
 import Foreign.Storable (sizeOf)
+import System.Random (StdGen)
 
+import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
@@ -52,7 +57,7 @@ class Sizeable t where
   storageBytes :: t -> Int
 
 instance Sizeable () where
-  storageBytes _ = sizeOf (0 :: Int)
+  storageBytes _ = sizeOf (undefined :: Int)
 
 instance Sizeable Bool where
   storageBytes = sizeOf
@@ -61,6 +66,9 @@ instance Sizeable Int where
   storageBytes = sizeOf
 
 instance Sizeable Int32 where
+  storageBytes = sizeOf
+
+instance Sizeable Int64 where
   storageBytes = sizeOf
 
 instance Sizeable Double where
@@ -82,6 +90,19 @@ instance Sizeable a => Sizeable (Maybe a) where
 
 instance (Sizeable a, Sizeable b) => Sizeable (a, b) where
   storageBytes (x, y) = storageBytes () + storageBytes x + storageBytes y
+
+instance (Sizeable k, Sizeable v) => Sizeable (Map k v) where
+  storageBytes =
+    M.foldrWithKey' (\k v s -> s + storageBytes k + storageBytes v) 0
+
+instance Sizeable StdGen where
+  storageBytes _ = storageBytes () + 2 * storageBytes (undefined :: Int32)
+
+instance Sizeable UTCTime where
+  storageBytes _ = 4 * storageBytes ()
+
+instance Sizeable ThreadId where
+  storageBytes _ = storageBytes ()
 
 type IntT = Int32
 type FltT = Double
