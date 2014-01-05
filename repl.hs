@@ -3,13 +3,14 @@
 
 module Main where
 
-import System.Console.Readline
 import System.Random
 import System.Environment
 import Control.Monad
 import Control.Concurrent.STM
 import Data.Text
+import Control.Monad.IO.Class
 import Data.Maybe
+import System.Console.Haskeline
 
 import MOO.Parser
 import MOO.Compiler
@@ -31,7 +32,9 @@ main =
       tvarDB <- newTVarIO db
       gen <- getStdGen
       testFrame <- atomically $ mkTestFrame db
-      repLoop tvarDB $ addFrame testFrame (initState gen)
+
+      runInputT (setComplete noCompletion defaultSettings) $
+        repLoop tvarDB $ addFrame testFrame (initState gen)
 
 replDatabase :: IO Database
 replDatabase = do
@@ -40,14 +43,13 @@ replDatabase = do
     [dbFile] -> loadLMDatabase dbFile >>= either (error . show) return
     []       -> return initDatabase
 
-repLoop :: TVar Database -> TaskState -> IO ()
+repLoop :: TVar Database -> TaskState -> InputT IO ()
 repLoop db state = do
-  maybeLine <- readline ">> "
+  maybeLine <- getInputLine ">> "
   case maybeLine of
     Nothing   -> return ()
-    Just line -> do
-      addHistory line
-      run db line state >>= repLoop db
+    Just ""   -> repLoop db state
+    Just line -> repLoop db =<< liftIO (run db line state)
 
 addFrame :: StackFrame -> TaskState -> TaskState
 addFrame frame state@State { stack = Stack frames } =
