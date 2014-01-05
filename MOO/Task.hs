@@ -52,6 +52,7 @@ module MOO.Task ( MOO
                 , popContext
                 , breakLoop
                 , continueLoop
+                , mkVariables
                 , catchException
                 , passException
                 , raiseException
@@ -255,7 +256,7 @@ findVerb acceptable name = findVerb'
 callCommandVerb :: ObjId -> (ObjId, Verb) -> ObjId ->
                    Command -> (ObjId, ObjId) -> MOO Value
 callCommandVerb player (verbOid, verb) this command (dobj, iobj) = do
-  let vars = Map.fromList $ [
+  let vars = mkVariables [
           ("player" , Obj player)
         , ("this"   , Obj this)
         , ("caller" , Obj player)
@@ -267,7 +268,7 @@ callCommandVerb player (verbOid, verb) this command (dobj, iobj) = do
         , ("prepstr", Str        $ commandPrepStr command)
         , ("iobjstr", Str        $ commandIObjStr command)
         , ("iobj"   , Obj iobj)
-        ] ++ typeVars
+        ]
 
   runVerbFrame (verbCode verb) initFrame {
       variables     = vars
@@ -291,7 +292,7 @@ callVerb' (verbOid, verb) this name args = do
                  _         -> initialPlayer thisFrame
                else initialPlayer thisFrame
       vars   = variables thisFrame
-      vars'  = Map.fromList $ [
+      vars'  = mkVariables [
           ("this"   , Obj this)
         , ("verb"   , Str name)
         , ("args"   , fromList args)
@@ -303,7 +304,7 @@ callVerb' (verbOid, verb) this name args = do
         , ("prepstr", vars Map.! "prepstr")
         , ("iobjstr", vars Map.! "iobjstr")
         , ("iobj"   , vars Map.! "iobj")
-        ] ++ typeVars
+        ]
   runVerbFrame (verbCode verb) initFrame {
       variables     = vars'
     , debugBit      = verbPermD verb
@@ -507,7 +508,7 @@ initFrame = Frame {
     depthLeft     = 50
 
   , contextStack  = []
-  , variables     = mkInitVars
+  , variables     = initVariables
   , debugBit      = True
   , permissions   = -1
 
@@ -626,11 +627,8 @@ continueLoop maybeName = do
   Loop { loopContinue = Continuation continue } <- unwindLoopContext maybeName
   continue nothing
 
-mkInitVars :: Map Id Value
-mkInitVars = Map.fromList initVars
-
-initVars :: [(Id, Value)]
-initVars = [
+initVariables :: Map Id Value
+initVariables = Map.fromList $ [
     ("player" , Obj (-1))
   , ("this"   , Obj (-1))
   , ("caller" , Obj (-1))
@@ -644,18 +642,20 @@ initVars = [
   , ("prepstr", Str T.empty)
   , ("iobjstr", Str T.empty)
   , ("iobj"   , Obj (-1))
-  ] ++ typeVars
+  ] ++ typeVariables
 
-typeVars :: [(Id, Value)]
-typeVars = map (first T.toCaseFold) [
-    ("INT"  , Int $ typeCode TInt)
-  , ("NUM"  , Int $ typeCode TInt)
-  , ("FLOAT", Int $ typeCode TFlt)
-  , ("LIST" , Int $ typeCode TLst)
-  , ("STR"  , Int $ typeCode TStr)
-  , ("OBJ"  , Int $ typeCode TObj)
-  , ("ERR"  , Int $ typeCode TErr)
-  ]
+  where typeVariables = map (first T.toCaseFold) [
+            ("INT"  , Int $ typeCode TInt)
+          , ("NUM"  , Int $ typeCode TInt)
+          , ("FLOAT", Int $ typeCode TFlt)
+          , ("LIST" , Int $ typeCode TLst)
+          , ("STR"  , Int $ typeCode TStr)
+          , ("OBJ"  , Int $ typeCode TObj)
+          , ("ERR"  , Int $ typeCode TErr)
+          ]
+
+mkVariables :: [(Id, Value)] -> Map Id Value
+mkVariables = foldr (uncurry Map.insert) initVariables
 
 newtype ExceptionHandler = Handler (Exception -> CallStack -> MOO Value)
 

@@ -21,8 +21,6 @@ import MOO.Database.LambdaMOO
 import MOO.Object
 import MOO.Command
 
-import qualified Data.Map as Map
-
 main :: IO ()
 main =
   case verifyBuiltins of
@@ -60,7 +58,7 @@ mkTestFrame db = do
   wizards <- filterM isWizard $ allPlayers db
   let player = fromMaybe (-1) $ listToMaybe wizards
   return initFrame {
-      variables     = Map.insert "player" (Obj player) $ variables initFrame
+      variables     = mkVariables [("player", Obj player)]
     , permissions   = player
     , verbFullName  = "REPL"
     , initialPlayer = player
