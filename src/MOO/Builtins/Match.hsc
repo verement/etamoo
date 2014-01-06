@@ -1,7 +1,8 @@
 
 {-# LANGUAGE ForeignFunctionInterface, EmptyDataDecls #-}
 
-module MOO.Builtins.Match ( MatchResult(..)
+module MOO.Builtins.Match ( Regexp
+                          , MatchResult(..)
                           , newRegexp
                           , match
                           , rmatch
@@ -77,8 +78,8 @@ data RewriteState = StateBase
 
 {-# ANN translate ("HLint: ignore Use list literal" :: String) #-}
 
-translate :: Text -> ByteString
-translate = encodeUtf8 . T.pack . concat . rewrite . T.unpack
+translate :: Text -> Text
+translate = T.pack . concat . rewrite . T.unpack
   where
     -- Translate MOO regular expression syntax into PCRE syntax
     --
@@ -144,7 +145,7 @@ translate = encodeUtf8 . T.pack . concat . rewrite . T.unpack
 
 newRegexp :: Text -> Bool -> IO (Either (String, CInt) Regexp)
 newRegexp regexp caseMatters =
-  useAsCString (translate regexp) $ \pattern ->
+  useAsCString (encodeUtf8 $ translate regexp) $ \pattern ->
     alloca $ \errorPtr ->
     alloca $ \errorOffsetPtr -> do
       code <- pcre_compile pattern options errorPtr errorOffsetPtr nullPtr
@@ -205,8 +206,8 @@ matchLock :: MVar ()
 matchLock = unsafePerformIO $ newMVar ()
 {-# NOINLINE matchLock #-}
 
-match :: Regexp -> ByteString -> IO MatchResult
-match Regexp { code = codeFP, extra = extraFP } string =
+match :: Regexp -> Text -> IO MatchResult
+match Regexp { code = codeFP, extra = extraFP } text =
   bracket (takeMVar matchLock) (putMVar matchLock) $ \_ ->
   withForeignPtr codeFP  $ \code           ->
   withForeignPtr extraFP $ \extra          ->
@@ -224,12 +225,14 @@ match Regexp { code = codeFP, extra = extraFP } string =
       then case rc of
         #{const PCRE_ERROR_NOMATCH} -> return MatchFailed
         _                           -> return MatchAborted
-      else mkMatchResult rc ovec
+      else mkMatchResult rc ovec subject
 
-  where options = #{const PCRE_NO_UTF8_CHECK}
+  where string  = encodeUtf8 text
+        subject = (string, T.length text)
+        options = #{const PCRE_NO_UTF8_CHECK}
 
-rmatch :: Regexp -> ByteString -> IO MatchResult
-rmatch Regexp {code = codeFP, extra = extraFP } string =
+rmatch :: Regexp -> Text -> IO MatchResult
+rmatch Regexp {code = codeFP, extra = extraFP } text =
   bracket (takeMVar matchLock) (putMVar matchLock) $ \_ ->
   withForeignPtr codeFP  $ \code           ->
   withForeignPtr extraFP $ \extra          ->
@@ -255,19 +258,29 @@ rmatch Regexp {code = codeFP, extra = extraFP } string =
             #{const PCRE_ERROR_NOMATCH} -> do
               rd <- readIORef rdRef
               if valid rd
-                then mkMatchResult (rmatchResult rd) (rmatchOvec rd)
+                then mkMatchResult (rmatchResult rd) (rmatchOvec rd) subject
                 else return MatchFailed
             _ -> return MatchAborted
-          else mkMatchResult rc ovec
-  where options = #{const PCRE_NO_UTF8_CHECK}
+          else mkMatchResult rc ovec subject
 
-mkMatchResult :: CInt -> Ptr CInt -> IO MatchResult
-mkMatchResult rc ovec = (MatchSucceeded . convert) `liftM`
-                        peekArray (n * 2) ovec
+  where string  = encodeUtf8 text
+        subject = (string, T.length text)
+        options = #{const PCRE_NO_UTF8_CHECK}
+
+mkMatchResult :: CInt -> Ptr CInt -> (ByteString, Int) -> IO MatchResult
+mkMatchResult rc ovec (subject, subjectCharLen) =
+  (MatchSucceeded . pairs . map (rebase . fromIntegral)) `liftM`
+  peekArray (n * 2) ovec
+
   where rc' = fromIntegral rc
         n   = if rc' == 0 || rc' > maxCaptures then maxCaptures else rc'
-        convert (s:e:rs) = (fromIntegral s, fromIntegral e) : convert rs
-        convert []       = []
+
+        pairs (s:e:rs) = (s, e) : pairs rs
+        pairs []       = []
+
+        -- translate UTF-8 byte offset to character offset
+        rebase 0 = 0
+        rebase i = subjectCharLen - T.length (decodeUtf8 $ BS.drop i subject)
 
 data RmatchData = RmatchData {
     rmatchResult :: CInt

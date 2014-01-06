@@ -10,6 +10,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf (printf)
 import Foreign.C (CString, withCString, peekCString)
 import Data.Maybe (fromJust)
+import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
 import Data.ByteString (ByteString)
 import Data.Char (intToDigit, isDigit)
@@ -307,15 +308,16 @@ bf_rmatch (Str subject : Str pattern : optional) =
   runMatch rmatch subject pattern case_matters
   where [case_matters] = booleanDefaults optional [False]
 
+runMatch :: (Regexp -> Text -> IO MatchResult) ->
+            StrT -> StrT -> Bool -> MOO Value
 runMatch match subject pattern case_matters = do
   let compiled = unsafePerformIO $ newRegexp pattern case_matters
   case compiled of
-    Left  (err, at) -> raiseException $ Exception (Err E_INVARG)
-                       (T.pack $ "Invalid pattern: " ++ err)
-                       (Int $ fromIntegral at)
+    Left (err, at) -> raiseException $ Exception (Err E_INVARG)
+                      (T.pack $ "Invalid pattern: " ++ err)
+                      (Int $ fromIntegral at)
     Right regexp -> do
-      let result = unsafePerformIO $ match regexp (encodeUtf8 subject)  -- XXX
-      -- XXX This will need revisiting to support arbitrary Unicode
+      let result = unsafePerformIO $ match regexp subject
       case result of
         MatchFailed            -> return (Lst V.empty)
         MatchAborted           -> raise E_QUOTA
