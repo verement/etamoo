@@ -78,22 +78,22 @@ verifyBuiltins = foldM accum 0 $ M.assocs builtinFunctions
                 test argSpec = all (\args -> func args `seq` True) $
                                enumerateArgs argSpec
 
-enumerateArgs :: [[Value]] -> [[Value]]
-enumerateArgs (a:[]) = transpose [a]
-enumerateArgs (a:as) = concatMap (combine a) (enumerateArgs as)
-  where combine ps rs = map (: rs) ps
-enumerateArgs []     = [[]]
+        enumerateArgs :: [[Value]] -> [[Value]]
+        enumerateArgs (a:[]) = transpose [a]
+        enumerateArgs (a:as) = concatMap (combine a) (enumerateArgs as)
+          where combine ps rs = map (: rs) ps
+        enumerateArgs []     = [[]]
 
-mkArgs :: Type -> [Value]
-mkArgs TAny = mkArgs TNum ++ mkArgs TStr ++ mkArgs TObj ++
-              mkArgs TErr ++ mkArgs TLst
-mkArgs TNum = mkArgs TInt ++ mkArgs TFlt
-mkArgs TInt = [Int 0]
-mkArgs TFlt = [Flt 0]
-mkArgs TStr = [Str T.empty]
-mkArgs TObj = [Obj 0]
-mkArgs TErr = [Err E_NONE]
-mkArgs TLst = [Lst V.empty]
+        mkArgs :: Type -> [Value]
+        mkArgs TAny = mkArgs TNum ++ mkArgs TStr ++ mkArgs TObj ++
+                      mkArgs TErr ++ mkArgs TLst
+        mkArgs TNum = mkArgs TInt ++ mkArgs TFlt
+        mkArgs TInt = [Int 0]
+        mkArgs TFlt = [Flt 0]
+        mkArgs TStr = [Str T.empty]
+        mkArgs TObj = [Obj 0]
+        mkArgs TErr = [Err E_NONE]
+        mkArgs TLst = [Lst V.empty]
 
 -- 4.4 Built-in Functions
 

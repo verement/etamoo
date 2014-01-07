@@ -5,6 +5,7 @@ module MOO.Compiler ( compile, evaluate ) where
 
 import Control.Monad (when, unless, void, liftM)
 import Control.Monad.Cont (callCC)
+import Control.Monad.Reader (asks, local)
 import Control.Monad.State (gets)
 
 import qualified Data.Map as M
@@ -252,7 +253,7 @@ evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
   Index{} -> fetch (lValue expr)
   Range{} -> fetch (lValue expr)
 
-  Length -> liftM (Int . fromIntegral) =<< reader indexLength
+  Length -> liftM (Int . fromIntegral) =<< asks indexLength
 
   item `In` list -> do
     item' <- evaluate item

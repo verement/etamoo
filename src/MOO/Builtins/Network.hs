@@ -15,7 +15,6 @@ import MOO.Builtins.Common
 
 import qualified Data.Map as M
 import qualified Data.Text as T
-import qualified Data.Vector as V
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 

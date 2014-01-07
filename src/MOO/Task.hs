@@ -58,8 +58,6 @@ module MOO.Task ( MOO
                 , readProperty
                 , writeProperty
                 , setBuiltinProperty
-                , reader
-                , local
                 , initFrame
                 , formatFrames
                 , pushFrame
@@ -93,9 +91,6 @@ module MOO.Task ( MOO
                 , newRandomGen
                 , formatTraceback
                 , delayIO
-                , runContT
-                , evalStateT
-                , runReaderT
                 ) where
 
 import Control.Arrow (first, (&&&))

@@ -40,13 +40,13 @@ module MOO.Types ( IntT
 
 import Control.Concurrent (ThreadId)
 import Data.Char (isAscii, isPrint, isDigit)
-import Data.Int
+import Data.Int (Int32, Int64)
 import Data.Map (Map)
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Vector (Vector)
-import Data.Word
+import Data.Word (Word8)
 import Foreign.Storable (sizeOf)
 import System.Random (StdGen)
 
@@ -251,7 +251,7 @@ toText (Lst _) = "{list}"
 
 toLiteral :: Value -> Text
 toLiteral (Lst vs) = T.concat
-                     ["{"
+                     [ "{"
                      , T.intercalate ", " $ map toLiteral (V.toList vs)
                      , "}"]
 toLiteral (Str x) = T.concat ["\"", T.concatMap escape x, "\""]

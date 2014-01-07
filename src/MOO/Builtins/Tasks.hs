@@ -9,10 +9,9 @@ import Control.Monad (liftM, void)
 import Control.Monad.Cont (callCC)
 import Control.Monad.Reader (asks)
 import Control.Monad.State (gets, modify, get)
-import Data.Int (Int32)
 import Data.List (sort)
 import Data.Time (getCurrentTime, addUTCTime)
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import System.Posix (nanosleep)
 
 import MOO.Types
