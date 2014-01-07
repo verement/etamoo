@@ -288,15 +288,18 @@ installProgram (oid, vnum, program) = do
   where doesNotExist what = what ++ " for program " ++ desc ++ " does not exist"
         desc = "#" ++ show oid ++ ":" ++ show vnum
 
+integer :: DBParser Integer
+integer = signed (read `fmap` many1 digit)
+
 unsignedInt :: DBParser Word
-unsignedInt = fmap read $ many1 digit
+unsignedInt = read `fmap` many1 digit
 
 signedInt :: DBParser Int
-signedInt = fmap fromIntegral $ signed unsignedInt
+signedInt = signed (read `fmap` many1 digit)
 
 signed :: (Num a) => DBParser a -> DBParser a
 signed parser = negative <|> parser
-  where negative = char '-' >> fmap negate parser
+  where negative = char '-' >> negate `fmap` parser
 
 line :: DBParser a -> DBParser a
 line parser = do
@@ -305,10 +308,10 @@ line parser = do
   return x
 
 read_num :: DBParser IntT
-read_num = line (signed (fmap read $ many1 digit)) <?> "num"
+read_num = line (fmap fromInteger integer) <?> "num"
 
 read_objid :: DBParser ObjId
-read_objid = fmap fromIntegral read_num <?> "objid"
+read_objid = line (fmap fromInteger integer) <?> "objid"
 
 read_float :: DBParser FltT
 read_float = line (fmap read $ many1 $ oneOf "-0123456789.eE+") <?> "float"

@@ -52,6 +52,10 @@ flag llvm
   description: Use GHC's LLVM backend to compile the code
   default:     False
 
+flag 64bit
+  description: Enable 64-bit MOO integers
+  default:     False
+
 executable etamoo
   hs-source-dirs:      src
   main-is:             etamoo.hs
@@ -84,7 +88,8 @@ executable etamoo
   if flag(llvm)
     ghc-options:       -fllvm
 
-  extensions:          EmptyDataDecls
+  extensions:          CPP
+                       EmptyDataDecls
                        ExistentialQuantification
                        FlexibleInstances
                        ForeignFunctionInterface
@@ -94,6 +99,9 @@ executable etamoo
   if !os(darwin)
     extra-libraries:   crypt
   extra-libraries:     pcre
+
+  if flag(64bit)
+    cpp-options:       -DMOO_64BIT_INTEGER
 
   includes:            unistd.h pcre.h
 

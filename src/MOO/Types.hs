@@ -1,5 +1,5 @@
 
-{-# LANGUAGE OverloadedStrings, TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE CPP, OverloadedStrings, TypeSynonymInstances, FlexibleInstances #-}
 
 -- | Basic data types used throughout the MOO server code
 module MOO.Types (
@@ -174,7 +174,12 @@ instance (Sizeable k, Sizeable v) => Sizeable (HashMap k v) where
 instance Sizeable (TVar a) where
   storageBytes _ = storageBytes ()
 
-type IntT = Int32         -- ^ MOO integer
+# ifdef MOO_64BIT_INTEGER
+type IntT = Int64
+# else
+type IntT = Int32
+# endif
+                          -- ^ MOO integer
 type FltT = Double        -- ^ MOO floating-point number
 type StrT = MOOString     -- ^ MOO string
 type ObjT = ObjId         -- ^ MOO object number
