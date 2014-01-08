@@ -1,25 +1,23 @@
 
 name:                EtaMOO
-version:             2.0.0
+version:             0.1.0.0
 
 synopsis:            A new implementation of the LambdaMOO server
-
--- homepage:
--- bug-reports:
 
 description:
 
   LambdaMOO is a network-accessible, multi-user, programmable, interactive
   system well-suited to the construction of text-based adventure games,
   conferencing systems, and other collaborative software.
-
   .
-
   EtaMOO is an experimental multithreaded implementation of LambdaMOO in
   Haskell with anticipated ready support for 64-bit MOO integers and Unicode
   MOO strings. The implementation follows the specifications of the LambdaMOO
   Programmer's Manual, and should be compatible with most LambdaMOO databases
   as of about version 1.8.3 of the LambdaMOO server code.
+  .
+  /N.B./ This is (currently) incomplete software. It is not yet usable,
+  although with further development it is hoped that it soon will be.
 
 license:             BSD3
 license-file:        LICENSE
@@ -30,12 +28,18 @@ maintainer:          Rob Leslie <rob@mars.org>
 
 stability:           alpha
 category:            Network
+
 build-type:          Simple
 cabal-version:       >=1.8
 
--- source-repository head
---   type:     git
---   location: git://...
+homepage:            https://github.com/verement/etamoo
+bug-reports:         https://github.com/verement/etamoo/issues
+
+extra-source-files:  README.md configure Makefile
+
+source-repository head
+  type:              git
+  location:          https://github.com/verement/etamoo.git
 
 -- source-repository this
 --   type:     git
@@ -49,8 +53,7 @@ executable etamoo
   hs-source-dirs:      src
   main-is:             etamoo.hs
 
-  other-modules:       Paths_EtaMOO
-                       MOO.AST
+  other-modules:       MOO.AST
                        MOO.Builtins
                        MOO.Builtins.Common
                        MOO.Builtins.Match
@@ -70,6 +73,7 @@ executable etamoo
                        MOO.Unparser
                        MOO.Verb
                        MOO.Version
+                       Paths_EtaMOO
 
   ghc-options:         -threaded -rtsopts
   if flag(llvm)
@@ -78,27 +82,30 @@ executable etamoo
   extensions:          OverloadedStrings, ForeignFunctionInterface,
                        EmptyDataDecls, ExistentialQuantification
 
-  extra-libraries:     crypt pcre
+  if !os(darwin)
+    extra-libraries:   crypt
+  extra-libraries:     pcre
+
   includes:            unistd.h pcre.h
 
-  build-depends:       base ==4.5.*,
-                       text ==0.11.*,
-                       stm ==2.3.*,
-                       mtl ==2.1.*,
-                       bytestring ==0.9.*,
-                       containers ==0.4.*,
-                       time ==1.4.*,
-                       unix ==2.5.*,
-                       random ==1.0.*,
-                       vector ==0.10.*,
-                       parsec ==3.1.*,
-                       old-locale ==1.0.*,
-                       network ==2.3.*,
-                       unordered-containers ==0.2.*,
-                       pureMD5 ==2.1.*,
-                       array ==0.4.*,
-                       haskeline ==0.7.*,
-                       transformers ==0.3.*
+  build-depends:       array
+                     , base ==4.*
+                     , bytestring
+                     , containers >= 0.4
+                     , haskeline
+                     , mtl
+                     , network
+                     , old-locale
+                     , parsec
+                     , random
+                     , stm
+                     , text
+                     , time
+                     , unix
+                     , unordered-containers
+                     , pureMD5
+                     , transformers
+                     , vector
 
   build-tools:         hsc2hs
 
