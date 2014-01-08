@@ -1,42 +1,64 @@
 
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP, OverloadedStrings #-}
 
-module MOO.Types ( IntT
-                 , FltT
-                 , StrT
-                 , ObjT
-                 , ErrT
-                 , LstT
-                 , ObjId
-                 , Id
-                 , Type(..)
-                 , Value(..)
-                 , Error(..)
-                 , Sizeable(..)
-                 , nothing
-                 , fromInt
-                 , fromFlt
-                 , fromStr
-                 , fromObj
-                 , fromErr
-                 , fromLst
-                 , equal
-                 , truthOf
-                 , truthValue
-                 , typeOf
-                 , typeCode
-                 , toText
-                 , toLiteral
-                 , error2text
-                 , text2binary
-                 , validStrChar
-                 , fromList
-                 , fromListBy
-                 , stringList
-                 , objectList
-                 , listSet
-                 , endOfTime
-                 ) where
+-- | Basic data types used throughout the MOO server code
+module MOO.Types (
+
+  -- * Haskell Types Representing MOO Values
+    IntT
+  , FltT
+  , StrT
+  , ObjT
+  , ErrT
+  , LstT
+
+  , ObjId
+  , Id
+
+  -- * MOO Type and Value Reification
+  , Type(..)
+  , Value(..)
+  , Error(..)
+
+  , nothing
+
+  -- * Type and Value Functions
+  , fromInt
+  , fromFlt
+  , fromStr
+  , fromObj
+  , fromErr
+  , fromLst
+
+  , equal
+  , truthOf
+  , truthValue
+  , typeOf
+
+  , typeCode
+
+  , toText
+  , toLiteral
+  , error2text
+
+  , text2binary
+
+  -- * List Convenience Functions
+  , fromList
+  , fromListBy
+  , stringList
+  , objectList
+
+  , listSet
+
+  -- * Miscellaneous
+  , validStrChar
+  , endOfTime
+
+  -- * Estimating Haskell Storage Sizes
+  , Sizeable(..)
+
+  ) where
 
 import Control.Concurrent (ThreadId)
 import Data.Char (isAscii, isPrint, isDigit)
@@ -55,7 +77,15 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
 
+-- | The 'Sizeable' class is used to estimate the storage requirements of
+-- various values, for use by several built-in functions which are supposed to
+-- return the byte sizes of certain internal structures.
+--
+-- The sizes calculated by instances of this class are necessarily
+-- approximate, since it may be difficult or impossible to measure them
+-- precisely in the Haskell runtime environment.
 class Sizeable t where
+  -- | Return the estimated storage size of the given value, in bytes.
   storageBytes :: t -> Int
 
 instance Sizeable () where
@@ -107,21 +137,23 @@ instance Sizeable ThreadId where
   storageBytes _ = storageBytes ()
 
 type IntT = Int32
-type FltT = Double
-type StrT = Text
-type ObjT = Int
-type ErrT = Error
-type LstT = Vector Value
+                          -- ^ MOO integer
+type FltT = Double        -- ^ MOO floating-point number
+type StrT = Text          -- ^ MOO string
+type ObjT = Int           -- ^ MOO object number
+type ErrT = Error         -- ^ MOO error
+type LstT = Vector Value  -- ^ MOO list
 
-type ObjId = ObjT
-type Id    = StrT
+type ObjId = ObjT         -- ^ MOO object number
+type Id    = StrT         -- ^ MOO identifier (string)
 
-data Value = Int !IntT
-           | Flt !FltT
-           | Str !StrT
-           | Obj !ObjT
-           | Err !ErrT
-           | Lst !LstT
+-- | A 'Value' represents any MOO value.
+data Value = Int !IntT  -- ^ integer
+           | Flt !FltT  -- ^ floating-point number
+           | Str !StrT  -- ^ string
+           | Obj !ObjT  -- ^ object number
+           | Err !ErrT  -- ^ error
+           | Lst !LstT  -- ^ list
            deriving Show
 
 instance Sizeable Value where
@@ -134,6 +166,7 @@ instance Sizeable Value where
     Lst x -> box + storageBytes x
     where box = storageBytes ()
 
+-- | The default false value (zero)
 nothing :: Value
 nothing = truthValue False
 
@@ -165,7 +198,7 @@ instance Eq Value where
   (Lst a) == (Lst b) = a == b
   _       == _       = False
 
--- Case-sensitive equality
+-- | Test two MOO values for indistinguishable (case-sensitive) equality.
 equal :: Value -> Value -> Bool
 (Str a) `equal` (Str b) = a == b
 (Lst a) `equal` (Lst b) = V.length a == V.length b &&
@@ -181,37 +214,40 @@ instance Ord Value where
   (Err a) `compare` (Err b) = a `compare` b
   _       `compare` _       = error "Illegal comparison"
 
-data Type = TAny
-          | TNum
-          | TInt
-          | TFlt
-          | TStr
-          | TObj
-          | TErr
-          | TLst
+-- | A 'Type' represents one or more MOO value types.
+data Type = TAny  -- ^ any type
+          | TNum  -- ^ integer or floating-point number
+          | TInt  -- ^ integer
+          | TFlt  -- ^ floating-point number
+          | TStr  -- ^ string
+          | TObj  -- ^ object number
+          | TErr  -- ^ error
+          | TLst  -- ^ list
           deriving (Eq, Show)
 
-data Error = E_NONE
-           | E_TYPE
-           | E_DIV
-           | E_PERM
-           | E_PROPNF
-           | E_VERBNF
-           | E_VARNF
-           | E_INVIND
-           | E_RECMOVE
-           | E_MAXREC
-           | E_RANGE
-           | E_ARGS
-           | E_NACC
-           | E_INVARG
-           | E_QUOTA
-           | E_FLOAT
+-- | A MOO error
+data Error = E_NONE     -- ^ No error
+           | E_TYPE     -- ^ Type mismatch
+           | E_DIV      -- ^ Division by zero
+           | E_PERM     -- ^ Permission denied
+           | E_PROPNF   -- ^ Property not found
+           | E_VERBNF   -- ^ Verb not found
+           | E_VARNF    -- ^ Variable not found
+           | E_INVIND   -- ^ Invalid indirection
+           | E_RECMOVE  -- ^ Recursive move
+           | E_MAXREC   -- ^ Too many verb calls
+           | E_RANGE    -- ^ Range error
+           | E_ARGS     -- ^ Incorrect number of arguments
+           | E_NACC     -- ^ Move refused by destination
+           | E_INVARG   -- ^ Invalid argument
+           | E_QUOTA    -- ^ Resource limit exceeded
+           | E_FLOAT    -- ^ Floating-point arithmetic error
            deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Sizeable Error where
   storageBytes _ = storageBytes ()
 
+-- | Is the given MOO value considered to be /true/ or /false/?
 truthOf :: Value -> Bool
 truthOf (Int x) = x /= 0
 truthOf (Flt x) = x /= 0.0
@@ -219,10 +255,12 @@ truthOf (Str t) = not (T.null t)
 truthOf (Lst v) = not (V.null v)
 truthOf _       = False
 
+-- | Return a default MOO value (integer) having the given boolean value.
 truthValue :: Bool -> Value
 truthValue False = Int 0
 truthValue True  = Int 1
 
+-- | Return a 'Type' indicating the type of the given value.
 typeOf :: Value -> Type
 typeOf Int{} = TInt
 typeOf Flt{} = TFlt
@@ -231,6 +269,9 @@ typeOf Obj{} = TObj
 typeOf Err{} = TErr
 typeOf Lst{} = TLst
 
+-- | Return an integer code corresponding to the given type. These codes are
+-- visible to MOO code via the @typeof()@ built-in function and various
+-- predefined variables.
 typeCode :: Type -> IntT
 typeCode TNum = -2
 typeCode TAny = -1
@@ -241,6 +282,8 @@ typeCode TErr =  3
 typeCode TLst =  4
 typeCode TFlt =  9
 
+-- | Return a string representation of the given MOO value, using the same
+-- rules as the @tostr()@ built-in function.
 toText :: Value -> Text
 toText (Int x) = T.pack $ show x
 toText (Flt x) = T.pack $ show x
@@ -249,6 +292,8 @@ toText (Obj x) = T.pack $ '#' : show x
 toText (Err x) = error2text x
 toText (Lst _) = "{list}"
 
+-- | Return a literal representation of the given MOO value, using the same
+-- rules as the @toliteral()@ built-in function.
 toLiteral :: Value -> Text
 toLiteral (Lst vs) = T.concat
                      [ "{"
@@ -261,6 +306,7 @@ toLiteral (Str x) = T.concat ["\"", T.concatMap escape x, "\""]
 toLiteral (Err x) = T.pack $ show x
 toLiteral v = toText v
 
+-- | Return a string description of the given error value.
 error2text :: Error -> Text
 error2text E_NONE    = "No error"
 error2text E_TYPE    = "Type mismatch"
@@ -279,6 +325,8 @@ error2text E_INVARG  = "Invalid argument"
 error2text E_QUOTA   = "Resource limit exceeded"
 error2text E_FLOAT   = "Floating-point arithmetic error"
 
+-- | Parse a MOO /binary string/ and return the corresponding byte values, or
+-- 'Nothing' if the string is improperly formatted.
 text2binary :: Text -> Maybe [Word8]
 text2binary = translate . T.unpack
   where translate ('~':x:y:rs) = do
@@ -300,6 +348,7 @@ text2binary = translate . T.unpack
           | otherwise            = Nothing
           where distance c0 c1 = fromIntegral $ fromEnum c1 - fromEnum c0
 
+-- | May the given character appear in a valid MOO string?
 validStrChar :: Char -> Bool
 validStrChar c = isAscii c && (isPrint c || c == '\t')
 

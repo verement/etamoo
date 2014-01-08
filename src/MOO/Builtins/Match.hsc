@@ -1,12 +1,18 @@
 
 {-# LANGUAGE ForeignFunctionInterface, EmptyDataDecls #-}
 
-module MOO.Builtins.Match ( Regexp
-                          , MatchResult(..)
-                          , newRegexp
-                          , match
-                          , rmatch
-                          ) where
+-- | Regular expression matching via PCRE through the FFI
+module MOO.Builtins.Match (
+    Regexp
+  , MatchResult(..)
+
+  -- ** Compiling
+  , newRegexp
+
+  -- ** Matching
+  , match
+  , rmatch
+  ) where
 
 import Foreign hiding (unsafePerformIO)
 import Foreign.C
@@ -78,15 +84,14 @@ data RewriteState = StateBase
 
 {-# ANN translate ("HLint: ignore Use list literal" :: String) #-}
 
+-- | Translate MOO regular expression syntax into PCRE syntax.
+--
+-- Aside from changing % to \ and sundry tweaks we also address an
+-- incompatibility between MOO %b, %B, %w, %W and PCRE \b, \B, \w, \W --
+-- namely, the inclusion of _ in \w and its absence in %w.
 translate :: Text -> Text
 translate = T.pack . concat . rewrite . T.unpack
   where
-    -- Translate MOO regular expression syntax into PCRE syntax
-    --
-    -- Aside from changing % to \ and sundry tweaks we also address an
-    -- incompatibility between MOO %b, %B, %w, %W and PCRE \b, \B, \w,
-    -- \W -- namely, the inclusion of _ in \w and its absence in %w.
-
     -- wrap entire expression so we can add a callout at the end
     rewrite s = "(?:" : rewrite' StateBase s
 
@@ -143,6 +148,10 @@ translate = T.pack . concat . rewrite . T.unpack
     wordBegin  = alt "^" (lbehind nonword) ++ lahead word
     wordEnd    = lbehind word ++ alt "$" (lahead nonword)
 
+-- | @newRegexp@ /regexp/ /case-matters/ compiles a regular expression pattern
+-- /regexp/ into a 'Regexp' value, or returns an error description if the
+-- pattern is malformed. The returned 'CInt' is a byte offset into an
+-- internally translated pattern, and thus is probably not very useful.
 newRegexp :: Text -> Bool -> IO (Either (String, CInt) Regexp)
 newRegexp regexp caseMatters =
   useAsCString (encodeUtf8 $ translate regexp) $ \pattern ->

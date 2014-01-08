@@ -122,21 +122,29 @@ import MOO.Object
 import MOO.Verb
 import MOO.Command
 
+-- | This is the basic MOO monad transformer stack. A computation of type
+-- @'MOO' a@ is an 'STM' transaction that returns a value of type @a@ within
+-- an environment that supports state, continuations, and local modification.
 type MOO = ReaderT Environment
            (ContT TaskDisposition
             (StateT TaskState STM))
 
+-- | Lift an 'STM' transaction into the 'MOO' monad.
 liftSTM :: STM a -> MOO a
 liftSTM = lift . lift . lift
 
+-- | The known universe, as far as the MOO server is concerned
 data World = World {
-    database         :: Database
-  , tasks            :: Map TaskId Task
+    database         :: Database                 -- ^ The database of objects
+  , tasks            :: Map TaskId Task          -- ^ Queued and running tasks
 
-  , listeners        :: Map PortNumber Listener
-  , connections      :: Map ObjId Connection
+  , listeners        :: Map PortNumber Listener  -- ^ Network listening points
+  , connections      :: Map ObjId Connection     -- ^ Network connections
 
-  , nextConnectionId :: ObjId
+  , nextConnectionId :: ObjId                    -- ^ The (negative) object
+                                                 -- number to be assigned to
+                                                 -- the next inbound or
+                                                 -- outbound connection
   }
 
 initWorld = World {
@@ -149,6 +157,7 @@ initWorld = World {
   , nextConnectionId = -1
   }
 
+-- | A structure representing a queued or running task
 data Task = Task {
     taskId          :: TaskId
   , taskStatus      :: TaskStatus
@@ -197,11 +206,16 @@ instance Ord Task where
 
 type TaskId = Int
 
+-- | Generate and return a (random) 'TaskId' not currently in use by any
+-- existing task.
 newTaskId :: World -> StdGen -> STM TaskId
 newTaskId world gen =
   return $ fromJust $ find unused $ randomRs (1, maxBound) gen
   where unused taskId = M.notMember taskId (tasks world)
 
+-- | Create a pending 'Task' for the given computation on behalf of the given
+-- player. A new 'TaskId' is reserved for the task and the task is added to
+-- the 'World'. (The task will not actually run until passed to 'runTask'.)
 newTask :: TVar World -> ObjId -> MOO Value -> IO Task
 newTask world' player comp = do
   gen <- newStdGen
@@ -227,6 +241,7 @@ newTask world' player comp = do
 taskOwner :: Task -> ObjId
 taskOwner = permissions . activeFrame
 
+-- | The running state of a task
 data TaskStatus = Pending | Running | Forked | Suspended Wake | Reading
                 deriving Show
 
@@ -247,11 +262,13 @@ instance Sizeable TaskStatus where
   storageBytes (Suspended _) = 2 * storageBytes ()
   storageBytes _             =     storageBytes ()
 
+-- | A function to call in order to wake a suspended task
 newtype Wake = Wake (Value -> IO ())
 
 instance Show Wake where
   show _ = "Wake{..}"
 
+-- | The intermediate or final result of a running task
 data TaskDisposition = Complete Value
                      | Suspend (Maybe Integer)    (Resume ())
                      | Read     ObjId             (Resume Value)
@@ -260,8 +277,10 @@ data TaskDisposition = Complete Value
                      | Timeout  Resource  CallStack
                      | Suicide
 
+-- | A continuation to resume the execution of a task where it left off
 newtype Resume a = Resume (a -> MOO Value)
 
+-- | Task resource limits
 data Resource = Ticks | Seconds
 
 showResource :: Resource -> Text
@@ -295,6 +314,10 @@ stepTaskWithIO task = do
       stepTaskWithIO task' { taskComputation = resume result }
     _ -> return (disposition, task')
 
+-- | Run a task in a new Haskell thread, returning either the value produced
+-- by the task, or 'Nothing' if the task suspends or aborts before producing a
+-- value. If the task suspends, it may continue running after this function
+-- returns. After the task is finished, it is removed from the task queue.
 runTask :: Task -> IO (Maybe Value)
 runTask task = do
   resultMVar <- newEmptyMVar
@@ -390,6 +413,10 @@ runTask task = do
                   where informPlayer :: [Text] -> IO ()
                         informPlayer = mapM_ (putStrLn . T.unpack)  -- XXX
 
+-- | Create and queue a task to run the given computation after the given
+-- microsecond delay. 'E_INVARG' may be raised if the delay is out of
+-- acceptable range. (The given 'TaskId' should have been reserved by a call
+-- to 'newTaskId'.)
 forkTask :: TaskId -> Integer -> MOO Value -> MOO ()
 forkTask taskId usecs code = do
   state <- get
@@ -440,27 +467,46 @@ forkTask taskId usecs code = do
                     tasks world }
   liftSTM $ putTMVar startSignal ()
 
+-- | A continuation for returning to the task dispatcher to handle an
+-- interrupt request. Note that calling this continuation implies a commit to
+-- the current task's transaction.
 newtype InterruptHandler = Interrupt (TaskDisposition -> MOO TaskDisposition)
 
+-- | Commit the current task's transaction, and return to the task dispatcher
+-- with an interrupt request. The task dispatcher may resume execution of the
+-- task later if the request is one which supplies an appropriate
+-- continuation.
 interrupt :: TaskDisposition -> MOO a
 interrupt disp = do
   Interrupt handler <- asks interruptHandler
   handler disp
   error "Returned from interrupt handler"
 
+-- | An 'IO' computation to be performed after the current task commits its
+-- 'STM' transaction
 newtype DelayedIO = DelayedIO { runDelayed :: IO () }
 
 instance Monoid DelayedIO where
   mempty = DelayedIO $ return ()
   DelayedIO a `mappend` DelayedIO b = DelayedIO (a >> b)
 
+-- | Interrupt the current task to perform the given IO computation, and
+-- return the result. Note this implies a commit of the task's 'STM'
+-- transaction.
 requestIO :: IO a -> MOO a
 requestIO io = callCC $ interrupt . RequestIO io . Resume
 
+-- | Perform the given IO computation after the current task commits its 'STM'
+-- transaction.
+--
+-- Since IO can't be performed within a transaction, this is a simple
+-- alternative when the value returned by the IO isn't needed.
 delayIO :: IO () -> MOO ()
 delayIO io = modify $ \state ->
   state { delayedIO = delayedIO state `mappend` DelayedIO io }
 
+-- | A 'Reader' environment for state that either doesn't change, or can be
+-- locally modified for subcomputations
 data Environment = Env {
     task             :: Task
   , interruptHandler :: InterruptHandler
@@ -476,6 +522,7 @@ initEnvironment task = Env {
   , indexLength      = error "Invalid index context"
   }
 
+-- | A 'State' structure for data that may normally change during computation
 data TaskState = State {
     ticksLeft :: Int
   , stack     :: CallStack
@@ -822,12 +869,14 @@ setBuiltinProperty (oid, obj) "f" bit = do
     return obj { objectPermF = truthOf bit }
 setBuiltinProperty _ _ _ = raise E_TYPE
 
+-- | The stack of verb and/or built-in function frames
 newtype CallStack = Stack [StackFrame]
                   deriving Show
 
 instance Sizeable CallStack where
   storageBytes (Stack stack) = storageBytes stack
 
+-- | A local continuation for loop constructs
 newtype Continuation = Continuation (Value -> MOO Value)
 
 instance Sizeable Continuation where
@@ -836,6 +885,8 @@ instance Sizeable Continuation where
 instance Show Continuation where
   show _ = "<Continuation>"
 
+-- | A structure describing a (possibly nested) context for the current frame,
+-- used to manage loop break/continue and try/finally interactions
 data Context =
   Loop {
     loopName     :: Maybe Id
@@ -860,6 +911,7 @@ instance Show Context where
 
   show TryFinally{} = "<TryFinally>"
 
+-- | The data tracked for each verb and/or built-in function call
 data StackFrame = Frame {
     depthLeft     :: Int
 
@@ -1020,6 +1072,7 @@ continueLoop maybeName = do
   Loop { loopContinue = Continuation continue } <- unwindLoopContext maybeName
   continue nothing
 
+-- | The default collection of verb variables
 initVariables :: Map Id Value
 initVariables = M.fromList $ [
     ("player" , Obj (-1))
@@ -1047,6 +1100,7 @@ initVariables = M.fromList $ [
           , ("ERR"  , Int $ typeCode TErr)
           ]
 
+-- | Create a variable block for a verb by overriding the default.
 mkVariables :: [(Id, Value)] -> Map Id Value
 mkVariables = foldr (uncurry M.insert) initVariables
 
@@ -1055,64 +1109,89 @@ newtype ExceptionHandler = Handler (Exception -> CallStack -> MOO Value)
 instance Show ExceptionHandler where
   show _ = "<ExceptionHandler>"
 
+-- | A MOO exception
 data Exception = Exception Code Message Value
 type Code = Value
 type Message = StrT
 
+-- | Install a local exception handler for the duration of the passed
+-- computation.
 catchException :: MOO a -> (Exception -> CallStack -> MOO a) -> MOO a
 catchException action handler = callCC $ \k -> local (mkHandler k) action
   where mkHandler k env = env { exceptionHandler = Handler $ \e cs ->
                                  local (const env) $ handler e cs >>= k }
 
+-- | Re-raise an exception to the next enclosing handler.
 passException :: Exception -> CallStack -> MOO a
 passException except callStack = do
   Handler handler <- asks exceptionHandler
   handler except callStack
   error "Returned from exception handler"
 
+-- | Abort execution of the current computation and call the closest enclosing
+-- exception handler.
 raiseException :: Exception -> MOO a
 raiseException except = passException except =<< gets stack
 
+-- | Placeholder for features not yet implemented
 notyet :: String -> MOO a
 notyet what = raiseException $
               Exception (Err E_QUOTA) "Not yet implemented" (Str $ T.pack what)
 
+-- | Create and raise an exception for the given MOO error.
 raise :: Error -> MOO a
 raise err = raiseException $ Exception (Err err) (error2text err) nothing
 
+-- | Verify that the given floating point number is neither infinite nor NaN,
+-- raising 'E_FLOAT' or 'E_INVARG' respectively if so. Also, return the
+-- corresponding MOO value.
 checkFloat :: FltT -> MOO Value
 checkFloat flt
   | isInfinite flt = raise E_FLOAT
   | isNaN      flt = raise E_INVARG
   | otherwise      = return (Flt flt)
 
+-- | Verify that the given object has a programmer bit, raising 'E_PERM' if
+-- not.
 checkProgrammer' :: ObjId -> MOO ()
 checkProgrammer' perm = do
   programmer <- maybe False objectProgrammer `liftM` getObject perm
   unless programmer $ raise E_PERM
 
+-- | Verify that the current task permissions have programmer privileges,
+-- raising 'E_PERM' if not.
 checkProgrammer :: MOO ()
 checkProgrammer = checkProgrammer' =<< frame permissions
 
+-- | Determine whether the given object has its wizard bit set.
 isWizard :: ObjId -> MOO Bool
 isWizard = liftM (maybe False objectWizard) . getObject
 
+-- | Verify that the given object is a wizard, raising 'E_PERM' if not.
 checkWizard' :: ObjId -> MOO ()
 checkWizard' perm = do
   wizard <- isWizard perm
   unless wizard $ raise E_PERM
 
+-- | Verify that the current task permissions have wizard privileges, raising
+-- 'E_PERM' if not.
 checkWizard :: MOO ()
 checkWizard = checkWizard' =<< frame permissions
 
+-- | Verify that the current task permissions either have wizard privileges or
+-- are the same as the given object, raising 'E_PERM' if not.
 checkPermission :: ObjId -> MOO ()
 checkPermission who = do
   perm <- frame permissions
   unless (perm == who) $ checkWizard' perm
 
+-- | Verify that the given object is valid, raising 'E_INVARG' if not. Also,
+-- return the referenced object.
 checkValid :: ObjId -> MOO Object
 checkValid = getObject >=> maybe (raise E_INVARG) return
 
+-- | Verify that the given object is fertile for the current task permissions,
+-- raising 'E_PERM' if not.
 checkFertile :: ObjId -> MOO ()
 checkFertile oid = do
   maybeObj <- getObject oid
@@ -1120,21 +1199,29 @@ checkFertile oid = do
     Nothing  -> raise E_PERM
     Just obj -> unless (objectPermF obj) $ checkPermission (objectOwner obj)
 
+-- | Translate a MOO /binary string/ into a Haskell 'ByteString', raising
+-- 'E_INVARG' if the MOO string is improperly formatted.
 binaryString :: StrT -> MOO ByteString
 binaryString = maybe (raise E_INVARG) (return . BS.pack) . text2binary
 
+-- | Generate and return a pseudorandom number in the given range, modifying
+-- the local generator state.
 random :: (Random a) => (a, a) -> MOO a
 random range = do
   (r, gen) <- randomR range `liftM` gets randomGen
   modify $ \state -> state { randomGen = gen }
   return r
 
+-- | Split the local random number generator state in two, updating the local
+-- state with one of them and returning the other.
 newRandomGen :: MOO StdGen
 newRandomGen = do
   (gen, gen') <- split `liftM` gets randomGen
   modify $ \state -> state { randomGen = gen }
   return gen'
 
+-- | Generate traceback lines for an exception, suitable for displaying to a
+-- user.
 formatTraceback :: Exception -> CallStack -> [Text]
 formatTraceback (Exception _ message _) (Stack frames) =
   T.splitOn "\n" $ execWriter (traceback frames)

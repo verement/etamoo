@@ -31,11 +31,15 @@ import MOO.Builtins.Tasks   as Tasks
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
+-- | A 'Map' of all built-in functions, keyed by name
 builtinFunctions :: Map Id (Builtin, Info)
 builtinFunctions =
   M.fromList $ miscBuiltins ++
   Values.builtins ++ Objects.builtins ++ Network.builtins ++ Tasks.builtins
 
+-- | Call the named built-in function with the given arguments, checking first
+-- for the appropriate number and types of arguments. Raise 'E_INVARG' if the
+-- built-in function is unknown.
 callBuiltin :: Id -> [Value] -> MOO Value
 callBuiltin func args = case M.lookup func builtinFunctions of
   Just (bf, info) -> checkArgs info args >> bf args
@@ -58,8 +62,13 @@ callBuiltin func args = case M.lookup func builtinFunctions of
         typeMismatch TNum TFlt          = False
         typeMismatch _    _             = True
 
--- Internal consistency verification
-
+-- | Perform internal consistency verification of all the built-in functions,
+-- checking that each implementation actually accepts the claimed argument
+-- types. Note that an inconsistency may cause the program to abort.
+--
+-- Assuming the program doesn't abort, this generates either a string
+-- describing an inconsistency, or an integer giving the total number of
+-- (verified) built-in functions.
 verifyBuiltins :: Either String Int
 verifyBuiltins = foldM accum 0 $ M.assocs builtinFunctions
   where accum a b = valid b >>= Right . (+ a)

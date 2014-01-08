@@ -38,8 +38,8 @@ hlint.html: $(HS_SOURCES) $(BUILT_SOURCES)
 
 $(DOCS): $(CABAL) $(SOURCES) Makefile
 	@cabal haddock --builddir=dist  \
-		--haddock-options="--title=EtaMOO --ignore-all-exports"  \
-		--executables --internal --hyperlink-source
+		--haddock-options="--title=EtaMOO --no-warnings"  \
+		--executables --hyperlink-source
 
 docs: FORCE $(DOCS)
 

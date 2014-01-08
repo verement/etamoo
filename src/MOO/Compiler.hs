@@ -1,6 +1,7 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | Compiling abstract syntax trees into 'MOO' computations
 module MOO.Compiler ( compile, evaluate ) where
 
 import Control.Monad (when, unless, void, liftM)
@@ -18,6 +19,8 @@ import MOO.Task
 import MOO.Builtins
 import MOO.Object
 
+-- | Compile a complete MOO program into a computation in the 'MOO' monad that
+-- returns whatever the MOO program returns.
 compile :: Program -> MOO Value
 compile (Program stmts) = callCC $ compileStatements stmts
 
@@ -189,6 +192,9 @@ catchDebug action =
     debug <- frame debugBit
     if debug then passException except callStack else return code
 
+-- | Compile a MOO expression into a computation in the 'MOO' monad. If a MOO
+-- exception is raised and the current verb frame's debug bit is not set,
+-- return the error code as a MOO value rather than propagating the exception.
 evaluate :: Expr -> MOO Value
 evaluate (Literal value) = return value
 evaluate expr@Variable{} = catchDebug $ fetch (lValue expr)

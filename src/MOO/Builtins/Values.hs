@@ -30,8 +30,7 @@ import MOO.Builtins.Match
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
--- 4.4.2 Manipulating MOO Values
-
+-- | § 4.4.2 Manipulating MOO Values
 builtins :: [BuiltinSpec]
 builtins = [
     ("typeof"        , (bf_typeof        , Info 1 (Just 1) [TAny]       TInt))
@@ -99,7 +98,7 @@ builtins = [
   , ("setremove"     , (bf_setremove     , Info 2 (Just 2) [TLst, TAny] TLst))
   ]
 
--- 4.4.2.1 General Operations Applicable to all Values
+-- § 4.4.2.1 General Operations Applicable to all Values
 
 bf_typeof [value] = return $ Int $ typeCode $ typeOf value
 
@@ -149,7 +148,7 @@ bf_value_hash [value] = do
   literal <- bf_toliteral [value]
   bf_string_hash [literal]
 
--- 4.4.2.2 Operations on Numbers
+-- § 4.4.2.2 Operations on Numbers
 
 bf_random optional
   | mod <= 0  = raise E_INVARG
@@ -210,7 +209,7 @@ bf_trunc [Flt x]
   | x < 0     = checkFloat $ fromIntegral (ceiling x :: Integer)
   | otherwise = checkFloat $ fromIntegral (floor   x :: Integer)
 
--- 4.4.2.3 Operations on Strings
+-- § 4.4.2.3 Operations on Strings
 
 bf_length [Str string] = return $ Int $ fromIntegral $ T.length string
 bf_length [Lst list]   = return $ Int $ fromIntegral $ V.length list
@@ -414,7 +413,7 @@ bf_string_hash [Str text] = return $ hash $ encodeUtf8 text
 
 bf_binary_hash [Str bin_string] = hash `liftM` binaryString bin_string
 
--- 4.4.2.4 Operations on Lists
+-- § 4.4.2.4 Operations on Lists
 
 -- bf_length already defined above
 

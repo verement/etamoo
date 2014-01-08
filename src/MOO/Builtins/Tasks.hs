@@ -29,8 +29,7 @@ import qualified Data.Text as T
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
--- 4.4.6 MOO-Code Evaluation and Task Manipulation
-
+-- | § 4.4.6 MOO-Code Evaluation and Task Manipulation
 builtins :: [BuiltinSpec]
 builtins = [
     ("raise"         , (bf_raise         , Info 1 (Just 3) [TAny, TStr,

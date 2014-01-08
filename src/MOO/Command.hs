@@ -1,11 +1,20 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Command ( Command(..)
-                   , parseWords
-                   , parseCommand
-                   , runCommand
-                   ) where
+-- | MOO command parsing and execution
+module MOO.Command (
+
+  -- * Data Structures
+    Command(..)
+
+  -- * Parsing Typed Commands
+  , parseWords
+  , parseCommand
+
+  -- * Executing MOO Code
+  , runCommand
+
+  ) where
 
 import Control.Monad (liftM, void, foldM, join)
 import Data.Char (isSpace, isDigit)
@@ -73,6 +82,7 @@ matchPrep = matchPrep' id prepPhrases
         matchPrep' dobj [] (arg:args) =
           matchPrep' (dobj . (arg :)) prepPhrases args
 
+-- | A structure describing a player's parsed command
 data Command = Command {
     commandVerb     :: Text
   , commandArgs     :: [Text]
@@ -83,10 +93,14 @@ data Command = Command {
   , commandIObjStr  :: Text
   } deriving Show
 
+-- | Split a typed command into words according to the MOO rules for quoting
+-- and escaping.
 parseWords :: Text -> [Text]
 parseWords argstr = args
   where Right args = parse commandWords "" argstr
 
+-- | Return a 'Command' value describing the arguments of a typed command as
+-- parsed into verb, preposition, direct and indirect object, etc.
 parseCommand :: Text -> Command
 parseCommand cmd = Command verb args argstr dobjstr prepSpec prepstr iobjstr
   where Right (verb, argstr) = parse command "" cmd
@@ -172,6 +186,9 @@ instance Monoid Match where
   _       `mappend` ExactMatch = ExactMatch
   match   `mappend` _          = match
 
+-- | Execute a typed command by locating and calling an appropriate MOO verb
+-- for the current player, matching @dobj@ and @iobj@ objects against the
+-- strings in the typed command.
 runCommand :: Command -> MOO Value
 runCommand command = do
   player <- getPlayer

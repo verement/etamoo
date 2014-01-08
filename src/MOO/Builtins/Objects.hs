@@ -28,8 +28,7 @@ import MOO.AST
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
--- 4.4.3 Manipulating Objects
-
+-- | § 4.4.3 Manipulating Objects
 builtins :: [BuiltinSpec]
 builtins = [
     ("create"        , (bf_create        , Info 1 (Just 2) [TObj, TObj] TObj))
@@ -77,7 +76,7 @@ builtins = [
                       (bf_set_player_flag, Info 2 (Just 2) [TObj, TAny] TAny))
   ]
 
--- 4.4.3.1 Fundamental Operations on Objects
+-- § 4.4.3.1 Fundamental Operations on Objects
 
 bf_create (Obj parent : optional) = do
   maybeParent <- case parent of
@@ -157,7 +156,7 @@ bf_object_bytes [Obj object] = do
 
 bf_max_object [] = (Obj . maxObject) `liftM` getDatabase
 
--- 4.4.3.2 Object Movement
+-- § 4.4.3.2 Object Movement
 
 bf_move [Obj what, Obj where_] = do
   what' <- checkValid what
@@ -220,7 +219,7 @@ bf_move [Obj what, Obj where_] = do
             Just oid -> checkRecurse what oid
             Nothing  -> return ()
 
--- 4.4.3.3 Operations on Properties
+-- § 4.4.3.3 Operations on Properties
 
 bf_properties [Obj object] = do
   obj <- checkValid object
@@ -390,7 +389,7 @@ bf_clear_property [Obj object, Str prop_name] = do
 
       return nothing
 
--- 4.4.3.4 Operations on Verbs
+-- § 4.4.3.4 Operations on Verbs
 
 bf_verbs [Obj object] = do
   obj <- checkValid object
@@ -567,7 +566,7 @@ bf_disassemble [Obj object, verb_desc] = do
   let Program statements = verbProgram verb
   return $ fromListBy (Str . T.pack . show) statements
 
--- 4.4.3.5 Operations on Player Objects
+-- § 4.4.3.5 Operations on Player Objects
 
 bf_players [] = (objectList . allPlayers) `liftM` getDatabase
 

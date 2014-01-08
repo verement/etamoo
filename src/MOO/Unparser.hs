@@ -1,6 +1,8 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | Recovering MOO code from an abstract syntax tree for the @verb_code()@
+-- built-in function
 module MOO.Unparser ( unparse ) where
 
 import Control.Monad.Reader
@@ -30,6 +32,15 @@ initUnparserEnv = UnparserEnv {
   , indentation         = ""
 }
 
+-- | @unparse@ /fully-paren/ /indent/ /program/ synthesizes the MOO code
+-- corresponding to the given abstract syntax tree. If /fully-paren/ is true,
+-- all expressions are fully parenthesized, even when unnecessary given the
+-- circumstances of precedence. If /indent/ is true, the resulting MOO code
+-- will be indented with spaces as appropriate to show the nesting structure
+-- of statements.
+--
+-- The MOO code is returned as a single 'Text' value containing embedded
+-- newline characters.
 unparse :: Bool -> Bool -> Program -> Text
 unparse fullyParen indent (Program stmts) =
   execWriter $ runReaderT (tellStatements stmts) $ initUnparserEnv {

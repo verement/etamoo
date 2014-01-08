@@ -1,19 +1,26 @@
 
-module MOO.AST ( Program(..)
-               , Statement(..)
-               , Then(..)
-               , ElseIf(..)
-               , Else(..)
-               , Except(..)
-               , Finally(..)
-               , Expr(..)
-               , Codes(..)
-               , Default(..)
-               , Arg(..)
-               , ScatItem(..)
-               , isLValue
-               , precedence
-               ) where
+-- | Data structures representing an abstract syntax tree for MOO code
+module MOO.AST (
+
+  -- * Data Structures
+    Program(..)
+  , Statement(..)
+  , Then(..)
+  , ElseIf(..)
+  , Else(..)
+  , Except(..)
+  , Finally(..)
+  , Expr(..)
+  , Codes(..)
+  , Default(..)
+  , Arg(..)
+  , ScatItem(..)
+
+  -- * Utility Functions
+  , isLValue
+  , precedence
+
+  ) where
 
 import MOO.Types
 
@@ -191,6 +198,7 @@ instance Sizeable ScatItem where
     storageBytes () + storageBytes var + storageBytes expr
   storageBytes (ScatRest     var) = storageBytes () + storageBytes var
 
+-- | Can the given expression be used on the left-hand side of an assignment?
 isLValue :: Expr -> Bool
 isLValue (Range e _)  = isLValue' e
 isLValue e            = isLValue' e
@@ -201,6 +209,9 @@ isLValue' PropRef{}   = True
 isLValue' (Index e _) = isLValue' e
 isLValue' _           = False
 
+-- | Return a precedence value for the given expression, needed by
+-- "MOO.Unparser" to determine whether parentheses are necessary to isolate an
+-- expression from its surrounding context.
 precedence :: Expr -> Int
 precedence expr = case expr of
   Assign{}        ->  1
