@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>EtaMOO by verement</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>EtaMOO</h1>
+        <p>A new implementation of the LambdaMOO server</p>
+
+        <p class="view"><a href="https://github.com/verement/etamoo">View the Project on GitHub <small>verement/etamoo</small></a></p>
+
+
+        <ul>
+          <li><a href="https://github.com/verement/etamoo/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/verement/etamoo/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/verement/etamoo">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h1>
+<a name="important" class="anchor" href="#important"><span class="octicon octicon-link"></span></a>Important!</h1>
+
+<p><strong>This is experimental and (currently) incomplete software. It is not yet
+usable, although with further development it is hoped that it soon will be.</strong></p>
+
+<p><em>At present, all the code will do is (optionally) load a database file and
+present a REPL interface for running commands and evaluating MOO code from the
+console as if you had connected as a wizard. While most MOO code will run
+correctly, there are still some built-in functions that are not yet
+implemented. Also, notably, there is almost no network functionality, and no
+way to save any changes made to the database. Finally, there has been no
+effort to optimize any performance bottlenecks, of which loading a database is
+at least one.</em></p>
+
+<p><em>Once the code is in at least a minimally useful state, this message will be
+updated or removed.</em></p>
+
+<h1>
+<a name="etamoo" class="anchor" href="#etamoo"><span class="octicon octicon-link"></span></a>EtaMOO</h1>
+
+<p>EtaMOO is a new implementation of the LambdaMOO server written in Haskell.</p>
+
+<p><a href="http://www.ipomoea.org/moo/">LambdaMOO</a> is a network-accessible, multi-user, programmable, interactive
+system well-suited to the construction of text-based adventure games,
+conferencing systems, and other collaborative software.</p>
+
+<p>EtaMOO differs from LambdaMOO in a few significant ways:</p>
+
+<ul>
+<li><p>EtaMOO is multi-threaded. MOO tasks run concurrently, producing network
+output and changes to the database in isolated transactions that are
+committed only when not in conflict with any other transaction. (In cases
+of conflict, transactions are automatically retried.) Separate threads are
+also used for network connection management, so for example name lookups
+do not block the entire server.</p></li>
+<li><p>In some cases, MOO values may be computed in a "lazy" manner, meaning the
+evaluation could be skipped if MOO code never fully inspects the result.
+This could be beneficial when large list structures are returned from
+built-in functions, for example.</p></li>
+<li><p>It is anticipated that EtaMOO will easily support 64-bit MOO integers
+and/or Unicode MOO strings via independent build options.</p></li>
+<li><p>EtaMOO supports IPv6.</p></li>
+</ul><p>The implementation of EtaMOO closely follows the specifications of the
+<a href="http://www.ipomoea.org/moo/#progman">LambdaMOO Programmer's Manual</a>, and should therefore be
+compatible with most LambdaMOO databases as of about version 1.8.3 of the
+LambdaMOO server code.</p>
+
+<h2>
+<a name="installing" class="anchor" href="#installing"><span class="octicon octicon-link"></span></a>Installing</h2>
+
+<p>EtaMOO is built with <a href="http://www.haskell.org/cabal/">Cabal</a>, the Haskell package manager. In the simplest
+case, simply running:</p>
+
+<pre><code>cabal install EtaMOO
+</code></pre>
+
+<p>should automatically download, build, and install the <code>etamoo</code> executable
+after doing the same for all of its Haskell dependencies.</p>
+
+<p>Cabal itself is part of the <a href="http://www.haskell.org/platform/">Haskell Platform</a> which is available for many
+distributions and platforms.</p>
+
+<p>EtaMOO has non-Haskell dependencies on two external libraries: <em>libpcre</em> (with
+UTF-8 support enabled) for regular expression matching, and, possibly,
+<em>libcrypt</em> (often part of the standard libraries) for the MOO <code>crypt()</code>
+built-in function. You may need to ensure you have these available before
+installing EtaMOO.</p>
+      </section>
+      <footer>
+        <p>This project is maintained by <a href="https://github.com/verement">verement</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    <script src="javascripts/scale.fix.js"></script>
+    
+  </body>
+</html>
