@@ -17,8 +17,8 @@ at least one._
 _Once the code is in at least a minimally useful state, this message will be
 updated or removed._
 
-EtaMOO
-======
+About
+=====
 
 EtaMOO is a new implementation of the LambdaMOO server written in Haskell.
 

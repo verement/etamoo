@@ -32,7 +32,7 @@ category:            Network
 build-type:          Simple
 cabal-version:       >=1.8
 
-homepage:            https://github.com/verement/etamoo
+homepage:            http://verement.github.io/etamoo
 bug-reports:         https://github.com/verement/etamoo/issues
 
 extra-source-files:  README.md configure Makefile
