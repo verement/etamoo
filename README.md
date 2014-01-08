@@ -72,9 +72,9 @@ distributions and platforms.
 
   [Haskell Platform]: http://www.haskell.org/platform/
 
-EtaMOO has non-Haskell dependencies on two external libraries: /libpcre/ (with
+EtaMOO has non-Haskell dependencies on two external libraries: _libpcre_ (with
 UTF-8 support enabled) for regular expression matching, and, possibly,
-/libcrypt/ (often part of the standard libraries) for the MOO `crypt()`
+_libcrypt_ (often part of the standard libraries) for the MOO `crypt()`
 built-in function. You may need to ensure you have these available before
 installing EtaMOO.
 
