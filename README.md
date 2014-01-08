@@ -78,3 +78,11 @@ _libcrypt_ (often part of the standard libraries) for the MOO `crypt()`
 built-in function. You may need to ensure you have these available before
 installing EtaMOO.
 
+Hacking
+-------
+
+[Documentation][] is available for the various types, data structures, and
+functions used internally by EtaMOO.
+
+  [Documentation]: http://verement.github.io/etamoo/doc/
+
