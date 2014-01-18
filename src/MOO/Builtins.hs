@@ -104,18 +104,18 @@ verifyBuiltins = foldM accum 0 $ M.assocs builtinFunctions
         mkArgs TErr = [Err E_NONE]
         mkArgs TLst = [Lst V.empty]
 
--- 4.4 Built-in Functions
+-- § 4.4 Built-in Functions
 
 miscBuiltins :: [BuiltinSpec]
 miscBuiltins = [
-    -- 4.4.1 Object-Oriented Programming
+    -- § 4.4.1 Object-Oriented Programming
     ("pass"          , (bf_pass          , Info 0 Nothing  []           TAny))
 
-    -- 4.4.5 Operations Involving Times and Dates
+    -- § 4.4.5 Operations Involving Times and Dates
   , ("time"          , (bf_time          , Info 0 (Just 0) []           TInt))
   , ("ctime"         , (bf_ctime         , Info 0 (Just 1) [TInt]       TStr))
 
-    -- 4.4.7 Administrative Operations
+    -- § 4.4.7 Administrative Operations
   , ("dump_database" , (bf_dump_database , Info 0 (Just 0) []           TAny))
   , ("shutdown"      , (bf_shutdown      , Info 0 (Just 1) [TStr]       TAny))
   , ("load_server_options",
@@ -125,7 +125,7 @@ miscBuiltins = [
   , ("reset_max_object",
                      (bf_reset_max_object, Info 0 (Just 0) []           TAny))
 
-    -- 4.4.8 Server Statistics and Miscellaneous Information
+    -- § 4.4.8 Server Statistics and Miscellaneous Information
   , ("server_version", (bf_server_version, Info 0 (Just 0) []           TStr))
   , ("memory_usage"  , (bf_memory_usage  , Info 0 (Just 0) []           TLst))
   , ("db_disk_size"  , (bf_db_disk_size  , Info 0 (Just 0) []           TInt))
@@ -135,7 +135,7 @@ miscBuiltins = [
                      (bf_log_cache_stats , Info 0 (Just 0) []           TAny))
   ]
 
--- 4.4.1 Object-Oriented Programming
+-- § 4.4.1 Object-Oriented Programming
 
 bf_pass args = do
   (name, verbLoc, this) <- frame $ \frame ->
@@ -145,7 +145,7 @@ bf_pass args = do
     Just parent -> callVerb parent this name args
     Nothing     -> raise E_VERBNF
 
--- 4.4.5 Operations Involving Times and Dates
+-- § 4.4.5 Operations Involving Times and Dates
 
 currentTime :: MOO IntT
 currentTime = (floor . utcTimeToPOSIXSeconds) `liftM` gets startTime
@@ -162,7 +162,7 @@ ctime time =
         zonedTime = unsafePerformIO $ utcToLocalZonedTime utcTime
         utcTime   = posixSecondsToUTCTime (fromIntegral time)
 
--- 4.4.7 Administrative Operations
+-- § 4.4.7 Administrative Operations
 
 bf_dump_database [] = notyet "dump_database"
 
@@ -181,7 +181,7 @@ bf_reset_max_object [] = do
   getDatabase >>= liftSTM . resetMaxObject >>= putDatabase
   return nothing
 
--- 4.4.8 Server Statistics and Miscellaneous Information
+-- § 4.4.8 Server Statistics and Miscellaneous Information
 
 bf_server_version [] = return (Str serverVersionText)
 

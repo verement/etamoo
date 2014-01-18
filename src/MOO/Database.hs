@@ -104,46 +104,46 @@ setPlayer yesno oid db = db { players = change (players db) }
 
 data ServerOptions = Options {
     bgSeconds :: IntT
-    -- The number of seconds allotted to background tasks.
+    -- ^ The number of seconds allotted to background tasks
 
   , bgTicks :: IntT
-    -- The number of ticks allotted to background tasks.
+    -- ^ The number of ticks allotted to background tasks
 
   , connectTimeout :: IntT
-    -- The maximum number of seconds to allow an un-logged-in in-bound
-    -- connection to remain open.
+    -- ^ The maximum number of seconds to allow an un-logged-in in-bound
+    -- connection to remain open
 
   , defaultFlushCommand :: StrT
-    -- The initial setting of each new connection’s flush command.
+    -- ^ The initial setting of each new connection’s flush command
 
   , fgSeconds :: IntT
-    -- The number of seconds allotted to foreground tasks.
+    -- ^ The number of seconds allotted to foreground tasks
 
   , fgTicks :: IntT
-    -- The number of ticks allotted to foreground tasks.
+    -- ^ The number of ticks allotted to foreground tasks
 
   , maxStackDepth :: IntT
-    -- The maximum number of levels of nested verb calls.
+    -- ^ The maximum number of levels of nested verb calls
 
   , queuedTaskLimit :: Maybe IntT
-    -- The default maximum number of tasks a player can have.
+    -- ^ The default maximum number of tasks a player can have
 
   , nameLookupTimeout :: IntT
-    -- The maximum number of seconds to wait for a network hostname/address
-    -- lookup.
+    -- ^ The maximum number of seconds to wait for a network hostname/address
+    -- lookup
 
   , outboundConnectTimeout :: IntT
-    -- The maximum number of seconds to wait for an outbound network
-    -- connection to successfully open.
+    -- ^ The maximum number of seconds to wait for an outbound network
+    -- connection to successfully open
 
   , protectProperty :: Set Id
-    -- Restrict reading of built-in property to wizards.
+    -- ^ Restrict reading of built-in property to wizards
 
   , protectFunction :: Set Id
-    -- Restrict use of built-in function to wizards.
+    -- ^ Restrict use of built-in function to wizards
 
   , supportNumericVerbnameStrings :: Bool
-    -- Enables use of an obsolete verb-naming mechanism.
+    -- ^ Enables use of an obsolete verb-naming mechanism
 }
 
 systemObject :: ObjId

@@ -352,22 +352,29 @@ text2binary = translate . T.unpack
 validStrChar :: Char -> Bool
 validStrChar c = isAscii c && (isPrint c || c == '\t')
 
+-- | Turn a Haskell list into a MOO list.
 fromList :: [Value] -> Value
 fromList = Lst . V.fromList
 
+-- | Turn a Haskell list into a MOO list, using a function to map Haskell
+-- values to MOO values.
 fromListBy :: (a -> Value) -> [a] -> Value
 fromListBy f = fromList . map f
 
+-- | Turn a list of strings into a MOO list.
 stringList :: [StrT] -> Value
 stringList = fromListBy Str
 
+-- | Turn a list of object numbers into a MOO list.
 objectList :: [ObjT] -> Value
 objectList = fromListBy Obj
 
+-- | Return a modified list with the given 1-based index replaced with the
+-- given value.
 listSet :: LstT -> Int -> Value -> LstT
 listSet v i value = V.modify (\m -> VM.write m (i - 1) value) v
 
--- | This is the last UTC time value representable as a 32-bit
+-- | This is the last UTC time value representable as a signed 32-bit
 -- seconds-since-1970 value. Unfortunately it is used as a sentinel value in
 -- LambdaMOO to represent the starting time of indefinitely suspended tasks,
 -- so we really can't support time values beyond this point... yet.

@@ -69,9 +69,10 @@ initVerb = Verb {
   , verbIndirectObject = ObjNone
 }
 
-data ObjSpec = ObjNone
-             | ObjAny
-             | ObjThis
+-- | Argument (direct/indirect object) specifier
+data ObjSpec = ObjNone  -- ^ none
+             | ObjAny   -- ^ any
+             | ObjThis  -- ^ this
              deriving (Enum, Bounded, Show)
 
 instance Sizeable ObjSpec where
@@ -92,23 +93,24 @@ objMatch _    ObjNone _    = False
 objMatch _    ObjAny  _    = True
 objMatch this ObjThis oid  = oid == this
 
-data PrepSpec = PrepAny
-              | PrepNone
-              | PrepWithUsing
-              | PrepAtTo
-              | PrepInfrontof
-              | PrepInInsideInto
-              | PrepOntopofOnOntoUpon
-              | PrepOutofFrominsideFrom
-              | PrepOver
-              | PrepThrough
-              | PrepUnderUnderneathBeneath
-              | PrepBehind
-              | PrepBeside
-              | PrepForAbout
-              | PrepIs
-              | PrepAs
-              | PrepOffOffof
+-- | Preposition specifier
+data PrepSpec = PrepAny                     -- ^ any
+              | PrepNone                    -- ^ none
+              | PrepWithUsing               -- ^ with\/using
+              | PrepAtTo                    -- ^ at\/to
+              | PrepInfrontof               -- ^ in front of
+              | PrepInInsideInto            -- ^ in\/inside\/into
+              | PrepOntopofOnOntoUpon       -- ^ on top of\/on\/onto\/upon
+              | PrepOutofFrominsideFrom     -- ^ out of\/from inside\/from
+              | PrepOver                    -- ^ over
+              | PrepThrough                 -- ^ through
+              | PrepUnderUnderneathBeneath  -- ^ under\/underneath\/beneath
+              | PrepBehind                  -- ^ behind
+              | PrepBeside                  -- ^ beside
+              | PrepForAbout                -- ^ for\/about
+              | PrepIs                      -- ^ is
+              | PrepAs                      -- ^ as
+              | PrepOffOffof                -- ^ off\/off of
               deriving (Enum, Bounded, Eq, Show)
 
 instance Sizeable PrepSpec where
@@ -152,6 +154,8 @@ prepPhrases = [ (prepSpec, T.words prepPhrase)
               , prepPhrase <- T.splitOn "/" $ prep2text prepSpec
               ]
 
+-- | Does the given verb name match any of the given aliases? Each alias may
+-- use @*@ to separate required and optional text to match.
 verbNameMatch :: StrT -> [StrT] -> Bool
 verbNameMatch name = any matchName
   where matchName vname

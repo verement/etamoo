@@ -141,10 +141,9 @@ data World = World {
   , listeners        :: Map PortNumber Listener  -- ^ Network listening points
   , connections      :: Map ObjId Connection     -- ^ Network connections
 
-  , nextConnectionId :: ObjId                    -- ^ The (negative) object
-                                                 -- number to be assigned to
-                                                 -- the next inbound or
-                                                 -- outbound connection
+  , nextConnectionId :: ObjId
+    -- ^ The (negative) object number to be assigned to the next inbound or
+    -- outbound connection
   }
 
 initWorld = World {
@@ -317,7 +316,7 @@ stepTaskWithIO task = do
 -- | Run a task in a new Haskell thread, returning either the value produced
 -- by the task, or 'Nothing' if the task suspends or aborts before producing a
 -- value. If the task suspends, it may continue running after this function
--- returns. After the task is finished, it is removed from the task queue.
+-- returns. The task is removed from the task queue after it is finished.
 runTask :: Task -> IO (Maybe Value)
 runTask task = do
   resultMVar <- newEmptyMVar
