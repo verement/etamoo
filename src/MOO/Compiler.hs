@@ -213,16 +213,14 @@ evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
 
   VerbCall target vname args -> do
     target' <- evaluate target
-    oid <- case target' of
-      Obj oid -> return oid
-      _       -> raise E_TYPE
+    vname'  <- evaluate vname
+    args'   <- expand args
 
-    vname' <- evaluate vname
-    name <- case vname' of
-      Str name -> return name
-      _        -> raise E_TYPE
+    (oid, name) <- case (target', vname') of
+      (Obj oid, Str name) -> return (oid, name)
+      (_      , _       ) -> raise E_TYPE
 
-    callVerb oid oid name =<< expand args
+    callVerb oid oid name args'
 
   BuiltinFunc func args -> callBuiltin (T.toCaseFold func) =<< expand args
 
