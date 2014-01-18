@@ -368,9 +368,9 @@ lValue (PropRef objExpr nameExpr) = LValue fetch store change
         store value = getRefs >>= flip storeProperty value
 
         change = do
-          value <- fetch
-          return (value, store)
-          -- XXX improve this to avoid redundant checks?
+          refs <- getRefs
+          value <- fetchProperty refs
+          return (value, storeProperty refs)
 
         getRefs = do
           objRef  <- evaluate objExpr
