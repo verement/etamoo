@@ -39,8 +39,8 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
 
           compileIf ((lineNumber,cond,thens):conds) elses = do
             setLineNumber lineNumber
-            cond' <- truthOf `liftM` evaluate cond
-            if cond' then compile' thens
+            cond' <- evaluate cond
+            if truthOf cond' then compile' thens
               else compileIf conds elses
           compileIf [] elses = compile' elses
 
@@ -128,9 +128,7 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
     world <- getWorld
     gen <- newRandomGen
     taskId <- liftSTM $ newTaskId world gen
-    case var of
-      Just ident -> void $ storeVariable ident (Int $ fromIntegral taskId)
-      Nothing    -> return ()
+    maybe return storeVariable var (Int $ fromIntegral taskId)
 
     forkTask taskId usecs (compileStatements body return)
 
@@ -231,14 +229,16 @@ evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
   a `Remain` b -> binary remain a b
   a `Power`  b -> binary power  a b
 
-  Negate a -> do a' <- evaluate a
-                 case a' of
-                   Int x -> return (Int $ negate x)
-                   Flt x -> return (Flt $ negate x)
-                   _     -> raise E_TYPE
+  Negate x -> do
+    x' <- evaluate x
+    case x' of
+      Int z -> return (Int $ negate z)
+      Flt z -> return (Flt $ negate z)
+      _     -> raise E_TYPE
 
-  Conditional c x y -> do c' <- evaluate c
-                          evaluate $ if truthOf c' then x else y
+  Conditional cond x y -> do
+    cond' <- evaluate cond
+    evaluate $ if truthOf cond' then x else y
 
   x `And` y -> do x' <- evaluate x
                   if truthOf x' then evaluate y else return x'
@@ -280,8 +280,10 @@ evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
           a' <- evaluate a
           b' <- evaluate b
           a' `op` b'
+
         equality op = binary test
           where test a b = return $ truthValue (a `op` b)
+
         comparison op = binary test
           where test a b = do when (typeOf a /= typeOf b) $ raise E_TYPE
                               case a of
@@ -302,6 +304,7 @@ fetchProperty :: (ObjT, StrT) -> MOO Value
 fetchProperty (oid, name) = do
   obj <- getObject oid >>= maybe (raise E_INVIND) return
   maybe (search False obj) (return . ($ obj)) $ builtinProperty name'
+
   where name' = T.toCaseFold name
 
         search skipPermCheck obj = do
@@ -324,6 +327,7 @@ storeProperty (oid, name) value = do
       unless (propertyPermW prop) $ checkPermission (propertyOwner prop)
       return prop { propertyValue = Just value }
   return value
+
   where name' = T.toCaseFold name
 
 withIndexLength :: Value -> MOO a -> MOO a
