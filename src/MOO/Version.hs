@@ -3,10 +3,10 @@ module MOO.Version ( serverVersion
                    , serverVersionText
                    ) where
 
-import Data.Text
-import Data.Version
+import Data.Text (Text, pack)
+import Data.Version (Version, showVersion)
 
-import Paths_EtaMOO
+import Paths_EtaMOO (version)
 
 -- | The current version of the server code, as a 'Version' value
 serverVersion :: Version

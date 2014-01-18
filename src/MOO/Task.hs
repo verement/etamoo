@@ -94,21 +94,28 @@ module MOO.Task ( MOO
                 ) where
 
 import Control.Arrow (first, (&&&))
-import Control.Concurrent
-import Control.Concurrent.STM
-import Control.Monad.Cont
-import Control.Monad.Reader
-import Control.Monad.State.Strict
-import Control.Monad.Writer
+import Control.Concurrent (ThreadId, myThreadId, forkIO, threadDelay,
+                           newEmptyMVar, putMVar, takeMVar)
+import Control.Concurrent.STM (STM, TVar, atomically, retry,
+                               newEmptyTMVar, putTMVar, takeTMVar,
+                               readTVar, writeTVar, modifyTVar)
+import Control.Monad (when, unless, liftM, void, (>=>))
+import Control.Monad.Cont (ContT, runContT, callCC)
+import Control.Monad.Reader (ReaderT, runReaderT, local, asks)
+import Control.Monad.State.Strict (StateT, runStateT, get, gets, modify)
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Writer (execWriter, tell)
 import Data.ByteString (ByteString)
 import Data.List (find)
 import Data.Map (Map)
 import Data.Maybe (isNothing, fromMaybe, fromJust)
+import Data.Monoid (Monoid(mempty, mappend), (<>))
 import Data.Text (Text)
-import Data.Time
+import Data.Time (UTCTime, getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import System.Posix (nanosleep)
-import System.Random hiding (random)
+import System.Random (Random, StdGen, newStdGen, mkStdGen, split,
+                      randomR, randomRs)
 
 import qualified Data.ByteString as BS
 import qualified Data.Map as M

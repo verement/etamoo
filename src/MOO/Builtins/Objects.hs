@@ -3,9 +3,9 @@
 
 module MOO.Builtins.Objects ( builtins ) where
 
-import Control.Concurrent.STM
+import Control.Concurrent.STM (STM, newTVar, readTVar, writeTVar)
 import Control.Monad (when, unless, liftM, void, join)
-import Data.Maybe
+import Data.Maybe (isJust, isNothing)
 import Data.Set (Set)
 
 import qualified Data.HashMap.Strict as HM

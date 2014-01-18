@@ -5,7 +5,7 @@ module MOO.Builtins.Network ( builtins ) where
 
 import Control.Monad (liftM)
 import Control.Monad.State (gets)
-import Data.Time
+import Data.Time (UTCTime, diffUTCTime)
 
 import MOO.Types
 import MOO.Task

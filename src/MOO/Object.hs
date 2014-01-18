@@ -26,16 +26,16 @@ module MOO.Object ( Object (..)
                   ) where
 
 import Control.Arrow (second)
-import Control.Concurrent.STM
+import Control.Concurrent.STM (STM, TVar, newTVarIO, newTVar, readTVar)
 import Control.Monad (liftM)
 import Data.HashMap.Strict (HashMap)
 import Data.IntSet (IntSet)
-import Data.Maybe
+import Data.Maybe (isJust)
 import Data.List (find)
 
 import qualified Data.HashMap.Strict as HM
-import qualified Data.Text as T
 import qualified Data.IntSet as IS
+import qualified Data.Text as T
 
 import MOO.Types
 import MOO.Verb

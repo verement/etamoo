@@ -3,24 +3,23 @@
 
 module MOO.Builtins.Values ( builtins ) where
 
-import Control.Monad (mplus, unless, liftM)
-import Control.Exception (bracket)
 import Control.Concurrent.MVar (MVar, newMVar, takeMVar, putMVar)
-import System.IO.Unsafe (unsafePerformIO)
-import Text.Printf (printf)
-import Foreign.C (CString, withCString, peekCString)
+import Control.Exception (bracket)
+import Control.Monad (mplus, unless, liftM)
+import Data.ByteString (ByteString)
+import Data.Char (intToDigit, isDigit)
+import Data.Digest.Pure.MD5 (MD5Digest)
 import Data.Maybe (fromJust)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
-import Data.ByteString (ByteString)
-import Data.Char (intToDigit, isDigit)
+import Foreign.C (CString, withCString, peekCString)
+import System.IO.Unsafe (unsafePerformIO)
+import Text.Printf (printf)
 
+import qualified Data.Digest.Pure.MD5 as MD5
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
-
-import Data.Digest.Pure.MD5 (MD5Digest)
-import qualified Data.Digest.Pure.MD5 as MD5
 
 import MOO.Types
 import MOO.Task

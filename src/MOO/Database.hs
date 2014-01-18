@@ -20,7 +20,8 @@ module MOO.Database ( Database
                     , loadServerOptions
                     ) where
 
-import Control.Concurrent.STM
+import Control.Concurrent.STM (STM, TVar, newTVarIO, newTVar,
+                               readTVar, writeTVar)
 import Control.Monad (forM, liftM)
 import Data.Monoid ((<>))
 import Data.Vector (Vector)

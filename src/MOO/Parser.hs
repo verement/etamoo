@@ -3,16 +3,21 @@ module MOO.Parser ( Program, parse, runParser, initParserState
                   , expression, between, whiteSpace, eof, program
                   , parseInt, parseFlt, parseNum, parseObj, keywords ) where
 
-import           Text.Parsec hiding (parse)
-import           Text.Parsec.Text
-import           Text.Parsec.Token (GenLanguageDef(..))
+import Control.Monad (when, unless, mplus)
+import Control.Monad.Identity (Identity)
+import Data.List (find)
+import Data.Maybe (catMaybes)
+import Data.Ratio ((%))
+import Data.Text (Text, pack, unpack, toCaseFold)
+import Text.Parsec (try, many, many1, digit, letter, char, anyChar, alphaNum,
+                    oneOf, noneOf, lookAhead, notFollowedBy, chainl1, chainr1,
+                    option, optionMaybe, choice, between, getState, modifyState,
+                    eof, runParser, sourceLine, errorPos, (<|>), (<?>))
+import Text.Parsec.Error (Message(Message), errorMessages, messageString)
+import Text.Parsec.Text (GenParser)
+import Text.Parsec.Token (GenLanguageDef(LanguageDef))
+
 import qualified Text.Parsec.Token as T
-import           Text.Parsec.Error
-import           Control.Monad.Identity
-import           Data.Text (Text, pack, unpack, toCaseFold)
-import           Data.Ratio
-import           Data.Maybe
-import           Data.List
 
 import MOO.Types
 import MOO.AST

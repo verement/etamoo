@@ -1,16 +1,20 @@
 
 module MOO.Database.LambdaMOO ( loadLMDatabase ) where
 
-import Control.Concurrent.STM
-import Control.Monad.Reader
-import Text.Parsec
-import Data.Word (Word)
+import Control.Concurrent.STM (atomically, readTVar, writeTVar)
+import Control.Monad (unless, when)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (ReaderT, runReaderT, local, asks)
+import Data.Array (Array, listArray, inRange, bounds, (!))
+import Data.Bits (shiftL, shiftR, (.&.))
+import Data.IntSet (IntSet)
 import Data.List (sort)
 import Data.Maybe (catMaybes)
-import Data.Array
-import Data.Bits
-import Data.IntSet (IntSet)
+import Data.Word (Word)
 import System.IO (hFlush, stdout)
+import Text.Parsec (ParseError, ParsecT, runParserT, string, count,
+                    getState, putState, many1, oneOf, manyTill, anyToken,
+                    digit, char, option, try, lookAhead, (<|>), (<?>))
 
 import qualified Data.Text as T
 import qualified Data.IntSet as IS
@@ -392,7 +396,7 @@ read_var :: DBParser LMVar
 read_var = (<?> "var") $ do
   l <- read_num
   l <- if l == type_any
-       then do input_version <- reader input_version
+       then do input_version <- asks input_version
                return $ if input_version == dbv_prehistory
                         then type_none else l
        else return l
@@ -491,7 +495,7 @@ default_max_stack_depth = 50
 
 read_activ :: DBParser ()
 read_activ = (<?> "activ") $ do
-  input_version <- reader input_version
+  input_version <- asks input_version
   version <- if input_version < dbv_float then return input_version
              else string "language version " >> unsignedInt
   unless (version < num_db_versions) $

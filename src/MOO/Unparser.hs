@@ -5,9 +5,11 @@
 -- built-in function
 module MOO.Unparser ( unparse ) where
 
-import Control.Monad.Reader
-import Control.Monad.Writer
-import Data.Char
+import Control.Monad (when, unless, liftM, (<=<))
+import Control.Monad.Reader (ReaderT, runReaderT, asks, local)
+import Control.Monad.Writer (Writer, execWriter, tell)
+import Data.Char (isAlpha, isAlphaNum)
+import Data.Monoid ((<>))
 import Data.Set (Set)
 import Data.Text (Text)
 

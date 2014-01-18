@@ -18,9 +18,10 @@ module MOO.Command (
 
 import Control.Monad (liftM, void, foldM, join)
 import Data.Char (isSpace, isDigit)
-import Data.Monoid
+import Data.Monoid (Monoid(mempty, mappend, mconcat), First(First, getFirst))
 import Data.Text (Text)
-import Text.Parsec
+import Text.Parsec (parse, try, many, many1, char, anyChar, noneOf, spaces,
+                    satisfy, between, eof, (<|>))
 import Text.Parsec.Text (Parser)
 
 import qualified Data.IntSet as IS

@@ -17,26 +17,28 @@ module MOO.Network ( Listener
                    , openNetworkConnection
                    ) where
 
-import Control.Concurrent
-import Control.Concurrent.STM
-import Control.Exception
-import Control.Monad
-import Network
+import Control.Concurrent (ThreadId, forkIO, killThread)
+import Control.Concurrent.STM (TVar, atomically,
+                               readTVar, writeTVar, modifyTVar)
+import Control.Exception (try, mask, finally)
+import Control.Monad (when, foldM, forever, void)
+import Network (Socket, HostName, PortID(PortNumber, UnixSocket), PortNumber,
+                listenOn, accept, connectTo, socketPort, sClose)
 import Data.Set (Set)
 import Data.Text (Text)
-import Data.Time
-import System.IO
-import System.IO.Error hiding (try)
-
-import MOO.Types
-import MOO.Task
-import {-# SOURCE #-} MOO.Database (systemObject, getServerOption')
+import Data.Time (UTCTime, getCurrentTime)
+import System.IO (Handle, BufferMode(LineBuffering), hClose, hSetBuffering)
+import System.IO.Error (isPermissionError, isDoesNotExistError)
 
 import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Vector as V
+
+import MOO.Types
+import MOO.Task
+import {-# SOURCE #-} MOO.Database (systemObject, getServerOption')
 
 data Listener = Listener {
     listenerSocket        :: Socket

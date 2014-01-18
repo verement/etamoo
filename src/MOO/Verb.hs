@@ -17,11 +17,11 @@ module MOO.Verb ( Verb(..)
 
 import Data.Text (Text)
 
+import qualified Data.Text as T
+
 import MOO.Types
 import MOO.AST
 import {-# SOURCE #-} MOO.Task
-
-import qualified Data.Text as T
 
 data Verb = Verb {
     verbNames          :: StrT

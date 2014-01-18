@@ -16,10 +16,10 @@ module MOO.Task ( MOO
                 , notyet
                 ) where
 
-import Control.Concurrent.STM
-import Control.Monad.Reader
-import Control.Monad.Cont
-import Control.Monad.State.Strict
+import Control.Concurrent.STM (STM, TVar)
+import Control.Monad.Reader (ReaderT)
+import Control.Monad.Cont (ContT)
+import Control.Monad.State.Strict (StateT)
 
 import MOO.Types
 import {-# SOURCE #-} MOO.Object

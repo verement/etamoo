@@ -4,7 +4,7 @@
 module MOO.Builtins.Tasks ( builtins ) where
 
 import Control.Concurrent (forkIO, threadDelay, killThread)
-import Control.Concurrent.STM
+import Control.Concurrent.STM (atomically, newEmptyTMVar, takeTMVar, putTMVar)
 import Control.Monad (liftM, void)
 import Control.Monad.Cont (callCC)
 import Control.Monad.Reader (asks)
