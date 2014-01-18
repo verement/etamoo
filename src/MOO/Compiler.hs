@@ -565,8 +565,6 @@ power :: Value -> Value -> MOO Value
     0 -> raise E_DIV
     1 -> return (Int 1)
     _ -> return (Int 0)
-
-(Flt a) `power` (Int b) | b >= 0    = checkFloat (a ^ b)
-                        | otherwise = checkFloat (a ** fromIntegral b)
+(Flt a) `power` (Int b) = checkFloat (a ^^ b)
 (Flt a) `power` (Flt b) = checkFloat (a ** b)
 _       `power` _       = raise E_TYPE
