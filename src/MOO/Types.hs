@@ -61,8 +61,11 @@ module MOO.Types (
   ) where
 
 import Control.Concurrent (ThreadId)
+import Control.Concurrent.STM (TVar)
 import Data.Char (isAscii, isPrint, isDigit)
+import Data.HashMap.Strict (HashMap)
 import Data.Int (Int32, Int64)
+import Data.IntSet (IntSet)
 import Data.Map (Map)
 import Data.Text (Text)
 import Data.Time (UTCTime)
@@ -72,6 +75,8 @@ import Data.Word (Word8)
 import Foreign.Storable (sizeOf)
 import System.Random (StdGen)
 
+import qualified Data.HashMap.Strict as HM
+import qualified Data.IntSet as IS
 import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -134,6 +139,16 @@ instance Sizeable UTCTime where
   storageBytes _ = 4 * storageBytes ()
 
 instance Sizeable ThreadId where
+  storageBytes _ = storageBytes ()
+
+instance Sizeable IntSet where
+  storageBytes x = storageBytes () + storageBytes (0 :: Int) * IS.size x
+
+instance (Sizeable k, Sizeable v) => Sizeable (HashMap k v) where
+  storageBytes = HM.foldrWithKey bytes (storageBytes ())
+    where bytes k v s = s + storageBytes k + storageBytes v
+
+instance Sizeable (TVar a) where
   storageBytes _ = storageBytes ()
 
 type IntT = Int32

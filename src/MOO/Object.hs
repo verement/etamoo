@@ -62,16 +62,6 @@ data Object = Object {
   , objectVerbs      :: [([StrT], TVar Verb)]
 }
 
-instance Sizeable IntSet where
-  storageBytes x = storageBytes () + storageBytes (0 :: Int) * IS.size x
-
-instance (Sizeable k, Sizeable v) => Sizeable (HashMap k v) where
-  storageBytes = HM.foldrWithKey bytes (storageBytes ())
-    where bytes k v s = s + storageBytes k + storageBytes v
-
-instance Sizeable (TVar a) where
-  storageBytes _ = storageBytes ()
-
 instance Sizeable Object where
   -- this does not capture the size of defined properties or verbs, as these
   -- are tucked behind TVars and cannot be read outside the STM monad
