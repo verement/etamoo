@@ -182,7 +182,7 @@ bf_move [Obj what, Obj where_] = do
     Just whatObj -> unless (objectLocation whatObj == newWhere) $ do
       maybeWhere <- getObject where_
       when (isNothing newWhere || isJust maybeWhere) $ do
-        checkRecurse what where_
+        checkRecurrence objectLocation what where_
 
         let oldWhere = objectLocation whatObj
         db <- getDatabase
@@ -211,13 +211,6 @@ bf_move [Obj what, Obj where_] = do
             void $ callFromFunc "move" 2 (where_, "enterfunc") [Obj what]
 
   return nothing
-
-  where checkRecurse what loc = do
-          when (loc == what) $ raise E_RECMOVE
-          maybeLoc <- getObject loc
-          case join $ objectLocation `fmap` maybeLoc of
-            Just oid -> checkRecurse what oid
-            Nothing  -> return ()
 
 -- § 4.4.3.3 Operations on Properties
 

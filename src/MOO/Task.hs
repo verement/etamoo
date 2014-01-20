@@ -86,6 +86,7 @@ module MOO.Task ( MOO
                 , checkPermission
                 , checkValid
                 , checkFertile
+                , checkRecurrence
                 , binaryString
                 , random
                 , newRandomGen
@@ -99,7 +100,7 @@ import Control.Concurrent (ThreadId, myThreadId, forkIO, threadDelay,
 import Control.Concurrent.STM (STM, TVar, atomically, retry,
                                newEmptyTMVar, putTMVar, takeTMVar,
                                readTVar, writeTVar, modifyTVar)
-import Control.Monad (when, unless, liftM, void, (>=>))
+import Control.Monad (when, unless, join, liftM, void, (>=>))
 import Control.Monad.Cont (ContT, runContT, callCC)
 import Control.Monad.Reader (ReaderT, runReaderT, local, asks)
 import Control.Monad.State.Strict (StateT, runStateT, get, gets, modify)
@@ -1204,6 +1205,20 @@ checkFertile oid = do
   case maybeObj of
     Nothing  -> raise E_PERM
     Just obj -> unless (objectPermF obj) $ checkPermission (objectOwner obj)
+
+-- | Verify that the given /object/ does not have a recursive relationship
+-- with the given /subject/, raising 'E_RECMOVE' if so.
+checkRecurrence :: (Object -> Maybe ObjId)  -- ^ relationship projection
+                -> ObjId                    -- ^ /subject/
+                -> ObjId                    -- ^ /object/ to check
+                -> MOO ()
+checkRecurrence relation subject = checkRecurrence'
+  where checkRecurrence' object = do
+          when (object == subject) $ raise E_RECMOVE
+          maybeObject <- getObject object
+          case join $ relation `fmap` maybeObject of
+            Just oid -> checkRecurrence' oid
+            Nothing  -> return ()
 
 -- | Translate a MOO /binary string/ into a Haskell 'ByteString', raising
 -- 'E_INVARG' if the MOO string is improperly formatted.
