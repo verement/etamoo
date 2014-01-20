@@ -8,6 +8,7 @@ module MOO.Object ( Object (..)
                   , getParent
                   , getChildren
                   , addChild
+                  , deleteChild
                   , builtinProperties
                   , builtinProperty
                   , isBuiltinProperty
@@ -109,9 +110,13 @@ getParent = objectForMaybe . objectParent
 getChildren :: Object -> [ObjId]
 getChildren = IS.elems . objectChildren
 
-addChild :: Object -> ObjId -> Object
-addChild obj childOid =
-  obj { objectChildren = IS.insert childOid (objectChildren obj) }
+addChild :: ObjId -> Object -> STM Object
+addChild childOid obj =
+  return obj { objectChildren = IS.insert childOid (objectChildren obj) }
+
+deleteChild :: ObjId -> Object -> STM Object
+deleteChild childOid obj =
+  return obj { objectChildren = IS.delete childOid (objectChildren obj) }
 
 data Property = Property {
     propertyName      :: StrT

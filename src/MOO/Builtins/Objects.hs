@@ -102,7 +102,7 @@ bf_create (Obj parent : optional) = do
     Nothing  -> return $ objectProperties initObject
     Just oid -> do
       -- add to parent's set of children
-      liftSTM $ modifyObject oid db $ \obj -> return $ addChild obj newOid
+      liftSTM $ modifyObject oid db $ addChild newOid
 
       -- properties inherited from parent
       Just parent <- getObject oid
