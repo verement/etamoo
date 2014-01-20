@@ -4,8 +4,8 @@
 module MOO.Builtins.Objects ( builtins ) where
 
 import Control.Concurrent.STM (STM, newTVar, readTVar, writeTVar)
-import Control.Monad (when, unless, liftM, void, forM_, join)
-import Data.Maybe (isJust, isNothing)
+import Control.Monad (when, unless, liftM, void, forM_, foldM, join)
+import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Set (Set)
 
 import qualified Data.HashMap.Strict as HM
@@ -133,7 +133,88 @@ bf_create (Obj parent : optional) = do
 
   where (maybeOwner : _) = maybeDefaults optional
 
-bf_chparent [Obj object, Obj new_parent] = notyet "chparent"
+bf_chparent [Obj object, Obj new_parent] = do
+  obj <- checkValid object
+  maybeNewParent <- case new_parent of
+    -1  -> return Nothing
+    oid -> do
+      newParent <- checkValid oid
+      checkFertile oid
+      return (Just newParent)
+  checkPermission (objectOwner obj)
+  checkRecurrence objectParent object new_parent
+
+  -- Verify that neither object nor any of its descendants defines a property
+  -- with the same name as one defined on new_parent or any of its ancestors
+  case maybeNewParent of
+    Just newParent -> do
+      let props = HM.keys (objectProperties newParent)
+      flip traverseDescendants object $ \obj -> forM_ props $ \propName -> do
+        maybeProp <- liftSTM $ lookupProperty obj propName
+        case maybeProp of
+          Just prop | not (propertyInherited prop) -> raise E_INVARG
+          _ -> return ()
+    Nothing -> return ()
+
+  -- Find the nearest ancestor that object and new_parent have in common
+  oldAncestors <- ancestors object
+  newAncestors <- case maybeNewParent of
+    Just _  -> ancestors' new_parent
+    Nothing -> return []
+  let maybeCommon = findCommon oldAncestors newAncestors
+      underCommon ancestors = maybe ancestors prefix maybeCommon
+        where prefix common = takeWhile (/= common) ancestors
+
+  -- Remove properties defined by ancestors of object under common, and add
+  -- properties defined by new_parent or its ancestors under common
+  db <- getDatabase
+  oldProperties <- allDefinedProperties (underCommon oldAncestors)
+  newProperties <- case maybeNewParent of
+    Just newParent ->
+      allDefinedProperties (underCommon newAncestors) >>=
+      mapM (liftSTM . liftM fromJust . lookupProperty newParent)
+    Nothing -> return []
+
+  flip (modifyDescendants db) object $ \obj -> do
+    obj' <- foldM (flip deleteProperty) obj oldProperties
+    foldM (flip addInheritedProperty) obj' newProperties
+
+  -- Update the parent/child hierarchy
+  liftSTM $ modifyObject object db $ \obj ->
+    return obj { objectParent = const new_parent `fmap` maybeNewParent }
+  case objectParent obj of
+    Just parentOid -> liftSTM $ modifyObject parentOid db $ deleteChild object
+    Nothing        -> return ()
+  case maybeNewParent of
+    Just _  -> liftSTM $ modifyObject new_parent db $ addChild object
+    Nothing -> return ()
+
+  return nothing
+
+  where ancestors :: ObjId -> MOO [ObjId]
+        ancestors oid = do
+          maybeObject <- getObject oid
+          case join $ objectParent `fmap` maybeObject of
+            Just parent -> do
+              ancestors <- ancestors parent
+              return (parent : ancestors)
+            Nothing -> return []
+
+        ancestors' :: ObjId -> MOO [ObjId]
+        ancestors' oid = (oid :) `liftM` ancestors oid
+
+        findCommon :: [ObjId] -> [ObjId] -> Maybe ObjId
+        findCommon xs ys = findCommon' (reverse xs) (reverse ys) Nothing
+        findCommon' (x:xs) (y:ys) _
+          | x == y = findCommon' xs ys (Just x)
+        findCommon' _ _ common = common
+
+        allDefinedProperties :: [ObjId] -> MOO [StrT]
+        allDefinedProperties = liftM ($ []) . foldM concatProps id
+          where concatProps acc oid = do
+                  Just obj <- getObject oid
+                  props <- liftSTM $ definedProperties obj
+                  return (acc (map T.toCaseFold props) ++)
 
 bf_valid [Obj object] = (truthValue . isJust) `liftM` getObject object
 
