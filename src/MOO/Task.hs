@@ -175,7 +175,7 @@ data Task = Task {
 
   , taskState       :: TaskState
   , taskComputation :: MOO Value
-}
+  }
 
 instance Show Task where
   show task = "<Task " ++ show (taskId task) ++
@@ -519,7 +519,7 @@ data Environment = Env {
   , interruptHandler :: InterruptHandler
   , exceptionHandler :: ExceptionHandler
   , indexLength      :: MOO Int
-}
+  }
 
 initEnvironment :: Task -> Environment
 initEnvironment task = Env {
@@ -536,7 +536,7 @@ data TaskState = State {
   , startTime :: UTCTime
   , randomGen :: StdGen
   , delayedIO :: DelayedIO
-}
+  }
 
 initState = State {
     ticksLeft = 30000
@@ -934,7 +934,7 @@ data StackFrame = Frame {
 
   , builtinFunc   :: Bool
   , lineNumber    :: IntT
-} deriving Show
+  } deriving Show
 
 initFrame = Frame {
     depthLeft     = 50
@@ -952,7 +952,7 @@ initFrame = Frame {
 
   , builtinFunc   = False
   , lineNumber    = 0
-}
+  }
 
 instance Sizeable StackFrame where
   storageBytes frame =

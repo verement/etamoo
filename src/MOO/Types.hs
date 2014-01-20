@@ -351,11 +351,12 @@ text2binary = translate . T.unpack
           bs <- translate rs
           return (b:bs)
         translate ('~':_) = Nothing
-        translate (c:cs) = do
+        translate (c:cs) = do  -- XXX Unicode
           let b = fromIntegral $ fromEnum c
           bs <- translate cs
           return (b:bs)
         translate [] = return []
+
         hexValue x
           | isDigit x            = Just $      distance '0' x
           | x >= 'a' && x <= 'f' = Just $ 10 + distance 'a' x

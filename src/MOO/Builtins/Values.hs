@@ -258,9 +258,12 @@ bf_strcmp [Str str1, Str str2] =
 
 bf_decode_binary (Str bin_string : optional) =
   maybe (raise E_INVARG) (return . mkResult) $ text2binary bin_string
+
   where [fully] = booleanDefaults optional [False]
+
         mkResult | fully     = fromListBy (Int . fromIntegral)
                  | otherwise = fromList . groupPrinting ("" ++)
+
         groupPrinting g (w:ws)
           | validStrChar c = groupPrinting (g [c] ++) ws
           | null group     = Int (fromIntegral w) : groupPrinting g ws
@@ -291,7 +294,7 @@ encodeBinary (Str str : args) = (encodeStr (T.unpack str) ++) `liftM`
   where encodeStr ('~' :cs) = "~7e" ++ encodeStr cs
         encodeStr ('\t':cs) = "~09" ++ encodeStr cs
         encodeStr (c   :cs) = c     :  encodeStr cs
-        encodeStr "" = ""
+        encodeStr ""        = ""
 encodeBinary (Lst list : args) = do
   listEncoding <- encodeBinary (V.toList list)
   (listEncoding ++) `liftM` encodeBinary args

@@ -279,9 +279,8 @@ addConnection world' connection = atomically $ do
   return connId
 
 removeConnection :: TVar World -> ObjId -> IO ()
-removeConnection world' connId =
-  atomically $ modifyTVar world' $ \world ->
-    world { connections = M.delete connId (connections world) }
+removeConnection world' connId = atomically $ modifyTVar world' $ \world ->
+  world { connections = M.delete connId (connections world) }
 
 openNetworkConnection :: HostName -> PortNumber -> ObjId -> MOO ObjId
 openNetworkConnection host port object = do

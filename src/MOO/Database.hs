@@ -107,8 +107,8 @@ allPlayers :: Database -> [ObjId]
 allPlayers = IS.toList . players
 
 setPlayer :: Bool -> ObjId -> Database -> Database
-setPlayer yesno oid db = db { players = change (players db) }
-  where change = (if yesno then IS.insert else IS.delete) oid
+setPlayer yesno oid db = db { players = change oid (players db) }
+  where change = if yesno then IS.insert else IS.delete
 
 data ServerOptions = Options {
     bgSeconds :: IntT
