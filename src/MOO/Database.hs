@@ -12,6 +12,7 @@ module MOO.Database ( Database
                     , resetMaxObject
                     , setObjects
                     , addObject
+                    , deleteObject
                     , modifyObject
                     , allPlayers
                     , setPlayer
@@ -80,6 +81,12 @@ addObject :: Object -> Database -> STM Database
 addObject obj db = do
   objTVar <- newTVar (Just obj)
   return db { objects = V.snoc (objects db) objTVar }
+
+deleteObject :: ObjId -> Database -> STM ()
+deleteObject oid db =
+  case dbObjectRef oid db of
+    Just objTVar -> writeTVar objTVar Nothing
+    Nothing      -> return ()
 
 modifyObject :: ObjId -> Database -> (Object -> STM Object) -> STM ()
 modifyObject oid db f =

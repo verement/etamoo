@@ -9,6 +9,7 @@ module MOO.Object ( Object (..)
                   , getChildren
                   , addChild
                   , deleteChild
+                  , getContents
                   , builtinProperties
                   , builtinProperty
                   , isBuiltinProperty
@@ -36,6 +37,7 @@ import Data.HashMap.Strict (HashMap)
 import Data.IntSet (IntSet)
 import Data.Maybe (isJust)
 import Data.List (find)
+import Prelude hiding (getContents)
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
@@ -121,6 +123,12 @@ deleteChild :: ObjId -> Object -> STM Object
 deleteChild childOid obj =
   return obj { objectChildren = IS.delete childOid (objectChildren obj) }
 
+getLocation :: Object -> ObjId
+getLocation = objectForMaybe . objectLocation
+
+getContents :: Object -> [ObjId]
+getContents = IS.elems . objectContents
+
 data Property = Property {
     propertyName      :: StrT
   , propertyValue     :: Maybe Value
@@ -163,8 +171,8 @@ builtinProperties = [ "name", "owner"
 builtinProperty :: StrT -> Maybe (Object -> Value)
 builtinProperty "name"       = Just (Str . objectName)
 builtinProperty "owner"      = Just (Obj . objectOwner)
-builtinProperty "location"   = Just (Obj . objectForMaybe . objectLocation)
-builtinProperty "contents"   = Just (objectList . IS.elems . objectContents)
+builtinProperty "location"   = Just (Obj . getLocation)
+builtinProperty "contents"   = Just (objectList . getContents)
 builtinProperty "programmer" = Just (truthValue . objectProgrammer)
 builtinProperty "wizard"     = Just (truthValue . objectWizard)
 builtinProperty "r"          = Just (truthValue . objectPermR)

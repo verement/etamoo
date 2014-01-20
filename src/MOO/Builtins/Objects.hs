@@ -7,6 +7,7 @@ import Control.Concurrent.STM (STM, newTVar, readTVar, writeTVar)
 import Control.Monad (when, unless, liftM, void, forM_, foldM, join)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Set (Set)
+import Prelude hiding (getContents)
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
@@ -78,6 +79,17 @@ builtins = [
 
 -- § 4.4.3.1 Fundamental Operations on Objects
 
+modifyQuota :: ObjId -> (IntT -> MOO IntT) -> MOO ()
+modifyQuota player f = do
+  maybeQuota <- readProperty player ownershipQuota
+  case maybeQuota of
+    Just (Int quota) -> do
+      quota' <- f quota
+      writeProperty player ownershipQuota (Int quota')
+    _ -> return ()
+
+  where ownershipQuota = "ownership_quota"
+
 bf_create (Obj parent : optional) = do
   maybeParent <- case parent of
     -1  -> return Nothing
@@ -91,12 +103,8 @@ bf_create (Obj parent : optional) = do
     Just (Obj (-1)) -> checkWizard         >> return newOid
     Just (Obj oid)  -> checkPermission oid >> return oid
 
-  maybeQuota <- readProperty ownerOid "ownership_quota"
-  case maybeQuota of
-    Just (Int quota)
-      | quota <= 0 -> raise E_QUOTA
-      | otherwise  -> writeProperty ownerOid "ownership_quota" (Int $ quota - 1)
-    _ -> return ()
+  modifyQuota ownerOid $ \quota ->
+    if quota <= 0 then raise E_QUOTA else return (quota - 1)
 
   properties <- case maybeParent of
     Nothing  -> return $ objectProperties initObject
@@ -133,17 +141,8 @@ bf_create (Obj parent : optional) = do
 
   where (maybeOwner : _) = maybeDefaults optional
 
-bf_chparent [Obj object, Obj new_parent] = do
-  obj <- checkValid object
-  maybeNewParent <- case new_parent of
-    -1  -> return Nothing
-    oid -> do
-      newParent <- checkValid oid
-      checkFertile oid
-      return (Just newParent)
-  checkPermission (objectOwner obj)
-  checkRecurrence objectParent object new_parent
-
+reparentObject :: (ObjId, Object) -> (ObjId, Maybe Object) -> MOO ()
+reparentObject (object, obj) (new_parent, maybeNewParent) = do
   -- Verify that neither object nor any of its descendants defines a property
   -- with the same name as one defined on new_parent or any of its ancestors
   case maybeNewParent of
@@ -189,8 +188,6 @@ bf_chparent [Obj object, Obj new_parent] = do
     Just _  -> liftSTM $ modifyObject new_parent db $ addChild object
     Nothing -> return ()
 
-  return nothing
-
   where ancestors :: ObjId -> MOO [ObjId]
         ancestors oid = do
           maybeObject <- getObject oid
@@ -216,13 +213,79 @@ bf_chparent [Obj object, Obj new_parent] = do
                   props <- liftSTM $ definedProperties obj
                   return (acc (map T.toCaseFold props) ++)
 
+bf_chparent [Obj object, Obj new_parent] = do
+  obj <- checkValid object
+  maybeNewParent <- case new_parent of
+    -1  -> return Nothing
+    oid -> do
+      newParent <- checkValid oid
+      checkFertile oid
+      return (Just newParent)
+  checkPermission (objectOwner obj)
+  checkRecurrence objectParent object new_parent
+
+  reparentObject (object, obj) (new_parent, maybeNewParent)
+
+  return nothing
+
 bf_valid [Obj object] = (truthValue . isJust) `liftM` getObject object
 
 bf_parent [Obj object] = (Obj . getParent) `liftM` checkValid object
 
 bf_children [Obj object] = (objectList . getChildren) `liftM` checkValid object
 
-bf_recycle [Obj object] = notyet "recycle"
+bf_recycle [Obj object] = do
+  obj <- checkValid object
+  let owner = objectOwner obj
+  checkPermission owner
+
+  callFromFunc "recycle" 0 (object, "recycle") []
+
+  moveContentsToNothing object
+  moveToNothing object
+
+  reparentChildren object (objectParent obj)
+  reparent object Nothing
+
+  getDatabase >>= liftSTM . deleteObject object
+
+  modifyQuota owner $ return . (+ 1)
+
+  return nothing
+
+  where moveContentsToNothing :: ObjId -> MOO ()
+        moveContentsToNothing object = do
+          maybeObj <- getObject object
+          case getContents `fmap` maybeObj of
+            Just (oid:_) -> do
+              moveToNothing oid
+              moveContentsToNothing object
+            _ -> return ()
+
+        moveToNothing :: ObjId -> MOO ()
+        moveToNothing oid = moveObject "recycle" oid (-1)
+
+        reparentChildren :: ObjId -> Maybe ObjId -> MOO ()
+        reparentChildren object maybeParent = do
+          maybeObj <- getObject object
+          case getChildren `fmap` maybeObj of
+            Just (oid:_) -> do
+              reparent oid maybeParent
+              reparentChildren object maybeParent
+            _ -> return ()
+
+        reparent :: ObjId -> Maybe ObjId -> MOO ()
+        reparent object maybeParent = do
+          maybeObj <- getObject object
+          case maybeObj of
+            Just obj -> do
+              newParent <- case maybeParent of
+                Just parentOid -> do
+                  parent <- getObject parentOid
+                  return (parentOid, parent)
+                Nothing -> return (-1, Nothing)
+              reparentObject (object, obj) newParent
+            Nothing -> return ()
 
 bf_object_bytes [Obj object] = do
   checkWizard
@@ -239,20 +302,8 @@ bf_max_object [] = (Obj . maxObject) `liftM` getDatabase
 
 -- § 4.4.3.2 Object Movement
 
-bf_move [Obj what, Obj where_] = do
-  what' <- checkValid what
-  where' <- case where_ of
-    -1  -> return Nothing
-    oid -> Just `liftM` checkValid oid
-  checkPermission (objectOwner what')
-
-  when (isJust where') $ do
-    accepted <- maybe False truthOf `liftM`
-                callFromFunc "move" 0 (where_, "accept") [Obj what]
-    unless accepted $ do
-      wizard <- isWizard =<< frame permissions
-      unless wizard $ raise E_NACC
-
+moveObject :: Id -> ObjId -> ObjId -> MOO ()
+moveObject funcName what where_ = do
   let newWhere = case where_ of
         -1  -> Nothing
         oid -> Just oid
@@ -282,14 +333,30 @@ bf_move [Obj what, Obj where_] = do
         case oldWhere of
           Nothing        -> return ()
           Just oldWhere' ->
-            void $ callFromFunc "move" 1 (oldWhere', "exitfunc") [Obj what]
+            void $ callFromFunc funcName 1 (oldWhere', "exitfunc") [Obj what]
 
         maybeWhat <- getObject what
         case maybeWhat of
           Nothing      -> return ()
           Just whatObj ->
             when (objectLocation whatObj == newWhere) $
-            void $ callFromFunc "move" 2 (where_, "enterfunc") [Obj what]
+            void $ callFromFunc funcName 2 (where_, "enterfunc") [Obj what]
+
+bf_move [Obj what, Obj where_] = do
+  what' <- checkValid what
+  where' <- case where_ of
+    -1  -> return Nothing
+    oid -> Just `liftM` checkValid oid
+  checkPermission (objectOwner what')
+
+  when (isJust where') $ do
+    accepted <- maybe False truthOf `liftM`
+                callFromFunc "move" 0 (where_, "accept") [Obj what]
+    unless accepted $ do
+      wizard <- isWizard =<< frame permissions
+      unless wizard $ raise E_NACC
+
+  moveObject "move" what where_
 
   return nothing
 
