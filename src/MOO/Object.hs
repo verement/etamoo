@@ -245,9 +245,9 @@ lookupVerb :: Object -> Value -> STM (Maybe Verb)
 lookupVerb obj desc = maybe (return Nothing) (fmap Just . readTVar . snd) $
                       lookupVerbRef obj desc
 
-replaceVerb :: Object -> Int -> Verb -> Object
-replaceVerb obj index verb =
-  obj { objectVerbs = pre ++ [(verbKey verb, tvarVerb)] ++ tail post }
+replaceVerb :: Int -> Verb -> Object -> STM Object
+replaceVerb index verb obj =
+  return obj { objectVerbs = pre ++ [(verbKey verb, tvarVerb)] ++ tail post }
   where (pre, post) = splitAt index (objectVerbs obj)
         tvarVerb = snd $ head post
 

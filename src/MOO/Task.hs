@@ -801,8 +801,7 @@ modifyVerb (oid, obj) desc f =
           names' = T.toCaseFold $ verbNames verb'
       when (names /= names') $ do
         db <- getDatabase
-        liftSTM $ modifyObject oid db $ \obj ->
-          return $ replaceVerb obj index verb'
+        liftSTM $ modifyObject oid db $ replaceVerb index verb'
 
 readProperty :: ObjId -> StrT -> MOO (Maybe Value)
 readProperty oid name = do
