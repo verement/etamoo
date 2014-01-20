@@ -17,6 +17,9 @@ module MOO.Object ( Object (..)
                   , setVerbs
                   , lookupPropertyRef
                   , lookupProperty
+                  , addProperty
+                  , addInheritedProperty
+                  , deleteProperty
                   , lookupVerbRef
                   , lookupVerb
                   , replaceVerb
@@ -206,6 +209,23 @@ lookupPropertyRef obj name = HM.lookup name (objectProperties obj)
 lookupProperty :: Object -> StrT -> STM (Maybe Property)
 lookupProperty obj name = maybe (return Nothing) (fmap Just . readTVar) $
                           lookupPropertyRef obj name
+
+addProperty :: Property -> Object -> STM Object
+addProperty prop obj = do
+  propTVar <- newTVar prop
+  return obj { objectProperties =
+                  HM.insert (propertyKey prop) propTVar $ objectProperties obj }
+
+addInheritedProperty :: Property -> Object -> STM Object
+addInheritedProperty prop obj =
+  flip addProperty obj $ if propertyPermC prop
+                         then prop' { propertyOwner = objectOwner obj }
+                         else prop'
+  where prop' = prop { propertyInherited = True, propertyValue = Nothing }
+
+deleteProperty :: StrT -> Object -> STM Object
+deleteProperty name obj =
+  return obj { objectProperties = HM.delete name (objectProperties obj) }
 
 lookupVerbRef :: Object -> Value -> Maybe (Int, TVar Verb)
 lookupVerbRef obj (Str name) =

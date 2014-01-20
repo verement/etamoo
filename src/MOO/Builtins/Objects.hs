@@ -4,7 +4,7 @@
 module MOO.Builtins.Objects ( builtins ) where
 
 import Control.Concurrent.STM (STM, newTVar, readTVar, writeTVar)
-import Control.Monad (when, unless, liftM, void, join)
+import Control.Monad (when, unless, liftM, void, forM_, join)
 import Data.Maybe (isJust, isNothing)
 import Data.Set (Set)
 
@@ -316,7 +316,7 @@ bf_add_property [Obj object, Str prop_name, value, Lst info] = do
   flip traverseDescendants object $ \obj ->
     when (isJust $ lookupPropertyRef obj name) $ raise E_INVARG
 
-  let definedProp = initProperty {
+  let newProperty = initProperty {
           propertyName      = prop_name
         , propertyValue     = Just value
         , propertyInherited = False
@@ -324,23 +324,12 @@ bf_add_property [Obj object, Str prop_name, value, Lst info] = do
         , propertyPermR     = 'r' `S.member` permSet
         , propertyPermW     = 'w' `S.member` permSet
         , propertyPermC     = 'c' `S.member` permSet
-      }
-      inheritedProp = definedProp {
-          propertyInherited = True
-        , propertyValue     = Nothing
-       }
-      addProperty prop obj = do
-        propTVar <- newTVar prop
-        return obj { objectProperties =
-                        HM.insert name propTVar $ objectProperties obj }
-      addInheritedProperty prop obj =
-        flip addProperty obj $ if propertyPermC prop
-                               then prop { propertyOwner = objectOwner obj }
-                               else prop
+        }
+
   db <- getDatabase
-  liftSTM $ modifyObject object db (addProperty definedProp)
-  mapM_ (modifyDescendants db $
-         addInheritedProperty inheritedProp) $ getChildren obj
+  liftSTM $ modifyObject object db (addProperty newProperty)
+  forM_ (getChildren obj) $
+    modifyDescendants db $ addInheritedProperty newProperty
 
   return nothing
 
