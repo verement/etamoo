@@ -3,7 +3,7 @@
 
 module MOO.Builtins.Tasks ( builtins ) where
 
-import Control.Concurrent (forkIO, threadDelay, killThread)
+import Control.Concurrent (forkIO, killThread)
 import Control.Concurrent.STM (atomically, newEmptyTMVar, takeTMVar, putTMVar)
 import Control.Monad (liftM, void)
 import Control.Monad.Cont (callCC)
@@ -12,7 +12,6 @@ import Control.Monad.State (gets, modify, get)
 import Data.List (sort)
 import Data.Time (getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import System.Posix (nanosleep)
 
 import MOO.Types
 import MOO.Task
@@ -145,12 +144,8 @@ bf_suspend optional = do
         }
 
   case maybeMicroseconds of
-    Just usecs -> delayIO $ void $ forkIO $ do
-      if usecs <= fromIntegral (maxBound :: Int)
-        then threadDelay (fromIntegral usecs)
-        else nanosleep (usecs * 1000)
-      wake nothing
-    Nothing -> return ()
+    Just usecs -> delayIO $ void $ forkIO $ delay usecs >> wake nothing
+    Nothing    -> return ()
 
   putTask task'
 

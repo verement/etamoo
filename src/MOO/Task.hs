@@ -27,6 +27,7 @@ module MOO.Task ( MOO
                 , stepTask
                 , runTask
                 , forkTask
+                , delay
                 , interrupt
                 , requestIO
                 , liftSTM
@@ -462,9 +463,7 @@ forkTask taskId usecs code = do
   startSignal <- liftSTM newEmptyTMVar
 
   threadId <- requestIO $ forkIO $ do
-    if usecs <= fromIntegral (maxBound :: Int)
-      then threadDelay (fromIntegral usecs)
-      else nanosleep (usecs * 1000)
+    delay usecs
     atomically $ takeTMVar startSignal
     now <- getCurrentTime
     void $ runTask task' { taskState = state' { startTime = now } }
@@ -473,6 +472,13 @@ forkTask taskId usecs code = do
     world { tasks = M.insert taskId task' { taskThread = threadId } $
                     tasks world }
   liftSTM $ putTMVar startSignal ()
+
+-- | Wait for the given number of microseconds to elapse.
+delay :: Integer -> IO ()
+delay usecs =
+  if usecs <= fromIntegral (maxBound :: Int)
+  then threadDelay (fromIntegral usecs)
+  else nanosleep (usecs * 1000)
 
 -- | A continuation for returning to the task dispatcher to handle an
 -- interrupt request. Note that calling this continuation implies a commit to
