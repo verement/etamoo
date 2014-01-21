@@ -107,6 +107,7 @@ import Control.Monad.State.Strict (StateT, runStateT, get, gets, modify)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (execWriter, tell)
 import Data.ByteString (ByteString)
+import Data.Int (Int32)
 import Data.List (find)
 import Data.Map (Map)
 import Data.Maybe (isNothing, fromMaybe, fromJust)
@@ -211,13 +212,12 @@ instance Ord Task where
   Task { taskState = state1 } `compare` Task { taskState = state2 } =
     startTime state1 `compare` startTime state2
 
-type TaskId = Int
+type TaskId = Int32
 
 -- | Generate and return a (random) 'TaskId' not currently in use by any
 -- existing task.
 newTaskId :: World -> StdGen -> STM TaskId
-newTaskId world gen =
-  return $ fromJust $ find unused $ randomRs (1, maxBound) gen
+newTaskId world = return . fromJust . find unused . randomRs (1, maxBound)
   where unused taskId = M.notMember taskId (tasks world)
 
 -- | Create a pending 'Task' for the given computation on behalf of the given
