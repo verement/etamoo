@@ -1,29 +1,44 @@
 
-module MOO.Database.LambdaMOO ( loadLMDatabase ) where
+{-# LANGUAGE OverloadedStrings #-}
 
-import Control.Concurrent.STM (atomically, readTVar, writeTVar)
-import Control.Monad (unless, when)
+module MOO.Database.LambdaMOO ( loadLMDatabase, saveLMDatabase ) where
+
+import Control.Concurrent.STM (STM, atomically, readTVar, writeTVar)
+import Control.Monad (unless, when, forM, forM_, join, liftM)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (ReaderT, runReaderT, local, asks)
-import Data.Array (Array, listArray, inRange, bounds, (!))
-import Data.Bits (shiftL, shiftR, (.&.))
+import Control.Monad.Reader (ReaderT, runReaderT, local, asks, ask)
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Writer (WriterT, execWriterT, tell)
+import Data.Array (Array, listArray, inRange, bounds, (!), elems, assocs)
+import Data.Bits (shiftL, shiftR, (.&.), (.|.))
 import Data.IntSet (IntSet)
-import Data.List (sort)
-import Data.Maybe (catMaybes)
+import Data.List (sort, foldl', elemIndex)
+import Data.Maybe (catMaybes, listToMaybe)
+import Data.Text.Lazy.Builder (Builder, toLazyText,
+                               fromText, fromLazyText, fromString, singleton)
+import Data.Text.Lazy.Builder.Int (decimal)
+import Data.Text.Lazy.Builder.RealFloat (realFloat)
 import Data.Word (Word)
-import System.IO (hFlush, stdout)
+import System.IO (hFlush, stdout, withFile, IOMode(WriteMode),
+                  hSetBuffering, BufferMode(..),
+                  hSetNewlineMode, NewlineMode(..), Newline(..),
+                  hSetEncoding, utf8)
 import Text.Parsec (ParseError, ParsecT, runParserT, string, count,
                     getState, putState, many1, oneOf, manyTill, anyToken,
                     digit, char, option, try, lookAhead, (<|>), (<?>))
 
-import qualified Data.Text as T
+import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
+import qualified Data.Text as T
+import qualified Data.Text.Lazy.IO as TL
+import qualified Data.Vector as V
 
 import MOO.Database
 import MOO.Object
 import MOO.Verb
 import MOO.Types
 import MOO.Parser
+import MOO.Unparser
 import MOO.Compiler
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
@@ -123,8 +138,8 @@ data ObjectDef = ObjectDef {
 data VerbDef = VerbDef {
     vbName  :: String
   , vbOwner :: ObjId
-  , vbPerms :: IntT
-  , vbPrep  :: IntT
+  , vbPerms :: Int
+  , vbPrep  :: Int
 }
 
 type PropDef = String
@@ -350,8 +365,8 @@ read_verbdef = (<?> "verbdef") $ do
   return VerbDef {
       vbName  = name
     , vbOwner = owner
-    , vbPerms = perms
-    , vbPrep  = prep
+    , vbPerms = fromIntegral perms
+    , vbPrep  = fromIntegral prep
   }
 
 read_propdef :: DBParser PropDef
@@ -560,25 +575,22 @@ read_rt_env = (<?> "rt_env") $ do
 read_bi_func_data :: DBParser ()
 read_bi_func_data = return ()
 
-read_active_connections :: DBParser ()
-read_active_connections = (<?> "active_connections") $ eof <|> do
+read_active_connections :: DBParser [(Int, Int)]
+read_active_connections = (<?> "active_connections") $ (eof >> return []) <|> do
   nconnections <- signedInt
   string " active connections"
   have_listeners <- (string " with listeners\n" >> return True) <|>
                     (char '\n' >> return False)
 
-  count nconnections $ do
-    (who, listener) <- if have_listeners
-                       then do who <- signedInt
-                               char ' '
-                               listener <- signedInt
-                               char '\n'
-                               return (who, listener)
-                       else do who <- read_num
-                               return (fromIntegral who, system_object)
-    return ()
-
-  return ()
+  count nconnections $
+    if have_listeners
+      then do who <- signedInt
+              char ' '
+              listener <- signedInt
+              char '\n'
+              return (who, listener)
+      else do who <- read_num
+              return (fromIntegral who, system_object)
 
 -- Enumeration constants from LambdaMOO
 type_int     = 0
@@ -626,3 +638,177 @@ dobjShift = 4
 iobjShift = 6
 objMask   = 0x3
 permMask  = 0xF
+
+-- Database writing ...
+
+type DBWriter = ReaderT Database (WriterT Builder STM)
+
+liftSTM :: STM a -> DBWriter a
+liftSTM = lift . lift
+
+saveLMDatabase :: FilePath -> Database -> IO ()
+saveLMDatabase dbFile database = withFile dbFile WriteMode $ \handle -> do
+  hSetBuffering handle (BlockBuffering Nothing)
+  hSetNewlineMode handle NewlineMode { inputNL = CRLF, outputNL = LF }
+  hSetEncoding handle utf8
+
+  let writer = runReaderT writeDatabase database
+      stm    = execWriterT writer
+  TL.hPutStr handle . toLazyText =<< atomically stm
+
+tellLn :: Builder -> DBWriter ()
+tellLn line = tell line >> tell (singleton '\n')
+
+writeDatabase :: DBWriter ()
+writeDatabase = do
+  let (before, after) = header_format_string
+  tell (fromString before)
+  tell (decimal $ num_db_versions - 1)
+  tellLn (fromString after)
+
+  db <- ask
+  let nobjs = maxObject db + 1
+  tellLn (decimal nobjs)
+
+  objects <- listArray (0, maxObject db) `liftM`
+             forM [0..maxObject db] (\oid -> liftSTM $ dbObject oid db)
+
+  let nprogs = foldl' numVerbs 0 (elems objects)
+        where numVerbs acc Nothing    = acc
+              numVerbs acc (Just obj) = acc + length (objectVerbs obj)
+  tellLn (decimal nprogs)
+
+  let dummy = 0 :: Int
+  tellLn (decimal dummy)
+
+  let users  = allPlayers db
+      nusers = length users
+  tellLn (decimal nusers)
+  forM_ users $ tellLn . decimal
+
+  verbs <- forM (assocs objects) $ tellObject objects
+  forM_ verbs tellVerbs
+
+  tellLn "0 clocks"
+  tellLn "0 queued tasks"
+  tellLn "0 suspended tasks"
+
+tellObject :: Array ObjId (Maybe Object) -> (ObjId, Maybe Object) ->
+              DBWriter (ObjId, [Verb])
+tellObject objects (oid, Just obj) = do
+  tell (singleton '#')
+  tellLn (decimal oid)
+
+  tellLn (fromText $ objectName obj)
+  tellLn ""  -- old handles string
+
+  let flags = flag objectIsPlayer   flag_user       .|.
+              flag objectProgrammer flag_programmer .|.
+              flag objectWizard     flag_wizard     .|.
+              flag objectPermR      flag_read       .|.
+              flag objectPermW      flag_write      .|.
+              flag objectPermF      flag_fertile
+      flag test fl = if test obj then 1 `shiftL` fl else 0 :: Int
+  tellLn (decimal flags)
+
+  tellLn (decimal $ objectOwner obj)
+
+  let location = objectLocation obj
+  tellLn (decimal $ objectForMaybe location)
+
+  let contents = IS.toList (objectContents obj)
+  tellLn (decimal $ objectForMaybe $ listToMaybe contents)
+  tellLn (decimal $ nextLink objects oid objectContents location)
+
+  let parent = objectParent obj
+  tellLn (decimal $ objectForMaybe parent)
+
+  let children = IS.toList (objectChildren obj)
+  tellLn (decimal $ objectForMaybe $ listToMaybe children)
+  tellLn (decimal $ nextLink objects oid objectChildren parent)
+
+  verbs <- liftSTM $ mapM (readTVar . snd) $ objectVerbs obj
+  tellLn (decimal $ length verbs)
+  forM_ verbs $ \verb -> do
+    tellLn (fromText $ verbNames verb)
+    tellLn (decimal $ verbOwner verb)
+
+    let flags = flag verbPermR vf_read  .|.
+                flag verbPermW vf_write .|.
+                flag verbPermX vf_exec  .|.
+                flag verbPermD vf_debug .|.
+                objectArgs
+        flag test fl = if test verb then fl else 0
+        objectArgs = fromEnum (verbDirectObject   verb) `shiftL` dobjShift .|.
+                     fromEnum (verbIndirectObject verb) `shiftL` iobjShift
+    tellLn (decimal flags)
+
+    tellLn (decimal $ fromEnum (verbPreposition verb) - 2)
+
+  definedProperties <- liftSTM $ definedProperties obj
+  tellLn (decimal $ length definedProperties)
+  forM_ definedProperties $ tellLn . fromText
+
+  tellLn (decimal $ HM.size $ objectProperties obj)
+  tellProperties objects obj (Just oid)
+
+  return (oid, verbs)
+
+tellObject _ (oid, Nothing) = do
+  tell (singleton '#')
+  tell (decimal oid)
+  tellLn " recycled"
+
+  return (oid, [])
+
+nextLink :: Array ObjId (Maybe Object) -> ObjId ->
+            (Object -> IntSet) -> Maybe ObjId -> ObjId
+nextLink objects oid projection superior = next
+  where nexts   = maybe [] (IS.toList . projection) $
+                  join $ (objects !) `fmap` superior
+        myIndex = elemIndex oid nexts
+        next    = objectForMaybe $ listToMaybe $
+                  maybe (const []) (drop . (+ 1)) myIndex nexts
+
+tellProperties :: Array ObjId (Maybe Object) -> Object -> Maybe ObjId ->
+                  DBWriter ()
+tellProperties objects obj (Just oid) = do
+  let Just definer = objects ! oid
+  properties <- liftSTM $ map T.toCaseFold `fmap` definedProperties definer
+  forM_ properties $ \propertyName -> do
+    Just property <- liftSTM $ lookupProperty obj propertyName
+    case propertyValue property of
+      Nothing    -> tellLn (decimal type_clear)
+      Just value -> tellValue value
+
+    tellLn (decimal $ propertyOwner property)
+
+    let flags = flag propertyPermR pf_read  .|.
+                flag propertyPermW pf_write .|.
+                flag propertyPermC pf_chown
+        flag test fl = if test property then fl else 0
+    tellLn (decimal flags)
+
+  tellProperties objects obj (objectParent definer)
+
+tellProperties _ _ Nothing = return ()
+
+tellValue :: Value -> DBWriter ()
+tellValue value = case value of
+  Int x -> tellLn (decimal  type_int)   >> tellLn (decimal   x)
+  Flt x -> tellLn (decimal _type_float) >> tellLn (realFloat x)
+  Str x -> tellLn (decimal _type_str)   >> tellLn (fromText  x)
+  Obj x -> tellLn (decimal  type_obj)   >> tellLn (decimal   x)
+  Err x -> tellLn (decimal  type_err)   >> tellLn (decimal $ fromEnum x)
+  Lst x -> tellLn (decimal _type_list)  >> tellLn (decimal $ V.length x) >>
+           V.forM_ x tellValue
+
+tellVerbs :: (ObjId, [Verb]) -> DBWriter ()
+tellVerbs (oid, verbs) = forM_ (zip [0..] verbs) $ \(vnum, verb) -> do
+  tell (singleton '#')
+  tell (decimal oid)
+  tell (singleton ':')
+  tellLn $ decimal (vnum :: Int)
+
+  tell (fromLazyText $ unparse True False $ verbProgram verb)
+  tellLn (singleton '.')
