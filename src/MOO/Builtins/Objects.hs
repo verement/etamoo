@@ -13,6 +13,7 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
 import qualified Data.Set as S
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import qualified Data.Vector as V
 
 import MOO.Builtins.Common
@@ -661,7 +662,7 @@ bf_verb_code (Obj object : verb_desc : optional) = do
   unless (verbPermR verb) $ checkPermission (verbOwner verb)
   checkProgrammer
 
-  let code = init $ T.splitOn "\n" $
+  let code = init $ T.splitOn "\n" $ TL.toStrict $
              unparse fully_paren indent (verbProgram verb)
   return (stringList code)
 

@@ -9,9 +9,11 @@ import Control.Monad (when, unless, liftM, (<=<))
 import Control.Monad.Reader (ReaderT, runReaderT, asks, local)
 import Control.Monad.Writer (Writer, execWriter, tell)
 import Data.Char (isAlpha, isAlphaNum)
-import Data.Monoid ((<>))
+import Data.List (intersperse)
+import Data.Monoid ((<>), mconcat)
 import Data.Set (Set)
-import Data.Text (Text)
+import Data.Text.Lazy (Text)
+import Data.Text.Lazy.Builder (Builder, toLazyText, fromText)
 
 import qualified Data.Set as S
 import qualified Data.Text as T
@@ -20,12 +22,12 @@ import MOO.AST
 import MOO.Types
 import MOO.Parser (keywords)
 
-type Unparser = ReaderT UnparserEnv (Writer Text)
+type Unparser = ReaderT UnparserEnv (Writer Builder)
 
 data UnparserEnv = UnparserEnv {
     fullyParenthesizing :: Bool
   , indenting           :: Bool
-  , indentation         :: Text
+  , indentation         :: Builder
 }
 
 initUnparserEnv = UnparserEnv {
@@ -47,7 +49,8 @@ unparse :: Bool     -- ^ /fully-paren/
         -> Program
         -> Text
 unparse fullyParen indent (Program stmts) =
-  execWriter $ runReaderT (tellStatements stmts) $ initUnparserEnv {
+  toLazyText $ execWriter $ runReaderT (tellStatements stmts) $
+  initUnparserEnv {
       fullyParenthesizing = fullyParen
     , indenting           = indent
   }
@@ -120,13 +123,14 @@ tellStatement stmt = case stmt of
 
 tellBlock :: StrT -> Maybe Id -> Unparser () -> [Statement] -> Unparser ()
 tellBlock name maybeVar detail body = do
-  indent >> tell name >> maybeTellVar maybeVar >> detail
+  indent >> tell name' >> maybeTellVar maybeVar >> detail
   moreIndented $ tellStatements body
-  indent >> tell "end" >> tell name >> tell "\n"
+  indent >> tell "end" >> tell name' >> tell "\n"
+  where name' = fromText name
 
 maybeTellVar :: Maybe Id -> Unparser ()
 maybeTellVar Nothing    = return ()
-maybeTellVar (Just var) = tell " " >> tell var
+maybeTellVar (Just var) = tell " " >> tell (fromText var)
 
 detailExpr :: Expr -> Unparser ()
 detailExpr expr = tell " (" >> tellExpr expr >> tell ")\n"
@@ -134,18 +138,18 @@ detailExpr expr = tell " (" >> tellExpr expr >> tell ")\n"
 tellExpr :: Expr -> Unparser ()
 tellExpr = tell <=< unparseExpr
 
-unparseExpr :: Expr -> Unparser Text
+unparseExpr :: Expr -> Unparser Builder
 unparseExpr expr = case expr of
-  Literal value -> return $ toLiteral value
+  Literal value -> return (fromText $ toLiteral value)
 
   List args -> do
     args' <- unparseArgs args
     return $ "{" <> args' <> "}"
 
-  Variable var -> return var
+  Variable var -> return (fromText var)
 
   PropRef (Literal (Obj 0)) (Literal (Str name))
-    | isIdentifier name -> return $ "$" <> name
+    | isIdentifier name -> return $ "$" <> fromText name
   PropRef obj name -> do
     obj' <- case obj of
       Literal Int{} -> paren obj  -- avoid digits followed by dot (-> float)
@@ -165,7 +169,8 @@ unparseExpr expr = case expr of
 
   VerbCall (Literal (Obj 0)) (Literal (Str name)) args
     | isIdentifier name -> do args' <- unparseArgs args
-                              return $ "$" <> name <> "(" <> args' <> ")"
+                              return $ "$" <> fromText name <>
+                                       "(" <> args' <> ")"
   VerbCall obj name args -> do
     obj' <- parenL expr obj
     name' <- unparseNameExpr name
@@ -174,7 +179,7 @@ unparseExpr expr = case expr of
 
   BuiltinFunc func args -> do
     args' <- unparseArgs args
-    return $ func <> "(" <> args' <> ")"
+    return $ fromText func <> "(" <> args' <> ")"
 
   Index lhs rhs -> do
     lhs' <- parenL expr lhs
@@ -251,33 +256,31 @@ unparseExpr expr = case expr of
 
         negateParen = liftM ("-" <>) . paren
 
-unparseArgs :: [Arg] -> Unparser Text
-unparseArgs = liftM (T.intercalate ", ") . mapM unparseArg
-  where unparseArg (ArgNormal expr) = unparseExpr expr
+unparseArgs :: [Arg] -> Unparser Builder
+unparseArgs = liftM (mconcat . intersperse ", ") . mapM unparseArg
+  where unparseArg (ArgNormal expr) =                  unparseExpr expr
         unparseArg (ArgSplice expr) = ("@" <>) `liftM` unparseExpr expr
 
-unparseScatter :: [ScatItem] -> Unparser Text
-unparseScatter = liftM (T.intercalate ", ") . mapM unparseScat
-  where unparseScat (ScatRequired var)             = return var
-        unparseScat (ScatRest     var)             = return $ "@" <> var
-        unparseScat (ScatOptional var Nothing)     = return $ "?" <> var
+unparseScatter :: [ScatItem] -> Unparser Builder
+unparseScatter = liftM (mconcat . intersperse ", ") . mapM unparseScat
+  where unparseScat (ScatRequired var)         = return $        fromText var
+        unparseScat (ScatRest     var)         = return $ "@" <> fromText var
+        unparseScat (ScatOptional var Nothing) = return $ "?" <> fromText var
         unparseScat (ScatOptional var (Just expr)) = do
           expr' <- unparseExpr expr
-          return $ "?" <> var <> " = " <> expr'
+          return $ "?" <> fromText var <> " = " <> expr'
 
-unparseNameExpr :: Expr -> Unparser Text
+unparseNameExpr :: Expr -> Unparser Builder
 unparseNameExpr (Literal (Str name))
-  | isIdentifier name = return name
-unparseNameExpr expr = do
-  expr' <- unparseExpr expr
-  return $ "(" <> expr' <> ")"
+  | isIdentifier name = return (fromText name)
+unparseNameExpr expr = paren expr
 
-paren :: Expr -> Unparser Text
+paren :: Expr -> Unparser Builder
 paren expr = do
   expr' <- unparseExpr expr
   return $ "(" <> expr' <> ")"
 
-mightParen :: (Int -> Int -> Bool) -> Expr -> Expr -> Unparser Text
+mightParen :: (Int -> Int -> Bool) -> Expr -> Expr -> Unparser Builder
 mightParen cmp parent child = do
   fullyParenthesizing <- asks fullyParenthesizing
   if (fullyParenthesizing && precedence child < precedence PropRef{}) ||
@@ -285,10 +288,10 @@ mightParen cmp parent child = do
     then paren child
     else unparseExpr child
 
-parenL :: Expr -> Expr -> Unparser Text
+parenL :: Expr -> Expr -> Unparser Builder
 parenL = mightParen (>)
 
-parenR :: Expr -> Expr -> Unparser Text
+parenR :: Expr -> Expr -> Unparser Builder
 parenR = mightParen (>=)
 
 isIdentifier :: StrT -> Bool
