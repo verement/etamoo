@@ -59,13 +59,14 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
     compile' rest
 
     where var' = T.toCaseFold var
+
           loop var (elt:elts) body = runTick >> do
             storeVariable var elt
             callCC $ \continue -> do
               setLoopContinue (Continuation continue)
-              body
+              void body
             loop var elts body
-          loop _ [] _ = return nothing
+          loop _ [] _ = return ()
 
   ForRange lineNumber var (start, end) body -> do
     setLineNumber lineNumber
@@ -84,25 +85,26 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
     compile' rest
 
     where var' = T.toCaseFold var
+
           loop var ty i end body
-            | i > end   = return nothing
+            | i > end   = return ()
             | otherwise = runTick >> do
               storeVariable var (ty i)
               callCC $ \continue -> do
                 setLoopContinue (Continuation continue)
-                body
+                void body
               loop var ty (succ i) end body
 
   While lineNumber var expr body -> do
     callCC $ \break -> do
       pushLoopContext var' (Continuation break)
       loop lineNumber var' (evaluate expr) (compile' body)
-      return nothing
     popContext
 
     compile' rest
 
     where var' = fmap T.toCaseFold var
+
           loop lineNumber var expr body = runTick >> do
             setLineNumber lineNumber
             expr' <- expr
@@ -110,7 +112,7 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
             when (truthOf expr') $ do
               callCC $ \continue -> do
                 setLoopContinue (Continuation continue)
-                body
+                void body
               loop lineNumber var expr body
 
   Fork lineNumber var delay body -> runTick >> do

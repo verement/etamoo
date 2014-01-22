@@ -889,13 +889,10 @@ instance Sizeable CallStack where
   storageBytes (Stack stack) = storageBytes stack
 
 -- | A local continuation for loop constructs
-newtype Continuation = Continuation (Value -> MOO Value)
+newtype Continuation = Continuation (() -> MOO Value)
 
 instance Sizeable Continuation where
   storageBytes _ = storageBytes ()
-
-instance Show Continuation where
-  show _ = "<Continuation>"
 
 -- | A structure describing a (possibly nested) context for the current frame,
 -- used to manage loop break/continue and try/finally interactions
@@ -1061,8 +1058,8 @@ unwindContexts p = do
             case this of
               TryFinally { finally = finally } -> do
                 modifyFrame $ \frame -> frame { contextStack = next }
-                finally
-              _ -> return nothing
+                void finally
+              _ -> return ()
             unwind next
         unwind [] = return []
 
@@ -1077,12 +1074,12 @@ unwindLoopContext maybeName = do
 breakLoop :: Maybe Id -> MOO Value
 breakLoop maybeName = do
   Loop { loopBreak = Continuation break } <- unwindLoopContext maybeName
-  break nothing
+  break ()
 
 continueLoop :: Maybe Id -> MOO Value
 continueLoop maybeName = do
   Loop { loopContinue = Continuation continue } <- unwindLoopContext maybeName
-  continue nothing
+  continue ()
 
 -- | The default collection of verb variables
 initVariables :: Map Id Value
