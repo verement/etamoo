@@ -14,18 +14,20 @@ import Data.Bits (shiftL, shiftR, (.&.), (.|.))
 import Data.IntSet (IntSet)
 import Data.List (sort, foldl', elemIndex)
 import Data.Maybe (catMaybes, listToMaybe)
+import Data.Text.Lazy (Text)
 import Data.Text.Lazy.Builder (Builder, toLazyText,
                                fromText, fromLazyText, fromString, singleton)
 import Data.Text.Lazy.Builder.Int (decimal)
 import Data.Text.Lazy.Builder.RealFloat (realFloat)
 import Data.Word (Word)
-import System.IO (hFlush, stdout, withFile, IOMode(WriteMode),
+import System.IO (Handle, hFlush, stdout, withFile, IOMode(..),
                   hSetBuffering, BufferMode(..),
                   hSetNewlineMode, NewlineMode(..), Newline(..),
                   hSetEncoding, utf8)
 import Text.Parsec (ParseError, ParsecT, runParserT, string, count,
                     getState, putState, many1, oneOf, manyTill, anyToken,
                     digit, char, option, try, lookAhead, (<|>), (<?>))
+import Text.Parsec.Text.Lazy ()
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
@@ -43,12 +45,19 @@ import MOO.Compiler
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
+withDBFile :: FilePath -> IOMode -> (Handle -> IO a) -> IO a
+withDBFile dbFile mode io = withFile dbFile mode $ \handle -> do
+  hSetBuffering handle (BlockBuffering Nothing)
+  hSetNewlineMode handle NewlineMode { inputNL = CRLF, outputNL = LF }
+  hSetEncoding handle utf8
+  io handle
+
 loadLMDatabase :: FilePath -> IO (Either ParseError Database)
-loadLMDatabase dbFile = do
-  contents <- readFile dbFile
+loadLMDatabase dbFile = withDBFile dbFile ReadMode $ \handle -> do
+  contents <- TL.hGetContents handle
   runReaderT (runParserT lmDatabase initDatabase dbFile contents) initDBEnv
 
-type DBParser = ParsecT String Database (ReaderT DBEnv IO)
+type DBParser = ParsecT Text Database (ReaderT DBEnv IO)
 
 data DBEnv = DBEnv {
     input_version :: Word
@@ -647,11 +656,7 @@ liftSTM :: STM a -> DBWriter a
 liftSTM = lift . lift
 
 saveLMDatabase :: FilePath -> Database -> IO ()
-saveLMDatabase dbFile database = withFile dbFile WriteMode $ \handle -> do
-  hSetBuffering handle (BlockBuffering Nothing)
-  hSetNewlineMode handle NewlineMode { inputNL = CRLF, outputNL = LF }
-  hSetEncoding handle utf8
-
+saveLMDatabase dbFile database = withDBFile dbFile WriteMode $ \handle -> do
   let writer = runReaderT writeDatabase database
       stm    = execWriterT writer
   TL.hPutStr handle . toLazyText =<< atomically stm
