@@ -541,18 +541,20 @@ times :: Value -> Value -> MOO Value
 _       `times` _       = raise E_TYPE
 
 divide :: Value -> Value -> MOO Value
-(Int a) `divide` (Int b) | b == 0    = raise E_DIV
-                         | otherwise = return $ Int (a `quot` b)
-(Flt a) `divide` (Flt b) | b == 0    = raise E_DIV
-                         | otherwise = checkFloat (a / b)
-_       `divide` _                   = raise E_TYPE
+(Int _) `divide` (Int 0) = raise E_DIV
+(Int a) `divide` (Int (-1))  -- avoid arithmetic overflow
+  | a == minBound        = return $ Int a
+(Int a) `divide` (Int b) = return $ Int (a `quot` b)
+(Flt _) `divide` (Flt 0) = raise E_DIV
+(Flt a) `divide` (Flt b) = checkFloat (a / b)
+_       `divide` _       = raise E_TYPE
 
 remain :: Value -> Value -> MOO Value
-(Int a) `remain` (Int b) | b == 0    = raise E_DIV
-                         | otherwise = return $ Int (a `rem` b)
-(Flt a) `remain` (Flt b) | b == 0    = raise E_DIV
-                         | otherwise = checkFloat (a `fmod` b)
-_       `remain` _                   = raise E_TYPE
+(Int _) `remain` (Int 0) = raise E_DIV
+(Int a) `remain` (Int b) = return $ Int (a `rem` b)
+(Flt _) `remain` (Flt 0) = raise E_DIV
+(Flt a) `remain` (Flt b) = checkFloat (a `fmod` b)
+_       `remain` _       = raise E_TYPE
 
 fmod :: FltT -> FltT -> FltT
 x `fmod` y = x - fromIntegral n * y
