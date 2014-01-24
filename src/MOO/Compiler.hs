@@ -525,36 +525,36 @@ expand (a:as) = case a of
 expand [] = return []
 
 plus :: Value -> Value -> MOO Value
-(Int a) `plus` (Int b) = return $ Int (a + b)
-(Flt a) `plus` (Flt b) = checkFloat (a + b)
-(Str a) `plus` (Str b) = return $ Str (T.append a b)
-_       `plus` _       = raise E_TYPE
+Int a `plus` Int b = return $ Int (a + b)
+Flt a `plus` Flt b = checkFloat (a + b)
+Str a `plus` Str b = return $ Str (T.append a b)
+_     `plus` _     = raise E_TYPE
 
 minus :: Value -> Value -> MOO Value
-(Int a) `minus` (Int b) = return $ Int (a - b)
-(Flt a) `minus` (Flt b) = checkFloat (a - b)
-_       `minus` _       = raise E_TYPE
+Int a `minus` Int b = return $ Int (a - b)
+Flt a `minus` Flt b = checkFloat (a - b)
+_     `minus` _     = raise E_TYPE
 
 times :: Value -> Value -> MOO Value
-(Int a) `times` (Int b) = return $ Int (a * b)
-(Flt a) `times` (Flt b) = checkFloat (a * b)
-_       `times` _       = raise E_TYPE
+Int a `times` Int b = return $ Int (a * b)
+Flt a `times` Flt b = checkFloat (a * b)
+_     `times` _     = raise E_TYPE
 
 divide :: Value -> Value -> MOO Value
-(Int _) `divide` (Int 0) = raise E_DIV
-(Int a) `divide` (Int (-1))  -- avoid arithmetic overflow
-  | a == minBound        = return $ Int a
-(Int a) `divide` (Int b) = return $ Int (a `quot` b)
-(Flt _) `divide` (Flt 0) = raise E_DIV
-(Flt a) `divide` (Flt b) = checkFloat (a / b)
-_       `divide` _       = raise E_TYPE
+Int _ `divide` Int 0 = raise E_DIV
+Int a `divide` Int (-1)  -- avoid arithmetic overflow
+  | a == minBound    = return $ Int a
+Int a `divide` Int b = return $ Int (a `quot` b)
+Flt _ `divide` Flt 0 = raise E_DIV
+Flt a `divide` Flt b = checkFloat (a / b)
+_     `divide` _     = raise E_TYPE
 
 remain :: Value -> Value -> MOO Value
-(Int _) `remain` (Int 0) = raise E_DIV
-(Int a) `remain` (Int b) = return $ Int (a `rem` b)
-(Flt _) `remain` (Flt 0) = raise E_DIV
-(Flt a) `remain` (Flt b) = checkFloat (a `fmod` b)
-_       `remain` _       = raise E_TYPE
+Int _ `remain` Int 0 = raise E_DIV
+Int a `remain` Int b = return $ Int (a `rem` b)
+Flt _ `remain` Flt 0 = raise E_DIV
+Flt a `remain` Flt b = checkFloat (a `fmod` b)
+_     `remain` _     = raise E_TYPE
 
 fmod :: FltT -> FltT -> FltT
 x `fmod` y = x - fromIntegral n * y
@@ -565,14 +565,14 @@ x `fmod` y = x - fromIntegral n * y
                     | otherwise = round   q
 
 power :: Value -> Value -> MOO Value
-(Int a) `power` (Int b)
+Int a `power` Int b
   | b >= 0    = return $ Int (a ^ b)
   | otherwise = case a of
     -1 | even b    -> return $ Int   1
        | otherwise -> return $ Int (-1)
     0 -> raise E_DIV
-    1 -> return (Int 1)
-    _ -> return (Int 0)
-(Flt a) `power` (Int b) = checkFloat (a ^^ b)
-(Flt a) `power` (Flt b) = checkFloat (a ** b)
-_       `power` _       = raise E_TYPE
+    1 -> return $ Int 1
+    _ -> return $ Int 0
+Flt a `power` Int b = checkFloat (a ^^ b)
+Flt a `power` Flt b = checkFloat (a ** b)
+_     `power` _     = raise E_TYPE
