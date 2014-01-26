@@ -13,8 +13,8 @@ module MOO.AST (
   , Expr(..)
   , Codes(..)
   , Default(..)
-  , Arg(..)
-  , ScatItem(..)
+  , Argument(..)
+  , ScatterItem(..)
 
   -- * Utility Functions
   , isLValue
@@ -87,16 +87,16 @@ instance Sizeable Except where
     storageBytes codes + storageBytes body
 
 data Expr = Literal Value
-          | List [Arg]
+          | List [Argument]
 
           | Variable Id
-          | PropRef Expr Expr
+          | PropertyRef Expr Expr
 
           | Assign Expr Expr
-          | ScatterAssign [ScatItem] Expr
+          | Scatter [ScatterItem] Expr
 
-          | VerbCall Expr Expr [Arg]
-          | BuiltinFunc Id [Arg]
+          | VerbCall Expr Expr [Argument]
+          | BuiltinFunc Id [Argument]
 
           | Expr `Index`  Expr
           | Expr `Range` (Expr, Expr)
@@ -117,12 +117,12 @@ data Expr = Literal Value
           | Expr `Or`  Expr
           | Not Expr
 
-          | Expr `Equal`        Expr
-          | Expr `NotEqual`     Expr
-          | Expr `LessThan`     Expr
-          | Expr `LessEqual`    Expr
-          | Expr `GreaterThan`  Expr
-          | Expr `GreaterEqual` Expr
+          | Expr `CompareEQ` Expr
+          | Expr `CompareNE` Expr
+          | Expr `CompareLT` Expr
+          | Expr `CompareLE` Expr
+          | Expr `CompareGT` Expr
+          | Expr `CompareGE` Expr
 
           | Catch Expr Codes Default
 
@@ -132,11 +132,11 @@ instance Sizeable Expr where
   storageBytes (Literal value) = storageBytes () + storageBytes value
   storageBytes (List args)     = storageBytes () + storageBytes args
   storageBytes (Variable var)  = storageBytes () + storageBytes var
-  storageBytes (PropRef obj name) =
+  storageBytes (PropertyRef obj name) =
     storageBytes () + storageBytes obj + storageBytes name
   storageBytes (Assign lhs rhs) =
     storageBytes () + storageBytes lhs + storageBytes rhs
-  storageBytes (ScatterAssign scats expr) =
+  storageBytes (Scatter scats expr) =
     storageBytes () + storageBytes scats + storageBytes expr
   storageBytes (VerbCall obj name args) =
     storageBytes () + storageBytes obj + storageBytes name + storageBytes args
@@ -158,41 +158,42 @@ instance Sizeable Expr where
   storageBytes (And    x y) = storageBytes () + storageBytes x + storageBytes y
   storageBytes (Or     x y) = storageBytes () + storageBytes x + storageBytes y
   storageBytes (Not    x)   = storageBytes () + storageBytes x
-  storageBytes (Equal  x y) = storageBytes () + storageBytes x + storageBytes y
-  storageBytes (NotEqual x y) =
+  storageBytes (CompareEQ x y) =
     storageBytes () + storageBytes x + storageBytes y
-  storageBytes (LessThan x y) =
+  storageBytes (CompareNE x y) =
     storageBytes () + storageBytes x + storageBytes y
-  storageBytes (LessEqual x y) =
+  storageBytes (CompareLT x y) =
     storageBytes () + storageBytes x + storageBytes y
-  storageBytes (GreaterThan x y) =
+  storageBytes (CompareLE x y) =
     storageBytes () + storageBytes x + storageBytes y
-  storageBytes (GreaterEqual x y) =
+  storageBytes (CompareGT x y) =
+    storageBytes () + storageBytes x + storageBytes y
+  storageBytes (CompareGE x y) =
     storageBytes () + storageBytes x + storageBytes y
   storageBytes (Catch expr codes (Default dv)) =
     storageBytes () + storageBytes expr + storageBytes codes + storageBytes dv
 
-data    Codes   = ANY | Codes [Arg]    deriving Show
-newtype Default = Default (Maybe Expr) deriving Show
+data    Codes   = ANY | Codes [Argument] deriving Show
+newtype Default = Default (Maybe Expr)   deriving Show
 
 instance Sizeable Codes where
   storageBytes ANY          = storageBytes ()
   storageBytes (Codes args) = storageBytes () + storageBytes args
 
-data Arg = ArgNormal Expr
-         | ArgSplice Expr
-         deriving Show
+data Argument = ArgNormal Expr
+              | ArgSplice Expr
+              deriving Show
 
-instance Sizeable Arg where
+instance Sizeable Argument where
   storageBytes (ArgNormal expr) = storageBytes () + storageBytes expr
   storageBytes (ArgSplice expr) = storageBytes () + storageBytes expr
 
-data ScatItem = ScatRequired Id
-              | ScatOptional Id (Maybe Expr)
-              | ScatRest     Id
-              deriving Show
+data ScatterItem = ScatRequired Id
+                 | ScatOptional Id (Maybe Expr)
+                 | ScatRest     Id
+                 deriving Show
 
-instance Sizeable ScatItem where
+instance Sizeable ScatterItem where
   storageBytes (ScatRequired var) = storageBytes () + storageBytes var
   storageBytes (ScatOptional var expr) =
     storageBytes () + storageBytes var + storageBytes expr
@@ -204,47 +205,47 @@ isLValue (Range e _)  = isLValue' e
 isLValue e            = isLValue' e
 
 isLValue' :: Expr -> Bool
-isLValue' Variable{}  = True
-isLValue' PropRef{}   = True
-isLValue' (Index e _) = isLValue' e
-isLValue' _           = False
+isLValue' Variable{}    = True
+isLValue' PropertyRef{} = True
+isLValue' (Index e _)   = isLValue' e
+isLValue' _             = False
 
 -- | Return a precedence value for the given expression, needed by
 -- "MOO.Unparser" to determine whether parentheses are necessary to isolate an
 -- expression from its surrounding context.
 precedence :: Expr -> Int
 precedence expr = case expr of
-  Assign{}        ->  1
-  ScatterAssign{} ->  1
+  Assign{}      ->  1
+  Scatter{}     ->  1
 
-  Conditional{}   ->  2
+  Conditional{} ->  2
 
-  And{}           ->  3
-  Or{}            ->  3
+  And{}         ->  3
+  Or{}          ->  3
 
-  Equal{}         ->  4
-  NotEqual{}      ->  4
-  LessThan{}      ->  4
-  LessEqual{}     ->  4
-  GreaterThan{}   ->  4
-  GreaterEqual{}  ->  4
-  In{}            ->  4
+  CompareEQ{}   ->  4
+  CompareNE{}   ->  4
+  CompareLT{}   ->  4
+  CompareLE{}   ->  4
+  CompareGT{}   ->  4
+  CompareGE{}   ->  4
+  In{}          ->  4
 
-  Plus{}          ->  5
-  Minus{}         ->  5
+  Plus{}        ->  5
+  Minus{}       ->  5
 
-  Times{}         ->  6
-  Divide{}        ->  6
-  Remain{}        ->  6
+  Times{}       ->  6
+  Divide{}      ->  6
+  Remain{}      ->  6
 
-  Power{}         ->  7
+  Power{}       ->  7
 
-  Not{}           ->  8
-  Negate{}        ->  8
+  Not{}         ->  8
+  Negate{}      ->  8
 
-  PropRef{}       ->  9
-  VerbCall{}      ->  9
-  Index{}         ->  9
-  Range{}         ->  9
+  PropertyRef{} ->  9
+  VerbCall{}    ->  9
+  Index{}       ->  9
+  Range{}       ->  9
 
-  _               -> 10
+  _             -> 10

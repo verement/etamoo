@@ -205,12 +205,12 @@ logical :: MOOParser Expr
 logical = chainl1 relational (try op)
   where op = equal <|> notEqual <|> lessThan <|> lessEqual <|>
              greaterThan <|> greaterEqual <|> inOp
-        equal        = symbol "=="   >> return Equal
-        notEqual     = symbol "!="   >> return NotEqual
-        lessThan     = lt            >> return LessThan
-        lessEqual    = symbol "<="   >> return LessEqual
-        greaterThan  = gt            >> return GreaterThan
-        greaterEqual = symbol ">="   >> return GreaterEqual
+        equal        = symbol "=="   >> return CompareEQ
+        notEqual     = symbol "!="   >> return CompareNE
+        lessThan     = lt            >> return CompareLT
+        lessEqual    = symbol "<="   >> return CompareLE
+        greaterThan  = gt            >> return CompareGT
+        greaterEqual = symbol ">="   >> return CompareGE
         inOp         = reserved "in" >> return In
 
         lt = try $ lexeme $ char '<' >> notFollowedBy (char '=')
@@ -253,7 +253,7 @@ primary = subexpression <|> dollarThing <|> identThing <|>
           dollarRef <|> justDollar
         dollarRef = do
           name <- fmap (Literal . Str) identifier
-          dollarVerb name <|> return (PropRef objectZero name)
+          dollarVerb name <|> return (PropertyRef objectZero name)
         dollarVerb name = fmap (VerbCall objectZero name) $ parens argList
         objectZero = Literal $ Obj 0
         justDollar = do
@@ -287,7 +287,7 @@ modifiers expr = (propRef  >>= modifiers) <|>
   where propRef = do
           try $ dot >> notFollowedBy dot
           ref <- parens expression <|> fmap (Literal . Str) identifier
-          return $ PropRef expr ref
+          return $ PropertyRef expr ref
         verbCall = do
           colon
           ref <- parens expression <|> fmap (Literal . Str) identifier
@@ -308,13 +308,13 @@ codes :: MOOParser Codes
 codes = any <|> fmap Codes nonEmptyArgList <?> "codes"
   where any = reserved "ANY" >> return ANY
 
-nonEmptyArgList :: MOOParser [Arg]
+nonEmptyArgList :: MOOParser [Argument]
 nonEmptyArgList = arguments False
 
-argList :: MOOParser [Arg]
+argList :: MOOParser [Argument]
 argList = arguments True
 
-arguments :: Bool -> MOOParser [Arg]
+arguments :: Bool -> MOOParser [Argument]
 arguments allowEmpty
   | allowEmpty = commaSep  arg
   | otherwise  = commaSep1 arg
@@ -322,7 +322,7 @@ arguments allowEmpty
         splice = symbol "@" >> fmap ArgSplice expression
         normal = fmap ArgNormal expression
 
-scatList :: MOOParser [ScatItem]
+scatList :: MOOParser [ScatterItem]
 scatList = commaSep1 scat
   where scat = optional <|> rest <|> required
         optional = do
@@ -333,7 +333,7 @@ scatList = commaSep1 scat
         rest = symbol "@" >> fmap ScatRest identifier
         required = fmap ScatRequired identifier
 
-scatFromArgList :: [Arg] -> MOOParser [ScatItem]
+scatFromArgList :: [Argument] -> MOOParser [ScatterItem]
 scatFromArgList [] = fail "Empty list in scattering assignment."
 scatFromArgList args = go args
   where go (a:as) = do
@@ -345,13 +345,13 @@ scatFromArgList args = go args
           return (a':as')
         go [] = return []
 
-mkScatter :: [ScatItem] -> Expr -> MOOParser Expr
+mkScatter :: [ScatterItem] -> Expr -> MOOParser Expr
 mkScatter scat expr = checkScatter True scat
   where checkScatter restValid (s:ss) = case s of
           ScatRest{} | restValid -> checkScatter False ss
                      | otherwise -> fail tooMany
           _ -> checkScatter restValid ss
-        checkScatter _ [] = return $ ScatterAssign scat expr
+        checkScatter _ [] = return $ Scatter scat expr
         tooMany = "More than one `@' target in scattering assignment."
 
 -- Statements

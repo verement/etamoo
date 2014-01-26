@@ -148,9 +148,9 @@ unparseExpr expr = case expr of
 
   Variable var -> return (fromText var)
 
-  PropRef (Literal (Obj 0)) (Literal (Str name))
+  PropertyRef (Literal (Obj 0)) (Literal (Str name))
     | isIdentifier name -> return $ "$" <> fromText name
-  PropRef obj name -> do
+  PropertyRef obj name -> do
     obj' <- case obj of
       Literal Int{} -> paren obj  -- avoid digits followed by dot (-> float)
       _             -> parenL expr obj
@@ -162,7 +162,7 @@ unparseExpr expr = case expr of
     rhs' <- unparseExpr rhs
     return $ lhs' <> " = " <> rhs'
 
-  ScatterAssign scats rhs -> do
+  Scatter scats rhs -> do
     scats' <- unparseScatter scats
     rhs' <- unparseExpr rhs
     return $ "{" <> scats' <> "} = " <> rhs'
@@ -195,28 +195,28 @@ unparseExpr expr = case expr of
   Length -> return "$"
 
   -- Left-associative operators
-  In           lhs rhs -> binaryL lhs " in " rhs
-  Plus         lhs rhs -> binaryL lhs " + "  rhs
-  Minus        lhs rhs -> binaryL lhs " - "  rhs
-  Times        lhs rhs -> binaryL lhs " * "  rhs
-  Divide       lhs rhs -> binaryL lhs " / "  rhs
-  Remain       lhs rhs -> binaryL lhs " % "  rhs
-  And          lhs rhs -> binaryL lhs " && " rhs
-  Or           lhs rhs -> binaryL lhs " || " rhs
-  Equal        lhs rhs -> binaryL lhs " == " rhs
-  NotEqual     lhs rhs -> binaryL lhs " != " rhs
-  LessThan     lhs rhs -> binaryL lhs " < "  rhs
-  LessEqual    lhs rhs -> binaryL lhs " <= " rhs
-  GreaterThan  lhs rhs -> binaryL lhs " > "  rhs
-  GreaterEqual lhs rhs -> binaryL lhs " >= " rhs
+  In        lhs rhs -> binaryL lhs " in " rhs
+  Plus      lhs rhs -> binaryL lhs " + "  rhs
+  Minus     lhs rhs -> binaryL lhs " - "  rhs
+  Times     lhs rhs -> binaryL lhs " * "  rhs
+  Divide    lhs rhs -> binaryL lhs " / "  rhs
+  Remain    lhs rhs -> binaryL lhs " % "  rhs
+  And       lhs rhs -> binaryL lhs " && " rhs
+  Or        lhs rhs -> binaryL lhs " || " rhs
+  CompareEQ lhs rhs -> binaryL lhs " == " rhs
+  CompareNE lhs rhs -> binaryL lhs " != " rhs
+  CompareLT lhs rhs -> binaryL lhs " < "  rhs
+  CompareLE lhs rhs -> binaryL lhs " <= " rhs
+  CompareGT lhs rhs -> binaryL lhs " > "  rhs
+  CompareGE lhs rhs -> binaryL lhs " >= " rhs
 
   -- Right-associative operators
-  Power        lhs rhs -> binaryR lhs " ^ "  rhs
+  Power     lhs rhs -> binaryR lhs " ^ "  rhs
 
   Negate lhs@(Literal x)                | numeric x -> negateParen lhs
   Negate lhs@(Literal x `Index` _)      | numeric x -> negateParen lhs
   Negate lhs@(Literal x `Range` _)      | numeric x -> negateParen lhs
-  Negate lhs@(Literal Flt{} `PropRef` _)            -> negateParen lhs
+  Negate lhs@(Literal Flt{} `PropertyRef` _)        -> negateParen lhs
   Negate lhs@(VerbCall (Literal x) _ _) | numeric x -> negateParen lhs
   Negate lhs -> ("-" <>) `liftM` parenL expr lhs
 
@@ -256,12 +256,12 @@ unparseExpr expr = case expr of
 
         negateParen = liftM ("-" <>) . paren
 
-unparseArgs :: [Arg] -> Unparser Builder
+unparseArgs :: [Argument] -> Unparser Builder
 unparseArgs = liftM (mconcat . intersperse ", ") . mapM unparseArg
   where unparseArg (ArgNormal expr) =                  unparseExpr expr
         unparseArg (ArgSplice expr) = ("@" <>) `liftM` unparseExpr expr
 
-unparseScatter :: [ScatItem] -> Unparser Builder
+unparseScatter :: [ScatterItem] -> Unparser Builder
 unparseScatter = liftM (mconcat . intersperse ", ") . mapM unparseScat
   where unparseScat (ScatRequired var)         = return $        fromText var
         unparseScat (ScatRest     var)         = return $ "@" <> fromText var
@@ -283,7 +283,7 @@ paren expr = do
 mightParen :: (Int -> Int -> Bool) -> Expr -> Expr -> Unparser Builder
 mightParen cmp parent child = do
   fullyParenthesizing <- asks fullyParenthesizing
-  if (fullyParenthesizing && precedence child < precedence PropRef{}) ||
+  if (fullyParenthesizing && precedence child < precedence PropertyRef{}) ||
      (precedence parent `cmp` precedence child)
     then paren child
     else unparseExpr child

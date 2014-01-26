@@ -201,11 +201,11 @@ evaluate expr@Variable{} = catchDebug $ fetch (lValue expr)
 evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
   List args -> fromList `liftM` expand args
 
-  PropRef{} -> fetch (lValue expr)
+  PropertyRef{} -> fetch (lValue expr)
 
   Assign what expr -> store (lValue what) =<< evaluate expr
 
-  ScatterAssign items expr -> do
+  Scatter items expr -> do
     expr' <- evaluate expr
     case expr' of
       Lst v -> scatterAssign items v
@@ -249,12 +249,12 @@ evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
 
   Not x -> (truthValue . not . truthOf) `liftM` evaluate x
 
-  x `Equal`        y -> equality   (==) x y
-  x `NotEqual`     y -> equality   (/=) x y
-  x `LessThan`     y -> comparison (<)  x y
-  x `LessEqual`    y -> comparison (<=) x y
-  x `GreaterThan`  y -> comparison (>)  x y
-  x `GreaterEqual` y -> comparison (>=) x y
+  x `CompareEQ` y -> equality   (==) x y
+  x `CompareNE` y -> equality   (/=) x y
+  x `CompareLT` y -> comparison (<)  x y
+  x `CompareLE` y -> comparison (<=) x y
+  x `CompareGT` y -> comparison (>)  x y
+  x `CompareGE` y -> comparison (>=) x y
 
   Index{} -> fetch (lValue expr)
   Range{} -> fetch (lValue expr)
@@ -367,7 +367,7 @@ lValue (Variable var) = LValue fetch store change
           value <- fetch
           return (value, store)
 
-lValue (PropRef objExpr nameExpr) = LValue fetch store change
+lValue (PropertyRef objExpr nameExpr) = LValue fetch store change
   where fetch = getRefs >>= fetchProperty
         store value = getRefs >>= flip storeProperty value
 
@@ -472,7 +472,7 @@ lValue expr = LValue fetch store change
           value <- fetch
           return (value, store)
 
-scatterAssign :: [ScatItem] -> LstT -> MOO Value
+scatterAssign :: [ScatterItem] -> LstT -> MOO Value
 scatterAssign items args = do
   when (nargs < nreqs || (not haveRest && nargs > ntarg)) $ raise E_ARGS
   walk items args (nargs - nreqs)
@@ -514,7 +514,7 @@ scatterAssign items args = do
 
         assign var = storeVariable (T.toCaseFold var)
 
-expand :: [Arg] -> MOO [Value]
+expand :: [Argument] -> MOO [Value]
 expand (a:as) = case a of
   ArgNormal expr -> do a' <- evaluate expr
                        (a' :) `liftM` expand as
