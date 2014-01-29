@@ -78,6 +78,7 @@ module MOO.Task ( MOO
                 , catchException
                 , passException
                 , raiseException
+                , handleDebug
                 , notyet
                 , raise
                 , isWizard
@@ -281,7 +282,7 @@ data TaskDisposition = Complete Value
                      | Suspend (Maybe Integer)    (Resume ())
                      | Read     ObjId             (Resume Value)
                      | forall a. RequestIO (IO a) (Resume a)
-                     | Uncaught Exception CallStack
+                     | Uncaught Exception
                      | Timeout  Resource  CallStack
                      | Suicide
 
@@ -295,9 +296,10 @@ showResource :: Resource -> Text
 showResource Ticks   = "ticks"
 showResource Seconds = "seconds"
 
-timeoutException :: Resource -> Exception
-timeoutException resource =
-  Exception (Err E_QUOTA) ("Task ran out of " <> showResource resource) nothing
+timeoutException :: Resource -> CallStack -> Exception
+timeoutException resource stack = except { exceptionCallStack = stack }
+  where message = "Task ran out of " <> showResource resource
+        except  = newException (Err E_QUOTA) message nothing
 
 stepTask :: Task -> IO (TaskDisposition, Task)
 stepTask task = do
@@ -366,21 +368,24 @@ runTask task = do
 
             Read _ _ -> error "read() not yet implemented"
 
-            Uncaught exception@(Exception code message value)
-              stack@(Stack frames) ->
-              handleAbortedTask task' formatted putResult $
-                callSystemVerb "handle_uncaught_error"
-                [code, Str message, value, traceback, stringList formatted]
+            Uncaught exception@Exception {
+                exceptionCode      = code
+              , exceptionMessage   = message
+              , exceptionValue     = value
+              , exceptionCallStack = Stack frames
+              } -> handleAbortedTask task' formatted putResult $
+                   callSystemVerb "handle_uncaught_error"
+                   [code, Str message, value, traceback, stringList formatted]
               where traceback = formatFrames True frames
-                    formatted = formatTraceback exception stack
+                    formatted = formatTraceback exception
 
             Timeout resource stack@(Stack frames) ->
               handleAbortedTask task' formatted putResult $
                 callSystemVerb "handle_task_timeout"
                 [Str $ showResource resource, traceback, stringList formatted]
               where traceback = formatFrames True frames
-                    formatted = formatTraceback
-                                (timeoutException resource) stack
+                    formatted = formatTraceback $
+                                timeoutException resource stack
 
             Suicide -> putResult Nothing
 
@@ -407,14 +412,14 @@ runTask task = do
                       putResult Nothing
                       runTask' task' { taskComputation = resume () } noOp
                     Read _ _ -> error "read() not yet implemented"
-                    Uncaught exception stack -> do
+                    Uncaught exception -> do
                       informPlayer traceback
-                      informPlayer $ formatTraceback exception stack
+                      informPlayer $ formatTraceback exception
                       putResult Nothing
                     Timeout resource stack -> do
                       informPlayer traceback
-                      informPlayer $ formatTraceback
-                        (timeoutException resource) stack
+                      informPlayer $ formatTraceback $
+                        timeoutException resource stack
                       putResult Nothing
                     Suicide -> putResult Nothing
 
@@ -531,7 +536,7 @@ initEnvironment :: Task -> Environment
 initEnvironment task = Env {
     task             = task
   , interruptHandler = error "Undefined interrupt handler"
-  , exceptionHandler = Handler $ \e cs -> interrupt (Uncaught e cs)
+  , exceptionHandler = Handler $ interrupt . Uncaught
   , indexLength      = error "Invalid index context"
   }
 
@@ -753,9 +758,9 @@ evalFromFunc func index code = do
     , builtinFunc   = True
     , lineNumber    = index
     }
-  value <- code `catchException` \except callStack -> do
+  value <- code `catchException` \except -> do
     popFrame
-    passException except callStack
+    passException except
   popFrame
   return value
 
@@ -773,9 +778,9 @@ runVerb verb verbFrame = do
     , permissions  = verbOwner verb
     , verbFullName = verbNames verb
     }
-  value <- verbCode verb `catchException` \except callStack -> do
+  value <- verbCode verb `catchException` \except -> do
     popFrame
-    passException except callStack
+    passException except
   popFrame
 
   return value
@@ -1113,43 +1118,86 @@ initVariables = M.fromList $ [
 mkVariables :: [(Id, Value)] -> Map Id Value
 mkVariables = foldr (uncurry M.insert) initVariables
 
-newtype ExceptionHandler = Handler (Exception -> CallStack -> MOO Value)
+newtype ExceptionHandler = Handler (Exception -> MOO Value)
 
 instance Show ExceptionHandler where
   show _ = "<ExceptionHandler>"
 
 -- | A MOO exception
-data Exception = Exception Code Message Value
-type Code = Value
+data Exception = Exception {
+    exceptionCode      :: Code
+  , exceptionMessage   :: Message
+  , exceptionValue     :: Value
+
+  , exceptionCallStack :: CallStack
+  , exceptionDebugBit  :: Bool
+    -- ^ A copy of the debug bit from the verb frame in which the exception
+    -- was raised
+  }
+
+type Code    = Value
 type Message = StrT
+
+initException = Exception {
+    exceptionCode      = Err E_NONE
+  , exceptionMessage   = error2text E_NONE
+  , exceptionValue     = nothing
+
+  , exceptionCallStack = Stack []
+  , exceptionDebugBit  = True
+  }
+
+newException :: Code -> Message -> Value -> Exception
+newException code message value = initException {
+    exceptionCode    = code
+  , exceptionMessage = message
+  , exceptionValue   = value
+  }
 
 -- | Install a local exception handler for the duration of the passed
 -- computation.
-catchException :: MOO a -> (Exception -> CallStack -> MOO a) -> MOO a
+catchException :: MOO a -> (Exception -> MOO a) -> MOO a
 catchException action handler = callCC $ \k -> local (mkHandler k) action
-  where mkHandler k env = env { exceptionHandler = Handler $ \e cs ->
-                                 local (const env) $ handler e cs >>= k }
+  where mkHandler k env = env { exceptionHandler = Handler $ \e ->
+                                 local (const env) $ handler e >>= k }
 
 -- | Re-raise an exception to the next enclosing handler.
-passException :: Exception -> CallStack -> MOO a
-passException except callStack = do
+passException :: Exception -> MOO a
+passException except = do
   Handler handler <- asks exceptionHandler
-  handler except callStack
+  handler except
   error "Returned from exception handler"
 
--- | Abort execution of the current computation and call the closest enclosing
+-- | Abort execution of the current computation and call the nearest enclosing
 -- exception handler.
-raiseException :: Exception -> MOO a
-raiseException except = passException except =<< gets stack
+raiseException :: Code -> Message -> Value -> MOO a
+raiseException code message value = do
+  let except = newException code message value
+  callStack <- gets stack
+  debug <- frame debugBit
+  passException except {
+      exceptionCallStack = callStack
+    , exceptionDebugBit  = debug
+    }
+
+-- | Execute the passed computation, capturing any exception raised in verb
+-- frames with debug bit unset and returning the error code as an ordinary
+-- value instead of propagating the exception.
+handleDebug :: MOO Value -> MOO Value
+handleDebug = (`catchException` handler)
+  where handler Exception {
+            exceptionDebugBit = False
+          , exceptionCode     = code
+          } = return code
+        handler except = passException except
 
 -- | Placeholder for features not yet implemented
 notyet :: String -> MOO a
-notyet what = raiseException $
-              Exception (Err E_QUOTA) "Not yet implemented" (Str $ T.pack what)
+notyet = raiseException (Err E_QUOTA) "Not yet implemented" . Str . T.pack
 
 -- | Create and raise an exception for the given MOO error.
 raise :: Error -> MOO a
-raise err = raiseException $ Exception (Err err) (error2text err) nothing
+raise err = raiseException (Err err) (error2text err) nothing
 
 -- | Verify that the given floating point number is neither infinite nor NaN,
 -- raising 'E_FLOAT' or 'E_INVARG' respectively if so. Also, return the
@@ -1245,13 +1293,13 @@ newRandomGen = do
 
 -- | Generate traceback lines for an exception, suitable for displaying to a
 -- user.
-formatTraceback :: Exception -> CallStack -> [Text]
-formatTraceback (Exception _ message _) (Stack frames) =
+formatTraceback :: Exception -> [Text]
+formatTraceback except@Exception { exceptionCallStack = Stack frames } =
   T.splitOn "\n" $ execWriter (traceback frames)
 
   where traceback (frame:frames) = do
           describeVerb frame
-          tell $ ":  " <> message
+          tell $ ":  " <> exceptionMessage except
           traceback' frames
         traceback [] = traceback' []
 

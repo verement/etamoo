@@ -43,8 +43,8 @@ builtinFunctions =
 callBuiltin :: Id -> [Value] -> MOO Value
 callBuiltin func args = case M.lookup func builtinFunctions of
   Just (bf, info) -> checkArgs info args >> bf args
-  Nothing -> raiseException $
-             Exception (Err E_INVARG) "Unknown built-in function" (Str func)
+  Nothing -> raiseException (Err E_INVARG)
+             "Unknown built-in function" (Str func)
 
   where checkArgs (Info min max types _) args = do
           let nargs = length args

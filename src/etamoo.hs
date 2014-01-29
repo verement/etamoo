@@ -148,14 +148,17 @@ evalPrint task = do
     RequestIO io (Resume k) -> do
       result <- io
       evalPrint task' { taskComputation = k result }
-    Uncaught exception@(Exception _ m v) callStack -> do
-      notifyLines $ formatTraceback exception callStack
-      putStrLn $ "** " ++ unpack m ++ formatValue v
+    Uncaught exception@Exception {
+        exceptionMessage = message
+      , exceptionValue   = value
+      } -> do
+      notifyLines $ formatTraceback exception
+      putStrLn $ "** " ++ unpack message ++ formatValue value
       return task'
     Timeout resource callStack -> do
-      let exception@(Exception _ message _) = timeoutException resource
-      notifyLines $ formatTraceback exception callStack
-      putStrLn $ "!! " ++ unpack message
+      let exception = timeoutException resource callStack
+      notifyLines $ formatTraceback exception
+      putStrLn $ "!! " ++ unpack (exceptionMessage exception)
       return task'
     Suicide -> do
       putStrLn   "-- Task killed itself"

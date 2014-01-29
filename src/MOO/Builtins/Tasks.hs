@@ -50,7 +50,7 @@ builtins = [
   , ("task_stack"    , (bf_task_stack    , Info 1 (Just 2) [TInt, TAny] TLst))
   ]
 
-bf_raise (code : optional) = raiseException $ Exception code message value
+bf_raise (code : optional) = raiseException code message value
   where [Str message, value] = defaults optional [Str $ toText code, nothing]
 
 bf_call_function (Str func_name : args) =

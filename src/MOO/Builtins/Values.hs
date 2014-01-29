@@ -314,7 +314,7 @@ runMatch :: (Regexp -> Text -> IO MatchResult) ->
 runMatch match subject pattern case_matters = do
   let compiled = unsafePerformIO $ newRegexp pattern case_matters
   case compiled of
-    Left (err, at) -> raiseException $ Exception (Err E_INVARG)
+    Left (err, at) -> raiseException (Err E_INVARG)
                       (T.pack $ "Invalid pattern: " ++ err)
                       (Int $ fromIntegral at)
     Right regexp -> do

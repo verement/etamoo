@@ -25,7 +25,7 @@ compile :: Program -> MOO Value
 compile (Program stmts) = callCC $ compileStatements stmts
 
 compileStatements :: [Statement] -> (Value -> MOO Value) -> MOO Value
-compileStatements (statement:rest) yield = catchDebug $ case statement of
+compileStatements (statement:rest) yield = case statement of
   Expression lineNumber expr -> do
     setLineNumber lineNumber
     evaluate expr
@@ -45,16 +45,18 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
           compileIf [] elses = compile' elses
 
   ForList lineNumber var expr body -> do
-    setLineNumber lineNumber
-    expr' <- evaluate expr
-    elts <- case expr' of
-      Lst elts -> return $ V.toList elts
-      _        -> raise E_TYPE
+    handleDebug $ do
+      setLineNumber lineNumber
+      expr' <- evaluate expr
+      elts <- case expr' of
+        Lst elts -> return $ V.toList elts
+        _        -> raise E_TYPE
 
-    callCC $ \break -> do
-      pushLoopContext (Just var') (Continuation break)
-      loop var' elts (compile' body)
-    popContext
+      callCC $ \break -> do
+        pushLoopContext (Just var') (Continuation break)
+        loop var' elts (compile' body)
+      popContext
+      return nothing
 
     compile' rest
 
@@ -69,18 +71,20 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
           loop _ [] _ = return ()
 
   ForRange lineNumber var (start, end) body -> do
-    setLineNumber lineNumber
-    start' <- evaluate start
-    end'   <- evaluate end
-    (ty, s, e) <- case (start', end') of
-      (Int s, Int e) -> return (Int . fromIntegral, toInteger s, toInteger e)
-      (Obj s, Obj e) -> return (Obj . fromIntegral, toInteger s, toInteger e)
-      (_    , _    ) -> raise E_TYPE
+    handleDebug $ do
+      setLineNumber lineNumber
+      start' <- evaluate start
+      end'   <- evaluate end
+      (ty, s, e) <- case (start', end') of
+        (Int s, Int e) -> return (Int . fromIntegral, toInteger s, toInteger e)
+        (Obj s, Obj e) -> return (Obj . fromIntegral, toInteger s, toInteger e)
+        (_    , _    ) -> raise E_TYPE
 
-    callCC $ \break -> do
-      pushLoopContext (Just var') (Continuation break)
-      loop var' ty s e (compile' body)
-    popContext
+      callCC $ \break -> do
+        pushLoopContext (Just var') (Continuation break)
+        loop var' ty s e (compile' body)
+      popContext
+      return nothing
 
     compile' rest
 
@@ -116,23 +120,25 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
               loop lineNumber var expr body
 
   Fork lineNumber var delay body -> runTick >> do
-    setLineNumber lineNumber
-    delay' <- evaluate delay
-    usecs <- case delay' of
-      Int secs
-        | secs < 0  -> raise E_INVARG
-        | otherwise -> return (fromIntegral secs * 1000000)
-      Flt secs
-        | secs < 0  -> raise E_INVARG
-        | otherwise -> return (ceiling    $ secs * 1000000)
-      _ -> raise E_TYPE
+    handleDebug $ do
+      setLineNumber lineNumber
+      delay' <- evaluate delay
+      usecs <- case delay' of
+        Int secs
+          | secs < 0  -> raise E_INVARG
+          | otherwise -> return (fromIntegral secs * 1000000)
+        Flt secs
+          | secs < 0  -> raise E_INVARG
+          | otherwise -> return (ceiling    $ secs * 1000000)
+        _ -> raise E_TYPE
 
-    world <- getWorld
-    gen <- newRandomGen
-    taskId <- liftSTM $ newTaskId world gen
-    maybe return storeVariable var (Int $ fromIntegral taskId)
+      world <- getWorld
+      gen <- newRandomGen
+      taskId <- liftSTM $ newTaskId world gen
+      maybe return storeVariable var (Int $ fromIntegral taskId)
 
-    forkTask taskId usecs (compileStatements body return)
+      forkTask taskId usecs (compileStatements body return)
+      return nothing
 
     compile' rest
 
@@ -156,9 +162,13 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
               Codes args -> setLineNumber lineNumber >> Just `liftM` expand args
             return (codes', var, compile' handler)
 
-          dispatch ((codes, var, handler):next)
-            except@(Exception code message value)
-            | maybe True (code `elem`) codes = \(Stack errorFrames) -> do
+          dispatch ((codes, var, handler):next) except@Exception {
+              exceptionCode      = code
+            , exceptionMessage   = message
+            , exceptionValue     = value
+            , exceptionCallStack = Stack errorFrames
+            }
+            | maybe True (code `elem`) codes = do
               Stack currentFrames <- gets stack
               let traceback = formatFrames True $ take stackLen errorFrames
                   stackLen  = length errorFrames - length currentFrames + 1
@@ -172,10 +182,10 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
     let finally' = compile' finally
     pushTryFinallyContext finally'
 
-    compile' body `catchException` \except callStack -> do
+    compile' body `catchException` \except -> do
       popContext
       finally'
-      passException except callStack
+      passException except
 
     popContext
     finally'
@@ -186,19 +196,13 @@ compileStatements (statement:rest) yield = catchDebug $ case statement of
 
 compileStatements [] _ = return nothing
 
-catchDebug :: MOO Value -> MOO Value
-catchDebug action =
-  action `catchException` \except@(Exception code _ _) callStack -> do
-    debug <- frame debugBit
-    if debug then passException except callStack else return code
-
 -- | Compile a MOO expression into a computation in the 'MOO' monad. If a MOO
 -- exception is raised and the current verb frame's debug bit is not set,
 -- return the error code as a MOO value rather than propagating the exception.
 evaluate :: Expr -> MOO Value
 evaluate (Literal value) = return value
-evaluate expr@Variable{} = catchDebug $ fetch (lValue expr)
-evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
+evaluate expr@Variable{} = handleDebug $ fetch (lValue expr)
+evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
   List args -> fromList `liftM` expand args
 
   PropertyRef{} -> fetch (lValue expr)
@@ -273,10 +277,10 @@ evaluate expr = runTick >>= \_ -> catchDebug $ case expr of
     codes' <- case codes of
       ANY        -> return Nothing
       Codes args -> Just `liftM` expand args
-    evaluate expr `catchException` \except@(Exception code _ _) callStack ->
+    evaluate expr `catchException` \except@Exception { exceptionCode = code } ->
       if maybe True (code `elem`) codes'
         then maybe (return code) evaluate dv
-        else passException except callStack
+        else passException except
 
   where binary op a b = do
           a' <- evaluate a
