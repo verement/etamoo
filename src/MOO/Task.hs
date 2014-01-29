@@ -1,100 +1,123 @@
 
 {-# LANGUAGE OverloadedStrings, ExistentialQuantification #-}
 
-module MOO.Task ( MOO
-                , World(..)
-                , Task(..)
-                , TaskStatus(..)
-                , TaskDisposition(..)
-                , Resource(..)
-                , Wake(..)
-                , Resume(..)
-                , DelayedIO(..)
-                , Environment(..)
-                , TaskState(..)
-                , CallStack(..)
-                , Continuation(..)
-                , StackFrame(..)
-                , Exception(..)
-                , initWorld
-                , initTask
-                , newTaskId
-                , newTask
-                , taskOwner
-                , isQueued
-                , queuedTasks
-                , timeoutException
-                , stepTask
-                , runTask
-                , forkTask
-                , delay
-                , interrupt
-                , requestIO
-                , liftSTM
-                , initEnvironment
-                , initState
-                , newState
-                , getWorld
-                , getWorld'
-                , putWorld
-                , modifyWorld
-                , getTask
-                , putTask
-                , purgeTask
-                , getDatabase
-                , putDatabase
-                , getPlayer
-                , getObject
-                , getProperty
-                , getVerb
-                , findVerb
-                , callCommandVerb
-                , callVerb
-                , callFromFunc
-                , evalFromFunc
-                , runVerb
-                , runTick
-                , modifyProperty
-                , modifyVerb
-                , readProperty
-                , writeProperty
-                , setBuiltinProperty
-                , initFrame
-                , formatFrames
-                , pushFrame
-                , popFrame
-                , activeFrame
-                , frame
-                , caller
-                , modifyFrame
-                , setLineNumber
-                , pushTryFinallyContext
-                , pushLoopContext
-                , setLoopContinue
-                , popContext
-                , breakLoop
-                , continueLoop
-                , mkVariables
-                , catchException
-                , passException
-                , raiseException
-                , handleDebug
-                , notyet
-                , raise
-                , isWizard
-                , checkFloat
-                , checkProgrammer
-                , checkWizard
-                , checkPermission
-                , checkValid
-                , checkFertile
-                , checkRecurrence
-                , binaryString
-                , random
-                , newRandomGen
-                , formatTraceback
-                , delayIO
-                ) where
+module MOO.Task (
+  -- * Monad Interface
+    MOO
+  , Environment(..)
+  , initEnvironment
+  , liftSTM
+
+  -- * World Interface
+  , World(..)
+  , initWorld
+  , getWorld
+  , getWorld'
+  , putWorld
+  , modifyWorld
+  , getDatabase
+  , putDatabase
+
+  -- * Task Interface
+  , Task(..)
+  , TaskStatus(..)
+  , Wake(..)
+  , TaskState(..)
+  , CallStack(..)
+  , DelayedIO(..)
+  , TaskDisposition(..)
+  , Resume(..)
+  , Resource(..)
+  , initState
+  , newState
+  , initTask
+  , newTaskId
+  , newTask
+  , taskOwner
+  , isQueued
+  , queuedTasks
+  , stepTask
+  , runTask
+  , forkTask
+  , interrupt
+  , requestIO
+  , delayIO
+  , getTask
+  , putTask
+  , purgeTask
+
+  -- * Object Interface
+  , getPlayer
+  , getObject
+  , getProperty
+  , modifyProperty
+  , modifyVerb
+  , readProperty
+  , writeProperty
+  , setBuiltinProperty
+
+  -- * Verb Execution Interface
+  , getVerb
+  , findVerb
+  , callCommandVerb
+  , callVerb
+  , callFromFunc
+  , evalFromFunc
+  , runVerb
+  , runTick
+
+  -- * Verb Frame Interface
+  , StackFrame(..)
+  , Continuation(..)
+  , initFrame
+  , formatFrames
+  , pushFrame
+  , popFrame
+  , activeFrame
+  , frame
+  , caller
+  , modifyFrame
+  , setLineNumber
+  , mkVariables
+  , formatTraceback
+
+  -- * Loop and Try/Finally Control Functions
+  , pushTryFinallyContext
+  , pushLoopContext
+  , setLoopContinue
+  , popContext
+  , breakLoop
+  , continueLoop
+
+  -- * Exception Handling
+  , Exception(..)
+  , Code
+  , Message
+  , raiseException
+  , raise
+  , catchException
+  , passException
+  , handleDebug
+  , timeoutException
+
+  -- * Utility Check Functions
+  , isWizard
+  , checkFloat
+  , checkProgrammer
+  , checkWizard
+  , checkPermission
+  , checkValid
+  , checkFertile
+  , checkRecurrence
+
+  -- * Miscellaneous
+  , binaryString
+  , random
+  , newRandomGen
+  , delay
+
+  , notyet
+  ) where
 
 import Control.Arrow (first, (&&&))
 import Control.Concurrent (ThreadId, myThreadId, forkIO, threadDelay,
