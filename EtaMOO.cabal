@@ -36,6 +36,7 @@ homepage:            http://verement.github.io/etamoo
 bug-reports:         https://github.com/verement/etamoo/issues
 
 extra-source-files:  README.md configure Makefile
+                     src/cbits/match.h
 
 source-repository head
   type:              git
@@ -87,6 +88,8 @@ executable etamoo
   extra-libraries:     pcre
 
   includes:            unistd.h pcre.h
+
+  c-sources:           src/cbits/match.c
 
   build-depends:       array
                      , base ==4.*

@@ -1,5 +1,6 @@
 
 {-# LANGUAGE ForeignFunctionInterface, EmptyDataDecls #-}
+{-# CFILES src/cbits/match.c #-}
 
 -- | Regular expression matching via PCRE through the FFI
 module MOO.Builtins.Match (
@@ -14,15 +15,14 @@ module MOO.Builtins.Match (
   , rmatch
   ) where
 
-import Foreign hiding (unsafePerformIO)
-import Foreign.C
-import Control.Monad
-import Control.Exception
-import Control.Concurrent.MVar
+import Foreign (Ptr, FunPtr, ForeignPtr, alloca, allocaArray, nullPtr,
+                peek, peekArray, peekByteOff, pokeByteOff,
+                newForeignPtr, mallocForeignPtrBytes, withForeignPtr, (.|.))
+import Foreign.C (CString, CInt(..), CULong, peekCString)
+import Control.Monad (liftM)
 import Data.Text (Text)
-import Data.Text.Encoding
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.ByteString (ByteString, useAsCString, useAsCStringLen)
-import Data.IORef
 import System.IO.Unsafe (unsafePerformIO)
 
 import qualified Data.Text as T
@@ -34,10 +34,7 @@ import qualified Data.ByteString as BS
 
 data PCRE
 data PCREExtra
-data PCRECalloutBlock
 data CharacterTables
-
-type Callout = Ptr PCRECalloutBlock -> IO CInt
 
 foreign import ccall unsafe "static pcre.h"
   pcre_compile :: CString -> CInt -> Ptr CString -> Ptr CInt ->
@@ -49,18 +46,20 @@ foreign import ccall unsafe "static pcre.h"
 foreign import ccall unsafe "static pcre.h &"
   pcre_free_study :: FunPtr (Ptr PCREExtra -> IO ())
 
-foreign import ccall safe "static pcre.h"
-  pcre_exec :: Ptr PCRE -> Ptr PCREExtra -> CString -> CInt -> CInt ->
-               CInt -> Ptr CInt -> CInt -> IO CInt
-
 foreign import ccall unsafe "static pcre.h &"
   pcre_free :: Ptr (FunPtr (Ptr a -> IO ()))
 
-foreign import ccall "static pcre.h &"
-  pcre_callout :: Ptr (FunPtr Callout)
+-- This must be /unsafe/ to block other threads while it executes, since it
+-- relies on being able to modify and use some PCRE global state.
+foreign import ccall unsafe "static match.h"
+  match_helper :: Ptr PCRE -> Ptr PCREExtra -> CString -> CInt ->
+                  CInt -> Ptr CInt -> IO CInt
 
-foreign import ccall "wrapper"
-  mkCallout :: Callout -> IO (FunPtr Callout)
+-- This must be /unsafe/ to block other threads while it executes, since it
+-- relies on being able to modify and use some PCRE global state.
+foreign import ccall unsafe "static match.h"
+  rmatch_helper :: Ptr PCRE -> Ptr PCREExtra -> CString -> CInt ->
+                   CInt -> Ptr CInt -> IO CInt
 
 data Regexp = Regexp {
     pattern     :: Text
@@ -68,8 +67,7 @@ data Regexp = Regexp {
 
   , code        :: ForeignPtr PCRE
   , extra       :: ForeignPtr PCREExtra
-  }
-            deriving Show
+  } deriving Show
 
 instance Eq Regexp where
   Regexp { pattern = p1, caseMatters = cm1 } ==
@@ -210,67 +208,26 @@ data MatchResult = MatchFailed
                  | MatchSucceeded [(Int, Int)]
                  deriving Show
 
--- We need a lock to protect pcre_callout which is shared by all threads
-matchLock :: MVar ()
-matchLock = unsafePerformIO $ newMVar ()
-{-# NOINLINE matchLock #-}
-
 match :: Regexp -> Text -> IO MatchResult
-match Regexp { code = codeFP, extra = extraFP } text =
-  bracket (takeMVar matchLock) (putMVar matchLock) $ \_ ->
+match = doMatch match_helper
+
+rmatch :: Regexp -> Text -> IO MatchResult
+rmatch = doMatch rmatch_helper
+
+doMatch :: (Ptr PCRE -> Ptr PCREExtra -> CString -> CInt ->
+            CInt -> Ptr CInt -> IO CInt) -> Regexp -> Text -> IO MatchResult
+doMatch helper Regexp { code = codeFP, extra = extraFP } text =
   withForeignPtr codeFP  $ \code           ->
   withForeignPtr extraFP $ \extra          ->
   useAsCStringLen string $ \(cstring, len) ->
   allocaArray ovecLen    $ \ovec           -> do
 
-    flags <- #{peek pcre_extra, flags} extra
-    #{poke pcre_extra, flags} extra $ flags .&. complement (0 :: CULong)
-      .&. complement #{const PCRE_EXTRA_CALLOUT_DATA}
-    poke pcre_callout nullFunPtr
-
-    rc <- pcre_exec code extra cstring (fromIntegral len) 0 options
-          ovec (fromIntegral ovecLen)
+    rc <- helper code extra cstring (fromIntegral len) options ovec
     if rc < 0
       then case rc of
         #{const PCRE_ERROR_NOMATCH} -> return MatchFailed
         _                           -> return MatchAborted
       else mkMatchResult rc ovec subject
-
-  where string  = encodeUtf8 text
-        subject = (string, T.length text)
-        options = #{const PCRE_NO_UTF8_CHECK}
-
-rmatch :: Regexp -> Text -> IO MatchResult
-rmatch Regexp {code = codeFP, extra = extraFP } text =
-  bracket (takeMVar matchLock) (putMVar matchLock) $ \_ ->
-  withForeignPtr codeFP  $ \code           ->
-  withForeignPtr extraFP $ \extra          ->
-  useAsCStringLen string $ \(cstring, len) ->
-  allocaArray ovecLen    $ \ovec           ->
-  allocaArray ovecLen    $ \rOvec          -> do
-
-    rdRef <- newIORef RmatchData { rmatchResult = 0, rmatchOvec = rOvec }
-    bracket (newStablePtr rdRef) freeStablePtr $ \sp -> do
-      #{poke pcre_extra, callout_data} extra sp
-
-      flags <- #{peek pcre_extra, flags} extra
-      #{poke pcre_extra, flags} extra $ flags .|. (0 :: CULong)
-              .|. #{const PCRE_EXTRA_CALLOUT_DATA}
-
-      bracket (mkCallout rmatchCallout) freeHaskellFunPtr $ \callout -> do
-        poke pcre_callout callout
-
-        rc <- pcre_exec code extra cstring (fromIntegral len) 0 options
-              ovec (fromIntegral ovecLen)
-        if rc < 0
-          then case rc of
-            #{const PCRE_ERROR_NOMATCH} -> do
-              rd <- readIORef rdRef
-              if valid rd
-                then mkMatchResult (rmatchResult rd) (rmatchOvec rd) subject
-                else return MatchFailed
-            _ -> return MatchAborted
-          else mkMatchResult rc ovec subject
 
   where string  = encodeUtf8 text
         subject = (string, T.length text)
@@ -290,41 +247,3 @@ mkMatchResult rc ovec (subject, subjectCharLen) =
         -- translate UTF-8 byte offset to character offset
         rebase 0 = 0
         rebase i = subjectCharLen - T.length (decodeUtf8 $ BS.drop i subject)
-
-data RmatchData = RmatchData {
-    rmatchResult :: CInt
-  , rmatchOvec   :: Ptr CInt
-  }
-
-valid :: RmatchData -> Bool
-valid RmatchData { rmatchResult = rc } = rc /= 0
-
-rmatchCallout :: Callout
-rmatchCallout block = do
-  rdRef <- deRefStablePtr =<< #{peek pcre_callout_block, callout_data} block
-  rd <- readIORef rdRef
-
-  currentPos <- #{peek pcre_callout_block, current_position} block
-  startMatch <- #{peek pcre_callout_block, start_match}      block
-
-  let ovec = rmatchOvec rd
-  ovec0 <- peekElemOff ovec 0
-  ovec1 <- peekElemOff ovec 1
-
-  when (not (valid rd) || startMatch > ovec0 ||
-        (startMatch == ovec0 && currentPos > ovec1)) $ do
-    -- make a copy of the offsets vector so the last such vector found can
-    -- be returned as the rightmost match
-    pokeElemOff ovec 0 startMatch
-    pokeElemOff ovec 1 currentPos
-
-    offsetVector <- #{peek pcre_callout_block, offset_vector} block
-    captureTop   <- #{peek pcre_callout_block, capture_top}   block
-
-    copyArray (ovec         `advancePtr` 2)
-              (offsetVector `advancePtr` 2)
-              (sizeOf ovec0 * 2 * (fromIntegral captureTop - 1))
-
-    writeIORef rdRef rd { rmatchResult = captureTop }
-
-  return 1  -- cause match failure at current point, but continue trying
