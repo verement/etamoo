@@ -146,59 +146,67 @@ translate = T.pack . concat . rewrite . T.unpack
     wordBegin  = alt "^" (lbehind nonword) ++ lahead word
     wordEnd    = lbehind word ++ alt "$" (lahead nonword)
 
--- | @newRegexp@ /regexp/ /case-matters/ compiles a regular expression pattern
--- /regexp/ into a 'Regexp' value, or returns an error description if the
--- pattern is malformed. The returned 'CInt' is a byte offset into an
--- internally translated pattern, and thus is probably not very useful.
-newRegexp :: Text -> Bool -> IO (Either (String, CInt) Regexp)
+-- | Compile a regular expression pattern into a 'Regexp' value, or return an
+-- error description if the pattern is malformed. The returned 'Int' is a byte
+-- offset into an internally translated pattern, and thus is probably not very
+-- useful.
+newRegexp :: Text -- ^ pattern
+          -> Bool -- ^ case matters?
+          -> Either (String, Int) Regexp
 newRegexp regexp caseMatters =
-  useAsCString (encodeUtf8 $ translate regexp) $ \pattern ->
-    alloca $ \errorPtr ->
-    alloca $ \errorOffsetPtr -> do
-      code <- pcre_compile pattern options errorPtr errorOffsetPtr nullPtr
-      if code == nullPtr
-        then do error <- peek errorPtr >>= peekCString
-                errorOffset <- peek errorOffsetPtr
-                return $ Left (patchError error, errorOffset)
-        else do extraFP <- mkExtra code
-                setExtraFlags extraFP
-                codeFP <- peek pcre_free >>= flip newForeignPtr code
-                return $ Right Regexp { pattern     = regexp
-                                      , caseMatters = caseMatters
-                                      , code        = codeFP
-                                      , extra       = extraFP
-                                      }
-  where
-    mkExtra code = alloca $ \errorPtr -> do
-      extra <- pcre_study code 0 errorPtr
-      if extra == nullPtr
-        then do extraFP <- mallocForeignPtrBytes #{const sizeof(pcre_extra)}
-                withForeignPtr extraFP $ \extra ->
-                  #{poke pcre_extra, flags} extra (0 :: CULong)
-                return extraFP
-        else newForeignPtr pcre_free_study extra
+  unsafePerformIO     $
+  useAsCString string $ \pattern        ->
+  alloca              $ \errorPtr       ->
+  alloca              $ \errorOffsetPtr -> do
 
-    setExtraFlags extraFP = withForeignPtr extraFP $ \extra -> do
-      #{poke pcre_extra, match_limit}           extra matchLimit
-      #{poke pcre_extra, match_limit_recursion} extra matchLimitRecursion
-      flags <- #{peek pcre_extra, flags} extra
-      #{poke pcre_extra, flags} extra $ flags .|. (0 :: CULong)
-        .|. #{const PCRE_EXTRA_MATCH_LIMIT}
-        .|. #{const PCRE_EXTRA_MATCH_LIMIT_RECURSION}
+    code <- pcre_compile pattern options errorPtr errorOffsetPtr nullPtr
+    if code == nullPtr
+      then do
+        error <- peek errorPtr >>= peekCString
+        errorOffset <- peek errorOffsetPtr
+        return $ Left (patchError error, fromIntegral errorOffset)
+      else do
+        extraFP <- mkExtra code
+        setExtraFlags extraFP
+        codeFP <- peek pcre_free >>= flip newForeignPtr code
+        return $ Right Regexp { pattern     = regexp
+                              , caseMatters = caseMatters
+                              , code        = codeFP
+                              , extra       = extraFP
+                              }
+  where string = encodeUtf8 (translate regexp)
 
-    matchLimit          = 100000 :: CULong
-    matchLimitRecursion =   5000 :: CULong
+        mkExtra code = alloca $ \errorPtr -> do
+          extra <- pcre_study code 0 errorPtr
+          if extra == nullPtr
+            then do
+              extraFP <- mallocForeignPtrBytes #{const sizeof(pcre_extra)}
+              withForeignPtr extraFP $ \extra ->
+                #{poke pcre_extra, flags} extra (0 :: CULong)
+              return extraFP
+            else newForeignPtr pcre_free_study extra
 
-    patchError = concatMap patch
-      where patch '\\' = "%"
-            patch '('  = "%("
-            patch ')'  = "%)"
-            patch  c   = [c]
+        setExtraFlags extraFP = withForeignPtr extraFP $ \extra -> do
+          #{poke pcre_extra, match_limit}           extra matchLimit
+          #{poke pcre_extra, match_limit_recursion} extra matchLimitRecursion
+          flags <- #{peek pcre_extra, flags} extra
+          #{poke pcre_extra, flags} extra $ flags .|. (0 :: CULong)
+            .|. #{const PCRE_EXTRA_MATCH_LIMIT}
+            .|. #{const PCRE_EXTRA_MATCH_LIMIT_RECURSION}
 
-    options = #{const PCRE_UTF8 | PCRE_NO_UTF8_CHECK}
-      -- allow PCRE to optimize .* at beginning of pattern by implicit anchor
-      .|. #{const PCRE_DOTALL}
-      .|. if caseMatters then 0 else #{const PCRE_CASELESS}
+        matchLimit          = 100000 :: CULong
+        matchLimitRecursion =   5000 :: CULong
+
+        patchError = concatMap patch
+          where patch '\\' = "%"
+                patch '('  = "%("
+                patch ')'  = "%)"
+                patch  c   = [c]
+
+        options = #{const PCRE_UTF8 | PCRE_NO_UTF8_CHECK}
+        -- allow PCRE to optimize .* at beginning of pattern by implicit anchor
+          .|. #{const PCRE_DOTALL}
+          .|. if caseMatters then 0 else #{const PCRE_CASELESS}
 
 maxCaptures = 10
 ovecLen     = maxCaptures * 3
@@ -208,11 +216,13 @@ data MatchResult = MatchFailed
                  | MatchSucceeded [(Int, Int)]
                  deriving Show
 
-match :: Regexp -> Text -> IO MatchResult
-match = doMatch match_helper
+-- | Perform regular expression matching.
+match :: Regexp -> Text -> MatchResult
+match regexp text = unsafePerformIO $ doMatch match_helper regexp text
 
-rmatch :: Regexp -> Text -> IO MatchResult
-rmatch = doMatch rmatch_helper
+-- | Perform regular expression matching, returning the rightmost match.
+rmatch :: Regexp -> Text -> MatchResult
+rmatch regexp text = unsafePerformIO $ doMatch rmatch_helper regexp text
 
 doMatch :: (Ptr PCRE -> Ptr PCREExtra -> CString -> CInt ->
             CInt -> Ptr CInt -> IO CInt) -> Regexp -> Text -> IO MatchResult

@@ -309,17 +309,15 @@ bf_rmatch (Str subject : Str pattern : optional) =
   runMatch rmatch subject pattern case_matters
   where [case_matters] = booleanDefaults optional [False]
 
-runMatch :: (Regexp -> Text -> IO MatchResult) ->
+runMatch :: (Regexp -> Text -> MatchResult) ->
             StrT -> StrT -> Bool -> MOO Value
-runMatch match subject pattern case_matters = do
-  let compiled = unsafePerformIO $ newRegexp pattern case_matters
-  case compiled of
+runMatch match subject pattern case_matters =
+  case newRegexp pattern case_matters of
     Left (err, at) -> raiseException (Err E_INVARG)
                       (T.pack $ "Invalid pattern: " ++ err)
                       (Int $ fromIntegral at)
-    Right regexp -> do
-      let result = unsafePerformIO $ match regexp subject
-      case result of
+    Right regexp ->
+      case match regexp subject of
         MatchFailed            -> return (Lst V.empty)
         MatchAborted           -> raise E_QUOTA
         MatchSucceeded offsets ->
