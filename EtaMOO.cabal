@@ -36,6 +36,7 @@ homepage:            http://verement.github.io/etamoo
 bug-reports:         https://github.com/verement/etamoo/issues
 
 extra-source-files:  README.md configure Makefile
+                     src/cbits/crypt.h
                      src/cbits/match.h
 
 source-repository head
@@ -57,6 +58,7 @@ executable etamoo
   other-modules:       MOO.AST
                        MOO.Builtins
                        MOO.Builtins.Common
+                       MOO.Builtins.Crypt
                        MOO.Builtins.Match
                        MOO.Builtins.Network
                        MOO.Builtins.Objects
@@ -89,7 +91,8 @@ executable etamoo
 
   includes:            unistd.h pcre.h
 
-  c-sources:           src/cbits/match.c
+  c-sources:           src/cbits/crypt.c
+                       src/cbits/match.c
 
   build-depends:       array
                      , base ==4.*

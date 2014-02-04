@@ -1,10 +1,8 @@
 
-{-# LANGUAGE OverloadedStrings, ForeignFunctionInterface #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module MOO.Builtins.Values ( builtins ) where
 
-import Control.Concurrent.MVar (MVar, newMVar, takeMVar, putMVar)
-import Control.Exception (bracket)
 import Control.Monad (mplus, unless, liftM)
 import Data.ByteString (ByteString)
 import Data.Char (intToDigit, isDigit)
@@ -12,8 +10,6 @@ import Data.Digest.Pure.MD5 (MD5Digest)
 import Data.Maybe (fromJust)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
-import Foreign.C (CString, withCString, peekCString)
-import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf (printf)
 
 import qualified Data.Digest.Pure.MD5 as MD5
@@ -25,6 +21,7 @@ import MOO.Types
 import MOO.Task
 import MOO.Parser (parseNum, parseObj)
 import MOO.Builtins.Common
+import MOO.Builtins.Crypt
 import MOO.Builtins.Match
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
@@ -376,22 +373,6 @@ bf_substitute [Str template, Lst subs] =
       (Str . T.pack) `liftM` walk (T.unpack template)
     _ -> raise E_INVARG
 
-foreign import ccall unsafe "static unistd.h crypt"
-  c_crypt :: CString -> CString -> IO CString
-
-{-# ANN crypt ("HLint: ignore Use >=>" :: String) #-}
-
-crypt :: String -> String -> String
-crypt key salt =
-  unsafePerformIO $ bracket (takeMVar cryptLock) (putMVar cryptLock) $ \_ ->
-    withCString key  $ \c_key  ->
-    withCString salt $ \c_salt ->
-      c_crypt c_key c_salt >>= peekCString
-
-cryptLock :: MVar ()
-cryptLock = unsafePerformIO $ newMVar ()
-{-# NOINLINE cryptLock #-}
-
 bf_crypt (Str text : optional)
   | maybe True invalidSalt saltArg = generateSalt >>= go
   | otherwise                      = go $ fromStr $ fromJust saltArg
@@ -403,7 +384,9 @@ bf_crypt (Str text : optional)
           return $ T.pack [c1, c2]
         randSaltChar = (saltStuff !!) `liftM` random (0, length saltStuff - 1)
         saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
-        go salt = return $ Str $ T.pack $ crypt (T.unpack text) (T.unpack salt)
+        go salt = case crypt (T.unpack text) (T.unpack salt) of
+          Just encrypted -> return $ Str $ T.pack encrypted
+          Nothing        -> raise E_QUOTA
 
 hash :: ByteString -> Value
 hash bs = Str $ T.pack $ show md5hash
