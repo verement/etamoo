@@ -282,9 +282,9 @@ encodeBinary (Int n : args)
   where c = toEnum n'
         n' = fromIntegral n
         prepend | validStrChar c &&
-                  c /= '\t'      = (c :)
-                | otherwise      = \r -> '~' : hex (n' `div` 16)
-                                             : hex (n' `mod` 16) : r
+                  c /= '~' && c /= '\t' = (c :)
+                | otherwise             = \r -> '~' : hex (n' `div` 16)
+                                                    : hex (n' `mod` 16) : r
         hex = intToDigit  -- N.B. not uppercase
 encodeBinary (Str str : args) = (encodeStr (T.unpack str) ++) `liftM`
                                 encodeBinary args
