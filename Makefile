@@ -17,8 +17,6 @@ DOCS          = dist/doc/html/EtaMOO/etamoo/index.html
 HACKAGE       = hackage.haskell.org
 HACKAGE_DOCS  = http://$(HACKAGE)/packages/archive/$$pkg/latest/doc/html
 
-GITHUB_DOCS   = http://verement.github.io/etamoo/doc/
-
 etamoo: FORCE
 	@cabal build --builddir=dist
 	ln -sf dist/build/etamoo/etamoo $@
@@ -44,7 +42,6 @@ hlint.html: $(HS_SOURCES) $(BUILT_SOURCES)
 $(DOCS): $(CABAL) $(SOURCES) Makefile
 	@cabal haddock --builddir=dist  \
 		--html-location='$(HACKAGE_DOCS)'  \
-		--contents-location='$(GITHUB_DOCS)'  \
 		--haddock-options="--title=EtaMOO --no-warnings"  \
 		--executables --hyperlink-source
 
