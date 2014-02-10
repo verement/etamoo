@@ -5,23 +5,21 @@ module MOO.Verb ( Verb(..)
                 , ObjSpec(..)
                 , PrepSpec(..)
                 , initVerb
-                , obj2text
-                , text2obj
+                , obj2string
+                , string2obj
                 , objMatch
-                , prep2text
-                , text2prep
+                , prep2string
+                , string2prep
                 , prepMatch
                 , prepPhrases
                 , verbNameMatch
                 ) where
 
-import Data.Text (Text)
-
-import qualified Data.Text as T
-
-import MOO.Types
 import MOO.AST
 import {-# SOURCE #-} MOO.Task
+import MOO.Types
+
+import qualified MOO.String as Str
 
 data Verb = Verb {
     verbNames          :: StrT
@@ -78,14 +76,14 @@ data ObjSpec = ObjNone  -- ^ none
 instance Sizeable ObjSpec where
   storageBytes _ = storageBytes ()
 
-obj2text :: ObjSpec -> Text
-obj2text ObjNone = "none"
-obj2text ObjAny  = "any"
-obj2text ObjThis = "this"
+obj2string :: ObjSpec -> StrT
+obj2string ObjNone = "none"
+obj2string ObjAny  = "any"
+obj2string ObjThis = "this"
 
-text2obj :: Text -> Maybe ObjSpec
-text2obj = flip lookup $ map mkAssoc [minBound ..]
-  where mkAssoc objSpec = (obj2text objSpec, objSpec)
+string2obj :: StrT -> Maybe ObjSpec
+string2obj = flip lookup $ map mkAssoc [minBound ..]
+  where mkAssoc objSpec = (obj2string objSpec, objSpec)
 
 objMatch :: ObjId -> ObjSpec -> ObjId -> Bool
 objMatch _    ObjNone (-1) = True
@@ -116,30 +114,31 @@ data PrepSpec = PrepAny                     -- ^ any
 instance Sizeable PrepSpec where
   storageBytes _ = storageBytes ()
 
-prep2text :: PrepSpec -> Text
-prep2text PrepAny                    = "any"
-prep2text PrepNone                   = "none"
-prep2text PrepWithUsing              = "with/using"
-prep2text PrepAtTo                   = "at/to"
-prep2text PrepInfrontof              = "in front of"
-prep2text PrepInInsideInto           = "in/inside/into"
-prep2text PrepOntopofOnOntoUpon      = "on top of/on/onto/upon"
-prep2text PrepOutofFrominsideFrom    = "out of/from inside/from"
-prep2text PrepOver                   = "over"
-prep2text PrepThrough                = "through"
-prep2text PrepUnderUnderneathBeneath = "under/underneath/beneath"
-prep2text PrepBehind                 = "behind"
-prep2text PrepBeside                 = "beside"
-prep2text PrepForAbout               = "for/about"
-prep2text PrepIs                     = "is"
-prep2text PrepAs                     = "as"
-prep2text PrepOffOffof               = "off/off of"
+prep2string :: PrepSpec -> StrT
+prep2string PrepAny                    = "any"
+prep2string PrepNone                   = "none"
+prep2string PrepWithUsing              = "with/using"
+prep2string PrepAtTo                   = "at/to"
+prep2string PrepInfrontof              = "in front of"
+prep2string PrepInInsideInto           = "in/inside/into"
+prep2string PrepOntopofOnOntoUpon      = "on top of/on/onto/upon"
+prep2string PrepOutofFrominsideFrom    = "out of/from inside/from"
+prep2string PrepOver                   = "over"
+prep2string PrepThrough                = "through"
+prep2string PrepUnderUnderneathBeneath = "under/underneath/beneath"
+prep2string PrepBehind                 = "behind"
+prep2string PrepBeside                 = "beside"
+prep2string PrepForAbout               = "for/about"
+prep2string PrepIs                     = "is"
+prep2string PrepAs                     = "as"
+prep2string PrepOffOffof               = "off/off of"
 
-text2prep :: Text -> Maybe PrepSpec
-text2prep = flip lookup $ concatMap mkAssoc [minBound ..]
+string2prep :: StrT -> Maybe PrepSpec
+string2prep = flip lookup $ concatMap mkAssoc [minBound ..]
   where mkAssoc prepSpec =
-          [ (prep, prepSpec) | prep <- T.splitOn "/" $ prep2text prepSpec ] ++
-          [ (T.pack $ show index, prepSpec)
+          [ (prep, prepSpec) | prep <- Str.splitOn "/" $
+                                       prep2string prepSpec ] ++
+          [ (Str.fromString $ show index, prepSpec)
           | let index = fromEnum prepSpec - fromEnum (succ PrepNone)
           , index >= 0
           ]
@@ -148,10 +147,10 @@ prepMatch :: PrepSpec -> PrepSpec -> Bool
 prepMatch PrepAny _  = True
 prepMatch vp      cp = vp == cp
 
-prepPhrases :: [(PrepSpec, [Text])]
-prepPhrases = [ (prepSpec, T.words prepPhrase)
+prepPhrases :: [(PrepSpec, [StrT])]
+prepPhrases = [ (prepSpec, Str.words prepPhrase)
               | prepSpec   <- [succ PrepNone ..]
-              , prepPhrase <- T.splitOn "/" $ prep2text prepSpec
+              , prepPhrase <- Str.splitOn "/" $ prep2string prepSpec
               ]
 
 -- | Does the given verb name match any of the given aliases? Each alias may
@@ -162,6 +161,7 @@ verbNameMatch name = any matchName
           | post == ""  = name     == vname
           | post == "*" = preName  == pre
           | otherwise   = preName  == pre &&
-                          postName == T.take (T.length postName) (T.tail post)
-          where (pre, post)         = T.breakOn "*" vname
-                (preName, postName) = T.splitAt (T.length pre) name
+                          postName == Str.take (Str.length postName)
+                                               (Str.tail post)
+          where (pre, post)         = Str.breakOn "*" vname
+                (preName, postName) = Str.splitAt (Str.length pre) name

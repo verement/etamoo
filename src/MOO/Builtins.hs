@@ -13,7 +13,6 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import System.Locale (defaultTimeLocale)
 
 import qualified Data.Map as M
-import qualified Data.Text as T
 import qualified Data.Vector as V
 
 import MOO.Builtins.Common
@@ -27,6 +26,8 @@ import MOO.Builtins.Values  as Values
 import MOO.Builtins.Objects as Objects
 import MOO.Builtins.Network as Network
 import MOO.Builtins.Tasks   as Tasks
+
+import qualified MOO.String as Str
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
@@ -44,7 +45,7 @@ callBuiltin :: Id -> [Value] -> MOO Value
 callBuiltin func args = case M.lookup func builtinFunctions of
   Just builtin -> checkArgs builtin args >> builtinFunction builtin args
   Nothing      -> raiseException (Err E_INVARG)
-                  "Unknown built-in function" (Str func)
+                  "Unknown built-in function" (Str $ fromId func)
 
   where checkArgs Builtin {
             builtinMinArgs  = min
@@ -83,12 +84,11 @@ verifyBuiltins = foldM accum 0 $ M.elems builtinFunctions
           , builtinArgTypes = types
           , builtinFunction = func
           }
-          | name /= T.toCaseFold name         = invalid "name not case-folded"
           | min < 0                           = invalid "arg min < 0"
           | maybe False (< min) max           = invalid "arg max < min"
           | length types /= fromMaybe min max = invalid "incorrect # types"
           | testArgs func min max types       = ok
-          where invalid msg = Left $ T.unpack name ++ ": " ++ msg
+          where invalid msg = Left $ fromId name ++ ": " ++ msg
                 ok = Right 1
 
         testArgs func min max types = all test argSpecs
@@ -109,7 +109,7 @@ verifyBuiltins = foldM accum 0 $ M.elems builtinFunctions
         mkArgs TNum = mkArgs TInt ++ mkArgs TFlt
         mkArgs TInt = [Int 0]
         mkArgs TFlt = [Flt 0]
-        mkArgs TStr = [Str T.empty]
+        mkArgs TStr = [Str Str.empty]
         mkArgs TObj = [Obj 0]
         mkArgs TErr = [Err E_NONE]
         mkArgs TLst = [Lst V.empty]
@@ -165,7 +165,7 @@ bf_ctime = Builtin "ctime" 0 (Just 1) [TInt] TStr go
 ctime :: IntT -> MOO Value
 ctime time = do
   zonedTime <- unsafeIOtoMOO (utcToLocalZonedTime utcTime)
-  return $ Str $ T.pack $ formatTime defaultTimeLocale format zonedTime
+  return $ Str $ Str.fromString $ formatTime defaultTimeLocale format zonedTime
   where utcTime = posixSecondsToUTCTime (fromIntegral time)
         format  = "%a %b %_d %T %Y %Z"
 
@@ -196,7 +196,7 @@ bf_reset_max_object = Builtin "reset_max_object" 0 (Just 0) [] TAny $ \[] -> do
 -- § 4.4.8 Server Statistics and Miscellaneous Information
 
 bf_server_version = Builtin "server_version" 0 (Just 0) [] TStr $ \[] ->
-  return (Str serverVersionText)
+  return (Str $ Str.fromText serverVersionText)
 
 bf_memory_usage = Builtin "memory_usage" 0 (Just 0) [] TLst $ \[] ->
   return (Lst V.empty)  -- ... nothing to see here

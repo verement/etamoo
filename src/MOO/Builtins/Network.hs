@@ -7,14 +7,15 @@ import Control.Monad (liftM)
 import Control.Monad.State (gets)
 import Data.Time (UTCTime, diffUTCTime)
 
-import MOO.Types
-import MOO.Task
-import MOO.Network
-import MOO.Database (systemObject)
-import MOO.Builtins.Common
-
 import qualified Data.Map as M
-import qualified Data.Text as T
+
+import MOO.Builtins.Common
+import MOO.Database (systemObject)
+import MOO.Network
+import MOO.Task
+import MOO.Types
+
+import qualified MOO.String as Str
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
@@ -92,7 +93,7 @@ bf_boot_player = Builtin "boot_player" 1 (Just 1) [TObj] TAny go
 bf_connection_name = Builtin "connection_name" 1 (Just 1) [TObj] TStr go
   where go [Obj player] = do
           checkPermission player
-          Str `liftM` getConnectionName player
+          (Str . Str.fromText) `liftM` getConnectionName player
 
 bf_set_connection_option = Builtin "set_connection_option" 3 (Just 3)
                            [TObj, TStr, TAny] TAny go
@@ -108,7 +109,7 @@ bf_open_network_connection = Builtin "open_network_connection" 2 (Just 3)
   where go (Str host : Int port : optional) = do
           checkWizard
           connId <- openNetworkConnection
-                    (T.unpack host) (fromIntegral port) listener
+                    (Str.toString host) (fromIntegral port) listener
           return (Obj connId)
 
           where [Obj listener] = defaults optional [Obj systemObject]

@@ -16,7 +16,7 @@ import Data.List (sort, foldl', elemIndex)
 import Data.Maybe (catMaybes, listToMaybe)
 import Data.Text.Lazy (Text)
 import Data.Text.Lazy.Builder (Builder, toLazyText,
-                               fromText, fromLazyText, fromString, singleton)
+                               fromLazyText, fromString, singleton)
 import Data.Text.Lazy.Builder.Int (decimal)
 import Data.Text.Lazy.Builder.RealFloat (realFloat)
 import Data.Word (Word)
@@ -42,6 +42,8 @@ import MOO.Types
 import MOO.Parser
 import MOO.Unparser
 import MOO.Compiler
+
+import qualified MOO.String as Str
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
@@ -200,7 +202,7 @@ installObjects dbObjs = do
 
         mkProperty :: Bool -> PropDef -> PropVal -> Property
         mkProperty inherited propdef propval = initProperty {
-            propertyName      = T.pack propdef
+            propertyName      = Str.fromString propdef
           , propertyValue     = either (const Nothing) id $
                                 valueFromVar (propVar propval)
           , propertyInherited = inherited
@@ -212,7 +214,7 @@ installObjects dbObjs = do
 
         mkVerb :: VerbDef -> Verb
         mkVerb def = initVerb {
-            verbNames          = T.pack $ vbName def
+            verbNames          = Str.fromString $ vbName def
           , verbOwner          = vbOwner def
           , verbPermR          = vbPerms def .&. vf_read  /= 0
           , verbPermW          = vbPerms def .&. vf_write /= 0
@@ -248,8 +250,8 @@ objectForDBObject dbArray dbObj = (oid dbObj, fmap mkObject $ valid dbObj)
             objectParent     = maybeObject (objParent   def)
           , objectChildren   = IS.fromList $
                                objectTrail dbArray def objChild objSibling
-          , objectName       = T.pack     $ objName     def
-          , objectOwner      =              objOwner    def
+          , objectName       = Str.fromString $ objName     def
+          , objectOwner      =                  objOwner    def
           , objectLocation   = maybeObject (objLocation def)
           , objectContents   = IS.fromList $
                                objectTrail dbArray def objContents objNext
@@ -406,7 +408,7 @@ data LMVar = LMClear
 
 valueFromVar :: LMVar -> Either LMVar (Maybe Value)
 valueFromVar LMClear       = Right Nothing
-valueFromVar (LMStr str)   = Right $ Just (Str $ T.pack str)
+valueFromVar (LMStr str)   = Right $ Just (Str $ Str.fromString str)
 valueFromVar (LMObj obj)   = Right $ Just (Obj $ fromIntegral obj)
 valueFromVar (LMErr err)   = Right $ Just (Err $ toEnum $ fromIntegral err)
 valueFromVar (LMInt int)   = Right $ Just (Int int)
@@ -704,7 +706,7 @@ tellObject objects (oid, Just obj) = do
   tell (singleton '#')
   tellLn (decimal oid)
 
-  tellLn (fromText $ objectName obj)
+  tellLn (str2builder $ objectName obj)
   tellLn ""  -- old handles string
 
   let flags = flag objectIsPlayer   flag_user       .|.
@@ -735,7 +737,7 @@ tellObject objects (oid, Just obj) = do
   verbs <- liftSTM $ mapM (readTVar . snd) $ objectVerbs obj
   tellLn (decimal $ length verbs)
   forM_ verbs $ \verb -> do
-    tellLn (fromText $ verbNames verb)
+    tellLn (str2builder $ verbNames verb)
     tellLn (decimal $ verbOwner verb)
 
     let flags = flag verbPermR vf_read  .|.
@@ -752,7 +754,7 @@ tellObject objects (oid, Just obj) = do
 
   definedProperties <- liftSTM $ definedProperties obj
   tellLn (decimal $ length definedProperties)
-  forM_ definedProperties $ tellLn . fromText
+  forM_ definedProperties $ tellLn . str2builder
 
   tellLn (decimal $ HM.size $ objectProperties obj)
   tellProperties objects obj (Just oid)
@@ -779,7 +781,7 @@ tellProperties :: Array ObjId (Maybe Object) -> Object -> Maybe ObjId ->
                   DBWriter ()
 tellProperties objects obj (Just oid) = do
   let Just definer = objects ! oid
-  properties <- liftSTM $ map T.toCaseFold `fmap` definedProperties definer
+  properties <- liftSTM $ definedProperties definer
   forM_ properties $ \propertyName -> do
     Just property <- liftSTM $ lookupProperty obj propertyName
     case propertyValue property of
@@ -800,10 +802,10 @@ tellProperties _ _ Nothing = return ()
 
 tellValue :: Value -> DBWriter ()
 tellValue value = case value of
-  Int x -> tellLn (decimal  type_int)   >> tellLn (decimal   x)
+  Int x -> tellLn (decimal  type_int)   >> tellLn (decimal x)
   Flt x -> tellLn (decimal _type_float) >> tellLn (realFloat x)
-  Str x -> tellLn (decimal _type_str)   >> tellLn (fromText  x)
-  Obj x -> tellLn (decimal  type_obj)   >> tellLn (decimal   x)
+  Str x -> tellLn (decimal _type_str)   >> tellLn (str2builder x)
+  Obj x -> tellLn (decimal  type_obj)   >> tellLn (decimal x)
   Err x -> tellLn (decimal  type_err)   >> tellLn (decimal $ fromEnum x)
   Lst x -> tellLn (decimal _type_list)  >> tellLn (decimal $ V.length x) >>
            V.forM_ x tellValue

@@ -16,11 +16,12 @@ import Data.Text.Lazy (Text)
 import Data.Text.Lazy.Builder (Builder, toLazyText, fromText)
 
 import qualified Data.Set as S
-import qualified Data.Text as T
 
 import MOO.AST
-import MOO.Types
 import MOO.Parser (keywords)
+import MOO.Types
+
+import qualified MOO.String as Str
 
 type Unparser = ReaderT UnparserEnv (Writer Builder)
 
@@ -121,16 +122,15 @@ tellStatement stmt = case stmt of
     moreIndented $ tellStatements finally
     indent >> tell "endtry\n"
 
-tellBlock :: StrT -> Maybe Id -> Unparser () -> [Statement] -> Unparser ()
+tellBlock :: Builder -> Maybe Id -> Unparser () -> [Statement] -> Unparser ()
 tellBlock name maybeVar detail body = do
-  indent >> tell name' >> maybeTellVar maybeVar >> detail
+  indent >> tell name >> maybeTellVar maybeVar >> detail
   moreIndented $ tellStatements body
-  indent >> tell "end" >> tell name' >> tell "\n"
-  where name' = fromText name
+  indent >> tell "end" >> tell name >> tell "\n"
 
 maybeTellVar :: Maybe Id -> Unparser ()
 maybeTellVar Nothing    = return ()
-maybeTellVar (Just var) = tell " " >> tell (fromText var)
+maybeTellVar (Just var) = tell " " >> tell (fromId var)
 
 detailExpr :: Expr -> Unparser ()
 detailExpr expr = tell " (" >> tellExpr expr >> tell ")\n"
@@ -146,10 +146,10 @@ unparseExpr expr = case expr of
     args' <- unparseArgs args
     return $ "{" <> args' <> "}"
 
-  Variable var -> return (fromText var)
+  Variable var -> return (fromId var)
 
   PropertyRef (Literal (Obj 0)) (Literal (Str name))
-    | isIdentifier name -> return $ "$" <> fromText name
+    | isIdentifier name -> return $ "$" <> str2builder name
   PropertyRef obj name -> do
     obj' <- case obj of
       Literal Int{} -> paren obj  -- avoid digits followed by dot (-> float)
@@ -169,7 +169,7 @@ unparseExpr expr = case expr of
 
   VerbCall (Literal (Obj 0)) (Literal (Str name)) args
     | isIdentifier name -> do args' <- unparseArgs args
-                              return $ "$" <> fromText name <>
+                              return $ "$" <> str2builder name <>
                                        "(" <> args' <> ")"
   VerbCall obj name args -> do
     obj' <- parenL expr obj
@@ -179,7 +179,7 @@ unparseExpr expr = case expr of
 
   BuiltinFunc func args -> do
     args' <- unparseArgs args
-    return $ fromText func <> "(" <> args' <> ")"
+    return $ fromId func <> "(" <> args' <> ")"
 
   Index lhs rhs -> do
     lhs' <- parenL expr lhs
@@ -263,16 +263,16 @@ unparseArgs = liftM (mconcat . intersperse ", ") . mapM unparseArg
 
 unparseScatter :: [ScatterItem] -> Unparser Builder
 unparseScatter = liftM (mconcat . intersperse ", ") . mapM unparseScat
-  where unparseScat (ScatRequired var)         = return $        fromText var
-        unparseScat (ScatRest     var)         = return $ "@" <> fromText var
-        unparseScat (ScatOptional var Nothing) = return $ "?" <> fromText var
+  where unparseScat (ScatRequired var)         = return $        fromId var
+        unparseScat (ScatRest     var)         = return $ "@" <> fromId var
+        unparseScat (ScatOptional var Nothing) = return $ "?" <> fromId var
         unparseScat (ScatOptional var (Just expr)) = do
           expr' <- unparseExpr expr
-          return $ "?" <> fromText var <> " = " <> expr'
+          return $ "?" <> fromId var <> " = " <> expr'
 
 unparseNameExpr :: Expr -> Unparser Builder
 unparseNameExpr (Literal (Str name))
-  | isIdentifier name = return (fromText name)
+  | isIdentifier name = return (str2builder name)
 unparseNameExpr expr = paren expr
 
 paren :: Expr -> Unparser Builder
@@ -295,13 +295,13 @@ parenR :: Expr -> Expr -> Unparser Builder
 parenR = mightParen (>=)
 
 isIdentifier :: StrT -> Bool
-isIdentifier name = isIdentifier' (T.unpack name) && not (isKeyword name)
+isIdentifier name = isIdentifier' (Str.toString name) && not (isKeyword name)
   where isIdentifier' (c:cs) = isIdentStart c && all isIdentChar cs
         isIdentStart   c     = isAlpha    c || c == '_'
         isIdentChar    c     = isAlphaNum c || c == '_'
 
 isKeyword :: StrT -> Bool
-isKeyword = (`S.member` keywordsSet) . T.toCaseFold
+isKeyword = (`S.member` keywordsSet) . toId
 
-keywordsSet :: Set StrT
-keywordsSet = S.fromList $ map (T.toCaseFold . T.pack) keywords
+keywordsSet :: Set Id
+keywordsSet = S.fromList $ map toId keywords

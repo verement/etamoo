@@ -120,7 +120,7 @@ module MOO.Task (
   , notyet
   ) where
 
-import Control.Arrow (first, (&&&))
+import Control.Arrow ((&&&))
 import Control.Concurrent (ThreadId, myThreadId, forkIO, threadDelay,
                            newEmptyMVar, putMVar, takeMVar)
 import Control.Concurrent.STM (STM, TVar, atomically, retry, throwSTM,
@@ -152,12 +152,14 @@ import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Vector as V
 
-import MOO.Types
+import MOO.Command
 import {-# SOURCE #-} MOO.Database
 import {-# SOURCE #-} MOO.Network
 import MOO.Object
+import MOO.Types
 import MOO.Verb
-import MOO.Command
+
+import qualified MOO.String as Str
 
 -- | This is the basic MOO monad transformer stack. A computation of type
 -- @'MOO' a@ is an 'STM' transaction that returns a value of type @a@ within
@@ -318,7 +320,7 @@ newtype Resume a = Resume (a -> MOO Value)
 -- | Task resource limits
 data Resource = Ticks | Seconds
 
-showResource :: Resource -> Text
+showResource :: Resource -> StrT
 showResource Ticks   = "ticks"
 showResource Seconds = "seconds"
 
@@ -415,7 +417,7 @@ runTask task = do
 
             Suicide -> putResult Nothing
 
-        handleAbortedTask :: Task -> [Text] -> (Maybe Value -> IO ()) ->
+        handleAbortedTask :: Task -> [StrT] -> (Maybe Value -> IO ()) ->
                              MOO (Maybe Value) -> IO ()
         handleAbortedTask task traceback putResult call = do
           state <- newState
@@ -424,7 +426,7 @@ runTask task = do
             , taskComputation = fromMaybe nothing `fmap` call
             }
 
-          where handleAbortedTask' :: [Text] -> Task -> IO ()
+          where handleAbortedTask' :: [StrT] -> Task -> IO ()
                 handleAbortedTask' traceback task = do
                   (disposition, task') <- stepTaskWithIO task
                   case disposition of
@@ -449,8 +451,8 @@ runTask task = do
                       putResult Nothing
                     Suicide -> putResult Nothing
 
-                  where informPlayer :: [Text] -> IO ()
-                        informPlayer = mapM_ (putStrLn . T.unpack)  -- XXX
+                  where informPlayer :: [StrT] -> IO ()
+                        informPlayer = mapM_ (putStrLn . Str.toString)  -- XXX
 
 -- | Create and queue a task to run the given computation after the given
 -- microsecond delay. 'E_INVARG' may be raised if the delay is out of
@@ -659,7 +661,7 @@ getObject oid = liftSTM . dbObject oid =<< getDatabase
 
 getProperty :: Object -> StrT -> MOO Property
 getProperty obj name = do
-  maybeProp <- liftSTM $ lookupProperty obj (T.toCaseFold name)
+  maybeProp <- liftSTM $ lookupProperty obj name
   maybe (raise E_PROPNF) return maybeProp
 
 getVerb :: Object -> Value -> MOO Verb
@@ -687,7 +689,7 @@ findVerb acceptable name = findVerb'
                              findVerb' (objectParent obj)
 
         searchVerbs ((names,verbTVar):rest) =
-          if verbNameMatch name' names
+          if verbNameMatch name names
           then do
             verb <- liftSTM $ readTVar verbTVar
             if acceptable verb
@@ -696,9 +698,7 @@ findVerb acceptable name = findVerb'
           else searchVerbs rest
         searchVerbs [] = return Nothing
 
-        name' = T.toCaseFold name
-
-callSystemVerb :: Id -> [Value] -> MOO (Maybe Value)
+callSystemVerb :: StrT -> [Value] -> MOO (Maybe Value)
 callSystemVerb name args = do
   player <- asks (taskPlayer . task)
   (maybeOid, maybeVerb) <- findVerb verbPermX name systemObject
@@ -782,7 +782,7 @@ callVerb verbLoc this name args = do
     (Just _      , Nothing)   -> raise E_VERBNF
     (Just verbOid, Just verb) -> callVerb' (verbOid, verb) this name args
 
-callFromFunc :: Id -> IntT -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
+callFromFunc :: StrT -> IntT -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
 callFromFunc func index (oid, name) args = do
   (maybeOid, maybeVerb) <- findVerb verbPermX name oid
   case (maybeOid, maybeVerb) of
@@ -790,7 +790,7 @@ callFromFunc func index (oid, name) args = do
                                  callVerb' (verbOid, verb) oid name args
     (_           , _)         -> return Nothing
 
-evalFromFunc :: Id -> IntT -> MOO Value -> MOO Value
+evalFromFunc :: StrT -> IntT -> MOO Value -> MOO Value
 evalFromFunc func index code = do
   (depthLeft, player) <- frame (depthLeft &&& initialPlayer)
   pushFrame initFrame {
@@ -835,7 +835,7 @@ runTick = do
 
 modifyProperty :: Object -> StrT -> (Property -> MOO Property) -> MOO ()
 modifyProperty obj name f =
-  case lookupPropertyRef obj (T.toCaseFold name) of
+  case lookupPropertyRef obj name of
     Nothing       -> raise E_PROPNF
     Just propTVar -> do
       prop  <- liftSTM $ readTVar propTVar
@@ -850,9 +850,7 @@ modifyVerb (oid, obj) desc f =
       verb  <- liftSTM $ readTVar verbTVar
       verb' <- f verb
       liftSTM $ writeTVar verbTVar verb'
-      let names  = T.toCaseFold $ verbNames verb
-          names' = T.toCaseFold $ verbNames verb'
-      when (names /= names') $ do
+      unless (verbNames verb `Str.equal` verbNames verb') $ do
         db <- getDatabase
         liftSTM $ modifyObject oid db $ replaceVerb index verb'
 
@@ -871,7 +869,7 @@ readProperty oid name = do
               Nothing -> do
                 parentObj <- maybe (return Nothing) getObject (objectParent obj)
                 maybe (error $ "No inherited value for property " ++
-                       T.unpack name) search parentObj
+                       Str.toString name) search parentObj
               just -> return just
 
 writeProperty :: ObjId -> StrT -> Value -> MOO ()
@@ -994,8 +992,8 @@ initFrame = Frame {
   , debugBit      = True
   , permissions   = -1
 
-  , verbName      = T.empty
-  , verbFullName  = T.empty
+  , verbName      = Str.empty
+  , verbFullName  = Str.empty
   , verbLocation  = -1
   , initialThis   = -1
   , initialPlayer = -1
@@ -1136,17 +1134,17 @@ initVariables = M.fromList $ [
   , ("caller" , Obj (-1))
 
   , ("args"   , Lst V.empty)
-  , ("argstr" , Str T.empty)
+  , ("argstr" , Str Str.empty)
 
-  , ("verb"   , Str T.empty)
-  , ("dobjstr", Str T.empty)
+  , ("verb"   , Str Str.empty)
+  , ("dobjstr", Str Str.empty)
   , ("dobj"   , Obj (-1))
-  , ("prepstr", Str T.empty)
-  , ("iobjstr", Str T.empty)
+  , ("prepstr", Str Str.empty)
+  , ("iobjstr", Str Str.empty)
   , ("iobj"   , Obj (-1))
   ] ++ typeVariables
 
-  where typeVariables = map (first T.toCaseFold) [
+  where typeVariables = [
             ("INT"  , Int $ typeCode TInt)
           , ("NUM"  , Int $ typeCode TInt)
           , ("FLOAT", Int $ typeCode TFlt)
@@ -1182,7 +1180,7 @@ type Message = StrT
 
 initException = Exception {
     exceptionCode      = Err E_NONE
-  , exceptionMessage   = error2text E_NONE
+  , exceptionMessage   = Str.fromText (error2text E_NONE)
   , exceptionValue     = nothing
 
   , exceptionCallStack = Stack []
@@ -1234,12 +1232,12 @@ handleDebug = (`catchException` handler)
         handler except = passException except
 
 -- | Placeholder for features not yet implemented
-notyet :: String -> MOO a
-notyet = raiseException (Err E_QUOTA) "Not yet implemented" . Str . T.pack
+notyet :: Text -> MOO a
+notyet = raiseException (Err E_QUOTA) "Not yet implemented" . Str . Str.fromText
 
 -- | Create and raise an exception for the given MOO error.
 raise :: Error -> MOO a
-raise err = raiseException (Err err) (error2text err) nothing
+raise err = raiseException (Err err) (Str.fromText $ error2text err) nothing
 
 -- | Verify that the given floating point number is neither infinite nor NaN,
 -- raising 'E_FLOAT' or 'E_INVARG' respectively if so. Also, return the
@@ -1315,7 +1313,7 @@ checkRecurrence relation subject = checkRecurrence'
 -- | Translate a MOO /binary string/ into a Haskell 'ByteString', raising
 -- 'E_INVARG' if the MOO string is improperly formatted.
 binaryString :: StrT -> MOO ByteString
-binaryString = maybe (raise E_INVARG) (return . BS.pack) . text2binary
+binaryString = maybe (raise E_INVARG) (return . BS.pack) . string2binary
 
 -- | Generate and return a pseudorandom number in the given range, modifying
 -- the local generator state.
@@ -1335,13 +1333,13 @@ newRandomGen = do
 
 -- | Generate traceback lines for an exception, suitable for displaying to a
 -- user.
-formatTraceback :: Exception -> [Text]
+formatTraceback :: Exception -> [StrT]
 formatTraceback except@Exception { exceptionCallStack = Stack frames } =
-  T.splitOn "\n" $ execWriter (traceback frames)
+  map Str.fromText $ T.splitOn "\n" $ execWriter (traceback frames)
 
   where traceback (frame:frames) = do
           describeVerb frame
-          tell $ ":  " <> exceptionMessage except
+          tell $ ":  " <> Str.toText (exceptionMessage except)
           traceback' frames
         traceback [] = traceback' []
 
@@ -1354,8 +1352,8 @@ formatTraceback except@Exception { exceptionCallStack = Stack frames } =
         describeVerb Frame { builtinFunc = False
                            , verbLocation = loc, verbFullName = name
                            , initialThis = this, lineNumber = line } = do
-          tell $ "#" <> T.pack (show loc) <> ":" <> name
+          tell $ "#" <> T.pack (show loc) <> ":" <> Str.toText name
           when (loc /= this) $ tell $ " (this == #" <> T.pack (show this) <> ")"
           when (line > 0) $ tell $ ", line " <> T.pack (show line)
         describeVerb Frame { builtinFunc = True, verbName = name } =
-          tell $ "built-in function " <> name <> "()"
+          tell $ "built-in function " <> Str.toText name <> "()"

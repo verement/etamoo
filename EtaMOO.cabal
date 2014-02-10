@@ -71,6 +71,7 @@ executable etamoo
                        MOO.Network
                        MOO.Object
                        MOO.Parser
+                       MOO.String
                        MOO.Task
                        MOO.Types
                        MOO.Unparser
@@ -83,7 +84,8 @@ executable etamoo
     ghc-options:       -fllvm
 
   extensions:          OverloadedStrings, ForeignFunctionInterface,
-                       EmptyDataDecls, ExistentialQuantification
+                       EmptyDataDecls, ExistentialQuantification,
+                       TypeSynonymInstances, FlexibleInstances
 
   if !os(darwin)
     extra-libraries:   crypt
@@ -97,7 +99,9 @@ executable etamoo
   build-depends:       array
                      , base ==4.*
                      , bytestring
+                     , case-insensitive
                      , containers >= 0.4
+                     , hashable
                      , haskeline
                      , mtl
                      , network

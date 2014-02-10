@@ -13,16 +13,17 @@ import Data.Text.Encoding (encodeUtf8)
 import Text.Printf (printf)
 
 import qualified Data.Digest.Pure.MD5 as MD5
-import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
 
-import MOO.Types
-import MOO.Task
-import MOO.Parser (parseNum, parseObj)
 import MOO.Builtins.Common
 import MOO.Builtins.Crypt
 import MOO.Builtins.Match
+import MOO.Parser (parseNum, parseObj)
+import MOO.Task
+import MOO.Types
+
+import qualified MOO.String as Str
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
@@ -95,10 +96,10 @@ bf_typeof = Builtin "typeof" 1 (Just 1) [TAny] TInt $ \[value] ->
   return $ Int $ typeCode $ typeOf value
 
 bf_tostr = Builtin "tostr" 0 Nothing [] TStr $ \values ->
-  return $ Str $ T.concat $ map toText values
+  return $ Str $ Str.concat $ map (Str.fromText . toText) values
 
 bf_toliteral = Builtin "toliteral" 1 (Just 1) [TAny] TStr $ \[value] ->
-  return $ Str $ toLiteral value
+  return $ Str $ Str.fromText $ toLiteral value
 
 -- XXX toint(" - 34  ") does not parse as -34
 bf_toint = Builtin "toint" 1 (Just 1) [TAny] TInt $ \[value] -> toint value
@@ -109,7 +110,7 @@ bf_toint = Builtin "toint" 1 (Just 1) [TAny] TInt $ \[value] -> toint value
                 | otherwise -> if x < fromIntegral (minBound :: IntT)
                                then raise E_FLOAT else return (Int $ ceiling x)
           Obj x -> return (Int $ fromIntegral x)
-          Str x -> maybe (return $ Int 0) toint (parseNum x)
+          Str x -> maybe (return $ Int 0) toint (parseNum $ Str.toText x)
           Err x -> return (Int $ fromIntegral $ fromEnum x)
           Lst _ -> raise E_TYPE
 
@@ -123,7 +124,8 @@ bf_toobj = Builtin "toobj" 1 (Just 1) [TAny] TObj $ \[value] -> toobj value
                 | otherwise -> if x < fromIntegral (minBound :: ObjT)
                                then raise E_FLOAT else return (Obj $ ceiling x)
           Obj _ -> return value
-          Str x -> maybe (return $ Obj 0) toobj $ parseNum x `mplus` parseObj x
+          Str x -> maybe (return $ Obj 0) toobj $
+                   parseNum (Str.toText x) `mplus` parseObj (Str.toText x)
           Err x -> return (Obj $ fromIntegral $ fromEnum x)
           Lst _ -> raise E_TYPE
 
@@ -133,7 +135,7 @@ bf_tofloat = Builtin "tofloat" 1 (Just 1) [TAny] TFlt $
           Int x -> return (Flt $ fromIntegral x)
           Flt _ -> return value
           Obj x -> return (Flt $ fromIntegral x)
-          Str x -> maybe (return $ Flt 0) tofloat (parseNum x)
+          Str x -> maybe (return $ Flt 0) tofloat (parseNum $ Str.toText x)
           Err x -> return (Flt $ fromIntegral $ fromEnum x)
           Lst _ -> raise E_TYPE
 
@@ -182,7 +184,7 @@ bf_abs = Builtin "abs" 1 (Just 1) [TNum] TNum go
 bf_floatstr = Builtin "floatstr" 2 (Just 3) [TFlt, TInt, TAny] TStr go
   where go (Flt x : Int precision : optional)
           | precision < 0 = raise E_INVARG
-          | otherwise = return $ Str $ T.pack $ printf format x
+          | otherwise = return $ Str $ Str.fromString $ printf format x
           where [scientific] = booleanDefaults optional [False]
                 prec = min precision 19
                 format = printf "%%.%d%c" prec $ if scientific then 'e' else 'f'
@@ -223,61 +225,64 @@ bf_trunc = floatBuiltin "trunc" go
 -- § 4.4.2.3 Operations on Strings
 
 bf_length = Builtin "length" 1 (Just 1) [TAny] TInt go
-  where go [Str string] = return $ Int $ fromIntegral $ T.length string
+  where go [Str string] = return $ Int $ fromIntegral $ Str.length string
         go [Lst list]   = return $ Int $ fromIntegral $ V.length list
         go _            = raise E_TYPE
 
 bf_strsub = Builtin "strsub" 3 (Just 4) [TStr, TStr, TStr, TAny] TStr go
   where go (Str subject : Str what : Str with : optional)
-          | T.null what = raise E_INVARG
-          | otherwise   = return $ Str $ T.concat $ subs subject
+          | Str.null what = raise E_INVARG
+          | otherwise   = return $ Str $ Str.concat $ subs subject
           where [case_matters] = booleanDefaults optional [False]
-                caseFold str = if case_matters then str else T.toCaseFold str
-                -- this won't work for Unicode in general
+                caseFold str = if case_matters
+                               then str else Str.fromText (Str.toCaseFold str)
+                -- XXX this won't work for Unicode in general
                 subs "" = []
-                subs subject = case T.breakOn what' (caseFold subject) of
+                subs subject = case Str.breakOn what' (caseFold subject) of
                   (_, "")     -> [subject]
                   (prefix, _) ->
-                    let (s, r) = T.splitAt (T.length prefix) subject
-                    in s : with : subs (T.drop whatLen r)
+                    let (s, r) = Str.splitAt (Str.length prefix) subject
+                    in s : with : subs (Str.drop whatLen r)
                 what' = caseFold what
-                whatLen = T.length what
+                whatLen = Str.length what
 
 bf_index = Builtin "index" 2 (Just 3) [TStr, TStr, TAny] TInt go
   where go (Str str1 : Str str2 : optional)
-          | T.null str2 = return (Int 1)
+          | Str.null str2 = return (Int 1)
           | otherwise   =
-            return $ Int $ case T.breakOn (caseFold str2) (caseFold str1) of
+            return $ Int $ case Str.breakOn (caseFold str2) (caseFold str1) of
               (_, "")     -> 0
-              (prefix, _) -> fromIntegral $ 1 + T.length prefix
+              (prefix, _) -> fromIntegral $ 1 + Str.length prefix
           where [case_matters] = booleanDefaults optional [False]
-                caseFold str = if case_matters then str else T.toCaseFold str
-                -- this won't work for Unicode in general
+                caseFold str = if case_matters
+                               then str else Str.fromText (Str.toCaseFold str)
+                -- XXX this won't work for Unicode in general
 
 bf_rindex = Builtin "rindex" 2 (Just 3) [TStr, TStr, TAny] TInt go
   where go (Str str1 : Str str2 : optional)
-          | T.null str2 = return (Int $ fromIntegral $ T.length str1 + 1)
+          | Str.null str2 = return (Int $ fromIntegral $ Str.length str1 + 1)
           | otherwise   =
-            return $ Int $ case T.breakOnEnd needle haystack of
+            return $ Int $ case Str.breakOnEnd needle haystack of
               ("", _)     -> 0
               (prefix, _) -> fromIntegral $
-                             1 + T.length prefix - T.length needle
+                             1 + Str.length prefix - Str.length needle
           where [case_matters] = booleanDefaults optional [False]
                 needle   = caseFold str2
                 haystack = caseFold str1
-                caseFold str = if case_matters then str else T.toCaseFold str
-                -- this won't work for Unicode in general
+                caseFold str = if case_matters
+                               then str else Str.fromText (Str.toCaseFold str)
+                -- XXX this won't work for Unicode in general
 
 bf_strcmp = Builtin "strcmp" 2 (Just 2)
             [TStr, TStr] TInt $ \[Str str1, Str str2] ->
-  return $ Int $ case compare str1 str2 of
+  return $ Int $ case compare (Str.toText str1) (Str.toText str2) of
     LT -> -1
     EQ ->  0
     GT ->  1
 
 bf_decode_binary = Builtin "decode_binary" 1 (Just 2) [TStr, TAny] TLst go
   where go (Str bin_string : optional) =
-          maybe (raise E_INVARG) (return . mkResult) $ text2binary bin_string
+          maybe (raise E_INVARG) (return . mkResult) $ string2binary bin_string
 
           where [fully] = booleanDefaults optional [False]
 
@@ -287,17 +292,18 @@ bf_decode_binary = Builtin "decode_binary" 1 (Just 2) [TStr, TAny] TLst go
                 groupPrinting g (w:ws)
                   | validStrChar c = groupPrinting (g [c] ++) ws
                   | null group     = Int (fromIntegral w) : groupPrinting g ws
-                  | otherwise      = Str (T.pack group) : Int (fromIntegral w) :
+                  | otherwise      = Str (Str.fromString group) :
+                                     Int (fromIntegral w) :
                                      groupPrinting ("" ++) ws
                   where c = toEnum (fromIntegral w)
                         group = g ""
                 groupPrinting g []
                   | null group = []
-                  | otherwise  = [Str $ T.pack group]
+                  | otherwise  = [Str $ Str.fromString group]
                   where group = g ""
 
 bf_encode_binary = Builtin "encode_binary" 0 Nothing [] TStr $
-                   liftM (Str . T.pack) . encodeBinary
+                   liftM (Str . Str.fromString) . encodeBinary
 
 encodeBinary :: [Value] -> MOO String
 encodeBinary (Int n : args)
@@ -310,7 +316,7 @@ encodeBinary (Int n : args)
                   c /= '~' && c /= '\t' = (c :)
                 | otherwise             = \rest -> '~' : hex q : hex r : rest
         hex = intToDigit  -- N.B. not uppercase
-encodeBinary (Str str : args) = (encodeStr (T.unpack str) ++) `liftM`
+encodeBinary (Str str : args) = (encodeStr (Str.toString str) ++) `liftM`
                                 encodeBinary args
   where encodeStr ('~' :cs) = "~7e" ++ encodeStr cs
         encodeStr ('\t':cs) = "~09" ++ encodeStr cs
@@ -331,23 +337,21 @@ matchBuiltin name matchFunc = Builtin name 2 (Just 3) [TStr, TStr, TAny] TLst go
 bf_match  = matchBuiltin "match"  match
 bf_rmatch = matchBuiltin "rmatch" rmatch
 
-runMatch :: (Regexp -> Text -> MatchResult) ->
-            StrT -> StrT -> Bool -> MOO Value
-runMatch match subject pattern case_matters =
-  case newRegexp pattern case_matters of
+runMatch :: (Regexp -> Text -> MatchResult) -> StrT -> StrT -> Bool -> MOO Value
+runMatch match subject pattern caseMatters =
+  case Str.toRegexp caseMatters pattern of
     Left (err, at) -> raiseException (Err E_INVARG)
-                      (T.pack $ "Invalid pattern: " ++ err)
+                      (Str.fromString $ "Invalid pattern: " ++ err)
                       (Int $ fromIntegral at)
-    Right regexp ->
-      case match regexp subject of
-        MatchFailed            -> return (Lst V.empty)
-        MatchAborted           -> raise E_QUOTA
-        MatchSucceeded offsets ->
-          let (m : offs)   = offsets
-              (start, end) = convert m
-              replacements = repls 9 offs
-          in return $ fromList
-             [Int start, Int end, fromList replacements, Str subject]
+    Right regexp   -> case match regexp (Str.toText subject) of
+      MatchFailed            -> return (Lst V.empty)
+      MatchAborted           -> raise E_QUOTA
+      MatchSucceeded offsets ->
+        let (m : offs)   = offsets
+            (start, end) = convert m
+            replacements = repls 9 offs
+        in return $ fromList
+           [Int start, Int end, fromList replacements, Str subject]
 
   where -- convert from 0-based open interval to 1-based closed one
         convert (s,e)  = (1 + fromIntegral s, fromIntegral e)
@@ -365,8 +369,8 @@ bf_substitute = Builtin "substitute" 2 (Just 2) [TStr, TLst] TStr go
             [Int start', Int end', Lst replacements', Str subject'] -> do
               let start      = fromIntegral start'
                   end        = fromIntegral end'
-                  subject    = T.unpack subject'
-                  subjectLen = T.length subject'
+                  subject    = Str.toString subject'
+                  subjectLen = Str.length subject'
 
                   valid s e  = (s == 0 && e == -1) ||
                                (s >  0 && e >= s - 1 && e <= subjectLen)
@@ -397,7 +401,7 @@ bf_substitute = Builtin "substitute" 2 (Just 2) [TStr, TLst] TStr go
                   walk (c:cs) = ([c] ++) `liftM` walk cs
                   walk []     = return []
 
-              (Str . T.pack) `liftM` walk (T.unpack template)
+              (Str . Str.fromString) `liftM` walk (Str.toString template)
             _ -> raise E_INVARG
 
 bf_crypt = Builtin "crypt" 1 (Just 2) [TStr, TStr] TStr go
@@ -405,24 +409,24 @@ bf_crypt = Builtin "crypt" 1 (Just 2) [TStr, TStr] TStr go
           | maybe True invalidSalt saltArg = generateSalt >>= go
           | otherwise                      = go $ fromStr $ fromJust saltArg
           where (saltArg : _) = maybeDefaults optional
-                invalidSalt (Str salt) = salt `T.compareLength` 2 == LT
+                invalidSalt (Str salt) = salt `Str.compareLength` 2 == LT
                 generateSalt = do
                   c1 <- randSaltChar
                   c2 <- randSaltChar
-                  return $ T.pack [c1, c2]
+                  return $ Str.fromString [c1, c2]
                 randSaltChar = (saltStuff !!) `liftM`
                                random (0, length saltStuff - 1)
                 saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
-                go salt = case crypt (T.unpack text) (T.unpack salt) of
-                  Just encrypted -> return $ Str $ T.pack encrypted
+                go salt = case crypt (Str.toString text) (Str.toString salt) of
+                  Just encrypted -> return $ Str $ Str.fromString encrypted
                   Nothing        -> raise E_QUOTA
 
 hash :: ByteString -> Value
-hash bs = Str $ T.pack $ show md5hash
+hash bs = Str $ Str.fromString $ show md5hash
   where md5hash = MD5.hash' bs :: MD5Digest
 
 bf_string_hash = Builtin "string_hash" 1 (Just 1) [TStr] TStr go
-  where go [Str text] = return $ hash $ encodeUtf8 text
+  where go [Str text] = return $ hash $ encodeUtf8 (Str.toText text)
 
 bf_binary_hash = Builtin "binary_hash" 1 (Just 1) [TStr] TStr go
   where go [Str bin_string] = hash `liftM` binaryString bin_string

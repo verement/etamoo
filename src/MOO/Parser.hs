@@ -8,7 +8,8 @@ import Control.Monad.Identity (Identity)
 import Data.List (find)
 import Data.Maybe (catMaybes)
 import Data.Ratio ((%))
-import Data.Text (Text, pack, unpack, toCaseFold)
+import Data.String (fromString)
+import Data.Text (Text)
 import Text.Parsec (try, many, many1, digit, letter, char, anyChar, alphaNum,
                     oneOf, noneOf, lookAhead, notFollowedBy, chainl1, chainr1,
                     option, optionMaybe, choice, between, getState, modifyState,
@@ -19,8 +20,8 @@ import Text.Parsec.Token (GenLanguageDef(LanguageDef))
 
 import qualified Text.Parsec.Token as T
 
-import MOO.Types
 import MOO.AST
+import MOO.Types
 
 data ParserState = ParserState {
     dollarContext :: Int
@@ -63,7 +64,7 @@ lexer = T.makeTokenParser mooDef
 
 {-# ANN identifier ("HLint: ignore Use liftM" :: String) #-}
 
-identifier     = T.identifier     lexer >>= return . pack
+identifier     = T.identifier     lexer >>= return . fromString
 reserved       = T.reserved       lexer
 decimal        = T.decimal        lexer
 symbol         = T.symbol         lexer
@@ -145,7 +146,7 @@ floatLiteral = try (lexeme $ signed real) >>= checkRange >>= return . Flt
 stringLiteral :: MOOParser Value
 stringLiteral = lexeme mooString <?> "string literal"
   where mooString = between (char '"') (char '"' <?> "terminating quote") $
-                    fmap (Str . pack) $ many stringChar
+                    fmap (Str . fromString) $ many stringChar
         stringChar = noneOf "\"\\" <|> (char '\\' >> anyChar <?> "")
 
 objectLiteral :: MOOParser Value
@@ -252,7 +253,7 @@ primary = subexpression <|> dollarThing <|> identThing <|>
           symbol "$"
           dollarRef <|> justDollar
         dollarRef = do
-          name <- fmap (Literal . Str) identifier
+          name <- fmap (Literal . Str . fromId) identifier
           dollarVerb name <|> return (PropertyRef objectZero name)
         dollarVerb name = fmap (VerbCall objectZero name) $ parens argList
         objectZero = Literal $ Obj 0
@@ -286,11 +287,11 @@ modifiers expr = (propRef  >>= modifiers) <|>
                  (index    >>= modifiers) <|> return expr
   where propRef = do
           try $ dot >> notFollowedBy dot
-          ref <- parens expression <|> fmap (Literal . Str) identifier
+          ref <- parens expression <|> fmap (Literal . Str . fromId) identifier
           return $ PropertyRef expr ref
         verbCall = do
           colon
-          ref <- parens expression <|> fmap (Literal . Str) identifier
+          ref <- parens expression <|> fmap (Literal . Str . fromId) identifier
           args <- parens argList
           return $ VerbCall expr ref args
         index = between (symbol "[" >> dollars succ)
@@ -442,7 +443,7 @@ modifyLoopStack :: ([[Maybe Id]] -> [[Maybe Id]]) -> MOOParser ()
 modifyLoopStack f = modifyState $ \st -> st { loopStack = f $ loopStack st }
 
 pushLoopName :: Maybe Id -> MOOParser ()
-pushLoopName ident = modifyLoopStack $ \(s:ss) -> (fmap toCaseFold ident:s):ss
+pushLoopName ident = modifyLoopStack $ \(s:ss) -> (ident : s) : ss
 
 popLoopName :: MOOParser ()
 popLoopName = modifyLoopStack $ \(s:ss) -> tail s : ss
@@ -459,9 +460,9 @@ checkLoopName kind ident = do
   case ident of
     Nothing -> when (null stack) $
                fail $ "No enclosing loop for `" ++ kind ++ "' statement"
-    Just name -> when (fmap toCaseFold ident `notElem` stack) $
+    Just name -> when (ident `notElem` stack) $
                  fail $ "Invalid loop name in `" ++ kind ++ "' statement: " ++
-                 unpack name
+                 fromId name
 
 breakStatement :: MOOParser Statement
 breakStatement = do

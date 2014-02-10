@@ -1,5 +1,5 @@
 
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TypeSynonymInstances, FlexibleInstances #-}
 
 -- | Basic data types used throughout the MOO server code
 module MOO.Types (
@@ -23,6 +23,10 @@ module MOO.Types (
   , nothing
 
   -- * Type and Value Functions
+  , fromId
+  , toId
+  , str2builder
+
   , fromInt
   , fromFlt
   , fromStr
@@ -41,7 +45,7 @@ module MOO.Types (
   , toLiteral
   , error2text
 
-  , text2binary
+  , string2binary
 
   -- * List Convenience Functions
   , fromList
@@ -62,12 +66,14 @@ module MOO.Types (
 
 import Control.Concurrent (ThreadId)
 import Control.Concurrent.STM (TVar)
+import Data.CaseInsensitive (CI)
 import Data.Char (isAscii, isPrint, isDigit)
 import Data.HashMap.Strict (HashMap)
 import Data.Int (Int32, Int64)
 import Data.IntSet (IntSet)
 import Data.Map (Map)
 import Data.Text (Text)
+import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Vector (Vector)
@@ -75,12 +81,17 @@ import Data.Word (Word8)
 import Foreign.Storable (sizeOf)
 import System.Random (StdGen)
 
+import qualified Data.CaseInsensitive as CI
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
 import qualified Data.Map as M
 import qualified Data.Text as T
+import qualified Data.Text.Lazy.Builder as TLB
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
+
+import MOO.String (MOOString)
+import qualified MOO.String as Str
 
 -- | The 'Sizeable' class is used to estimate the storage requirements of
 -- various values, for use by several built-in functions which are supposed to
@@ -113,6 +124,12 @@ instance Sizeable Double where
 
 instance Sizeable Text where
   storageBytes t = sizeOf 'x' * (T.length t + 1)
+
+instance Sizeable MOOString where
+  storageBytes = Str.storageBytes
+
+instance Sizeable s => Sizeable (CI s) where
+  storageBytes = (* 2) . storageBytes . CI.original
 
 instance Sizeable a => Sizeable (Vector a) where
   storageBytes v = V.sum (V.map storageBytes v)
@@ -154,13 +171,37 @@ instance Sizeable (TVar a) where
 type IntT = Int32
                           -- ^ MOO integer
 type FltT = Double        -- ^ MOO floating-point number
-type StrT = Text          -- ^ MOO string
+type StrT = MOOString     -- ^ MOO string
 type ObjT = Int           -- ^ MOO object number
 type ErrT = Error         -- ^ MOO error
 type LstT = Vector Value  -- ^ MOO list
 
 type ObjId = ObjT         -- ^ MOO object number
-type Id    = StrT         -- ^ MOO identifier (string)
+type Id    = CI Text      -- ^ MOO identifier (string lite)
+
+-- | Convert an identifier to and from another type.
+class Ident a where
+  fromId :: Id -> a
+  toId   :: a -> Id
+
+instance Ident String where
+  fromId = T.unpack . CI.original
+  toId   = CI.mk . T.pack
+
+instance Ident Text where
+  fromId = CI.original
+  toId   = CI.mk
+
+instance Ident MOOString where
+  fromId = Str.fromText . CI.original
+  toId   = CI.mk . Str.toText
+
+instance Ident Builder where
+  fromId = TLB.fromText . CI.original
+  toId   = error "Unsupported conversion from Builder to Id"
+
+str2builder :: StrT -> Builder
+str2builder = TLB.fromText . Str.toText
 
 -- | A 'Value' represents any MOO value.
 data Value = Int !IntT  -- ^ integer
@@ -207,7 +248,7 @@ fromLst (Lst x) = x
 instance Eq Value where
   (Int a) == (Int b) = a == b
   (Flt a) == (Flt b) = a == b
-  (Str a) == (Str b) = T.toCaseFold a == T.toCaseFold b
+  (Str a) == (Str b) = a == b
   (Obj a) == (Obj b) = a == b
   (Err a) == (Err b) = a == b
   (Lst a) == (Lst b) = a == b
@@ -215,7 +256,7 @@ instance Eq Value where
 
 -- | Test two MOO values for indistinguishable (case-sensitive) equality.
 equal :: Value -> Value -> Bool
-(Str a) `equal` (Str b) = a == b
+(Str a) `equal` (Str b) = a `Str.equal` b
 (Lst a) `equal` (Lst b) = V.length a == V.length b &&
                           V.and (V.zipWith equal a b)
 x       `equal` y       = x == y
@@ -224,7 +265,7 @@ x       `equal` y       = x == y
 instance Ord Value where
   (Int a) `compare` (Int b) = a `compare` b
   (Flt a) `compare` (Flt b) = a `compare` b
-  (Str a) `compare` (Str b) = T.toCaseFold a `compare` T.toCaseFold b
+  (Str a) `compare` (Str b) = a `compare` b
   (Obj a) `compare` (Obj b) = a `compare` b
   (Err a) `compare` (Err b) = a `compare` b
   _       `compare` _       = error "Illegal comparison"
@@ -266,7 +307,7 @@ instance Sizeable Error where
 truthOf :: Value -> Bool
 truthOf (Int x) = x /= 0
 truthOf (Flt x) = x /= 0.0
-truthOf (Str t) = not (T.null t)
+truthOf (Str t) = not (Str.null t)
 truthOf (Lst v) = not (V.null v)
 truthOf _       = False
 
@@ -300,10 +341,10 @@ typeCode TFlt =  9
 -- | Return a string representation of the given MOO value, using the same
 -- rules as the @tostr()@ built-in function.
 toText :: Value -> Text
-toText (Int x) = T.pack $ show x
-toText (Flt x) = T.pack $ show x
-toText (Str x) = x
-toText (Obj x) = T.pack $ '#' : show x
+toText (Int x) = T.pack (show x)
+toText (Flt x) = T.pack (show x)
+toText (Str x) = Str.toText x
+toText (Obj x) = T.pack ('#' : show x)
 toText (Err x) = error2text x
 toText (Lst _) = "{list}"
 
@@ -314,11 +355,11 @@ toLiteral (Lst vs) = T.concat
                      [ "{"
                      , T.intercalate ", " $ map toLiteral (V.toList vs)
                      , "}"]
-toLiteral (Str x) = T.concat ["\"", T.concatMap escape x, "\""]
+toLiteral (Str x) = T.concat ["\"", T.concatMap escape $ Str.toText x, "\""]
   where escape '"'  = "\\\""
         escape '\\' = "\\\\"
         escape c    = T.singleton c
-toLiteral (Err x) = T.pack $ show x
+toLiteral (Err x) = T.pack (show x)
 toLiteral v = toText v
 
 -- | Return a string description of the given error value.
@@ -342,8 +383,8 @@ error2text E_FLOAT   = "Floating-point arithmetic error"
 
 -- | Parse a MOO /binary string/ and return the corresponding byte values, or
 -- 'Nothing' if the string is improperly formatted.
-text2binary :: Text -> Maybe [Word8]
-text2binary = translate . T.unpack
+string2binary :: StrT -> Maybe [Word8]
+string2binary = translate . Str.toString
   where translate ('~':x:y:rs) = do
           xv <- hexValue x
           yv <- hexValue y

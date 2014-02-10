@@ -13,17 +13,19 @@ import System.Console.Haskeline
 import System.Environment
 import System.Posix (installHandler, sigPIPE, Handler(..))
 
-import MOO.Parser
-import MOO.Compiler
-import MOO.Task
-import MOO.Types
+import qualified Data.Map as M
+
 import MOO.Builtins
+import MOO.Command
+import MOO.Compiler
 import MOO.Database
 import MOO.Database.LambdaMOO
 import MOO.Object
-import MOO.Command
+import MOO.Task
+import MOO.Types
+import MOO.Parser
 
-import qualified Data.Map as M
+import qualified MOO.String as Str
 
 main :: IO ()
 main = withSocketsDo $ do
@@ -153,12 +155,12 @@ evalPrint task = do
       , exceptionValue   = value
       } -> do
       notifyLines $ formatTraceback exception
-      putStrLn $ "** " ++ unpack message ++ formatValue value
+      putStrLn $ "** " ++ Str.toString message ++ formatValue value
       return task'
     Timeout resource callStack -> do
       let exception = timeoutException resource callStack
       notifyLines $ formatTraceback exception
-      putStrLn $ "!! " ++ unpack (exceptionMessage exception)
+      putStrLn $ "!! " ++ Str.toString (exceptionMessage exception)
       return task'
     Suicide -> do
       putStrLn   "-- Task killed itself"
@@ -167,5 +169,5 @@ evalPrint task = do
   where formatValue (Int 0) = ""
         formatValue v = " [" ++ unpack (toLiteral v) ++ "]"
 
-        notifyLines :: [Text] -> IO ()
-        notifyLines = mapM_ (putStrLn . unpack)
+        notifyLines :: [StrT] -> IO ()
+        notifyLines = mapM_ (putStrLn . Str.toString)

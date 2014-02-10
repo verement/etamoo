@@ -28,11 +28,13 @@ import qualified Data.IntSet as IS
 import qualified Data.Text as T
 import qualified Data.Vector as V
 
-import MOO.Types
-import {-# SOURCE #-} MOO.Task
-import MOO.Object
-import MOO.Verb
 import {-# SOURCE #-} MOO.Network
+import MOO.Object
+import {-# SOURCE #-} MOO.Task
+import MOO.Types
+import MOO.Verb
+
+import qualified MOO.String as Str
 
 commandWord :: Parser Text
 commandWord = do
@@ -72,12 +74,13 @@ command = between spaces eof $ do
   argstr <- T.pack `liftM` many anyChar
   return (verb, argstr)
 
-matchPrep :: [Text] -> (Text, (PrepSpec, Text), Text)
+matchPrep :: [StrT] -> (StrT, (PrepSpec, StrT), StrT)
 matchPrep = matchPrep' id prepPhrases
-  where matchPrep' dobj _ [] = (T.unwords $ dobj [], (PrepNone, ""), "")
+  where matchPrep' dobj _ [] = (Str.unwords $ dobj [], (PrepNone, ""), "")
         matchPrep' dobj ((spec,phrase):phrases) args
-          | phrase == map T.toCaseFold argsPhrase =
-            (T.unwords $ dobj [], (spec, T.unwords argsPhrase), T.unwords iobj)
+          | phrase == argsPhrase =
+            (Str.unwords $ dobj [], (spec, Str.unwords argsPhrase),
+             Str.unwords iobj)
           | otherwise = matchPrep' dobj phrases args
           where (argsPhrase, iobj) = splitAt (length phrase) args
         matchPrep' dobj [] (arg:args) =
@@ -85,25 +88,33 @@ matchPrep = matchPrep' id prepPhrases
 
 -- | A structure describing a player's parsed command
 data Command = Command {
-    commandVerb     :: Text
-  , commandArgs     :: [Text]
-  , commandArgStr   :: Text
-  , commandDObjStr  :: Text
+    commandVerb     :: StrT
+  , commandArgs     :: [StrT]
+  , commandArgStr   :: StrT
+  , commandDObjStr  :: StrT
   , commandPrepSpec :: PrepSpec
-  , commandPrepStr  :: Text
-  , commandIObjStr  :: Text
+  , commandPrepStr  :: StrT
+  , commandIObjStr  :: StrT
   } deriving Show
 
 -- | Split a typed command into words according to the MOO rules for quoting
 -- and escaping.
-parseWords :: Text -> [Text]
-parseWords argstr = args
+parseWords :: Text -> [StrT]
+parseWords argstr = map Str.fromText args
   where Right args = parse commandWords "" argstr
 
 -- | Return a 'Command' value describing the arguments of a typed command as
 -- parsed into verb, preposition, direct and indirect object, etc.
 parseCommand :: Text -> Command
-parseCommand cmd = Command verb args argstr dobjstr prepSpec prepstr iobjstr
+parseCommand cmd = Command {
+    commandVerb     = Str.fromText verb
+  , commandArgs     = args
+  , commandArgStr   = Str.fromText argstr
+  , commandDObjStr  = dobjstr
+  , commandPrepSpec = prepSpec
+  , commandPrepStr  = prepstr
+  , commandIObjStr  = iobjstr
+  }
   where Right (verb, argstr) = parse command "" cmd
         args = parseWords argstr
         (dobjstr, (prepSpec, prepstr), iobjstr) = matchPrep args
@@ -113,8 +124,8 @@ objectNumber = liftM read $ between (char '#') eof $ many1 (satisfy isDigit)
 
 matchObject :: ObjId -> StrT -> MOO ObjId
 matchObject player str
-  | T.null str = return nothing
-  | otherwise  = case parse objectNumber "" str of
+  | Str.null str = return nothing
+  | otherwise    = case parse objectNumber "" (Str.toText str) of
     Right oid -> do
       obj <- getObject oid
       case obj of
@@ -123,7 +134,7 @@ matchObject player str
     Left _ -> matchObject' player str
 
   where matchObject' :: ObjId -> StrT -> MOO ObjId
-        matchObject' player str = case str' of
+        matchObject' player str = case str of
           "me"   -> return player
           "here" -> maybe nothing (objectForMaybe . objectLocation) `liftM`
                     getObject player
@@ -138,8 +149,7 @@ matchObject player str
                   maybe (return IS.empty)
                   (liftM (maybe IS.empty objectContents) . getObject)
                   maybeRoom
-                matchName str' $ IS.toList (holding `IS.union` roomContents)
-          where str' = T.toCaseFold str
+                matchName str $ IS.toList (holding `IS.union` roomContents)
 
         matchName :: StrT -> [ObjId] -> MOO ObjId
         matchName str = liftM (uncurry matchResult) .
@@ -167,11 +177,9 @@ matchObject player str
 
         nameMatch :: StrT -> Value -> Match
         nameMatch str (Str name)
-          | name'               == str = ExactMatch
-          | T.take strLen name' == str = PrefixMatch
-          | otherwise                  = NoMatch
-          where name'  = T.toCaseFold name
-                strLen = T.length str
+          | name                           == str = ExactMatch
+          | Str.take (Str.length str) name == str = PrefixMatch
+          | otherwise                             = NoMatch
         nameMatch _ _ = NoMatch
 
         nothing        = -1

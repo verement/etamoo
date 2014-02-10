@@ -6,13 +6,12 @@ module MOO.Network ( Listener
                    , notify
                    ) where
 
-import Data.Text (Text)
 import Network (PortNumber)
 
-import MOO.Types (ObjId)
 import {-# SOURCE #-} MOO.Task (MOO)
+import MOO.Types (ObjId, StrT)
 
 data Listener
 data Connection
 
-notify :: ObjId -> Text -> MOO ()
+notify :: ObjId -> StrT -> MOO ()

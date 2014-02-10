@@ -11,9 +11,9 @@ module MOO.Database ( Database
 
 import Control.Concurrent.STM (STM)
 
-import MOO.Types
 import {-# SOURCE #-} MOO.Object (Object)
 import {-# SOURCE #-} MOO.Task (MOO)
+import MOO.Types
 
 data Database
 data ServerOptions

@@ -34,10 +34,10 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Vector as V
 
-import MOO.Types
+import {-# SOURCE #-} MOO.Builtins (builtinFunctions)
 import MOO.Object
 import MOO.Task
-import {-# SOURCE #-} MOO.Builtins (builtinFunctions)
+import MOO.Types
 
 data Database = Database {
     objects       :: Vector (TVar (Maybe Object))
@@ -161,7 +161,7 @@ getServerOptions :: ObjId -> MOO (Id -> MOO (Maybe Value))
 getServerOptions oid = do
   serverOptions <- readProperty oid "server_options"
   return $ case serverOptions of
-    Just (Obj oid) -> readProperty oid
+    Just (Obj oid) -> readProperty oid . fromId
     _              -> const (return Nothing)
 
 getServerOption :: Id -> MOO (Maybe Value)

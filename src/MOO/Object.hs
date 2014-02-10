@@ -41,10 +41,11 @@ import Prelude hiding (getContents)
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
-import qualified Data.Text as T
 
 import MOO.Types
 import MOO.Verb
+
+import qualified MOO.String as Str
 
 data Object = Object {
   -- Attributes
@@ -92,7 +93,7 @@ initObject = Object {
   , objectParent     = Nothing
   , objectChildren   = IS.empty
 
-  , objectName       = T.empty
+  , objectName       = Str.empty
   , objectOwner      = -1
   , objectLocation   = Nothing
   , objectContents   = IS.empty
@@ -161,7 +162,7 @@ initProperty = Property {
   , propertyPermC     = False
 }
 
-builtinProperties :: [StrT]
+builtinProperties :: [Id]
 builtinProperties = [ "name", "owner"
                     , "location", "contents"
                     , "programmer", "wizard"
@@ -181,7 +182,7 @@ builtinProperty "f"          = Just (truthValue . objectPermF)
 builtinProperty _            = Nothing
 
 isBuiltinProperty :: StrT -> Bool
-isBuiltinProperty = isJust . builtinProperty . T.toCaseFold
+isBuiltinProperty = isJust . builtinProperty
 
 objectForMaybe :: Maybe ObjId -> ObjId
 objectForMaybe (Just oid) = oid
@@ -197,7 +198,7 @@ setProperties props obj = do
           return (propertyKey prop, tvarProp)
 
 propertyKey :: Property -> StrT
-propertyKey = T.toCaseFold . propertyName
+propertyKey = propertyName
 
 setVerbs :: [Verb] -> Object -> IO Object
 setVerbs verbs obj = do
@@ -209,7 +210,7 @@ setVerbs verbs obj = do
           return (verbKey verb, tvarVerb)
 
 verbKey :: Verb -> [StrT]
-verbKey = T.words . T.toCaseFold . verbNames
+verbKey = Str.words . verbNames
 
 lookupPropertyRef :: Object -> StrT -> Maybe (TVar Property)
 lookupPropertyRef obj name = HM.lookup name (objectProperties obj)
@@ -238,7 +239,7 @@ deleteProperty name obj =
 lookupVerbRef :: Object -> Value -> Maybe (Int, TVar Verb)
 lookupVerbRef obj (Str name) =
   fmap (second snd) $ find matchVerb (zip [0..] $ objectVerbs obj)
-  where matchVerb (_, (names, _)) = verbNameMatch (T.toCaseFold name) names
+  where matchVerb (_, (names, _)) = verbNameMatch name names
 lookupVerbRef obj (Int index)
   | index' < 1        = Nothing
   | index' > numVerbs = Nothing

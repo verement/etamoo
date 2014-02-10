@@ -7,6 +7,7 @@ import Control.Concurrent.STM (STM, newTVar, readTVar, writeTVar)
 import Control.Monad (when, unless, liftM, void, forM_, foldM, join)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Set (Set)
+import Data.Text (Text)
 import Prelude hiding (getContents)
 
 import qualified Data.HashMap.Strict as HM
@@ -16,17 +17,19 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Vector as V
 
-import MOO.Builtins.Common
-import MOO.Database
-import MOO.Types
-import MOO.Task
-import MOO.Object
-import MOO.Verb
-import MOO.Network
-import MOO.Unparser
-import MOO.Parser
-import {-# SOURCE #-} MOO.Compiler
 import MOO.AST
+import MOO.Builtins.Common
+import {-# SOURCE #-} MOO.Compiler
+import MOO.Database
+import MOO.Network
+import MOO.Object
+import MOO.Parser
+import MOO.Task
+import MOO.Types
+import MOO.Unparser
+import MOO.Verb
+
+import qualified MOO.String as Str
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
@@ -209,7 +212,7 @@ reparentObject (object, obj) (new_parent, maybeNewParent) = do
           where concatProps acc oid = do
                   Just obj <- getObject oid
                   props <- liftSTM $ definedProperties obj
-                  return (acc (map T.toCaseFold props) ++)
+                  return (acc props ++)
 
 bf_chparent = Builtin "chparent" 2 (Just 2) [TObj, TObj] TAny go
   where go [Obj object, Obj new_parent] = do
@@ -307,7 +310,7 @@ bf_max_object = Builtin "max_object" 0 (Just 0) [] TObj $ \[] ->
 
 -- § 4.4.3.2 Object Movement
 
-moveObject :: Id -> ObjId -> ObjId -> MOO ()
+moveObject :: StrT -> ObjId -> ObjId -> MOO ()
 moveObject funcName what where_ = do
   let newWhere = case where_ of
         -1  -> Nothing
@@ -383,9 +386,10 @@ bf_property_info = Builtin "property_info" 2 (Just 2) [TObj, TStr] TLst go
 
           return $ fromList [Obj $ propertyOwner prop, Str $ perms prop]
 
-          where perms prop = T.pack $ concat [['r' | propertyPermR prop],
-                                              ['w' | propertyPermW prop],
-                                              ['c' | propertyPermC prop]]
+          where perms prop = Str.fromString $
+                             concat [['r' | propertyPermR prop],
+                                     ['w' | propertyPermW prop],
+                                     ['c' | propertyPermC prop]]
 
 traverseDescendants :: (Object -> MOO a) -> ObjId -> MOO ()
 traverseDescendants f oid = do
@@ -403,7 +407,7 @@ modifyDescendants db f oid = do
 
 checkPerms :: [Char] -> StrT -> MOO (Set Char)
 checkPerms valid perms = do
-  let permSet = S.fromList (T.unpack $ T.toCaseFold perms)
+  let permSet = S.fromList (T.unpack $ Str.toCaseFold perms)
   unless (S.null $ permSet `S.difference` S.fromList valid) $ raise E_INVARG
   return permSet
 
@@ -435,26 +439,25 @@ bf_set_property_info = Builtin "set_property_info" 3 (Just 3)
   case new_name of
     Nothing      -> setInfo
     Just newName -> do
-      let newName' = T.toCaseFold newName
-          oldName' = T.toCaseFold prop_name
+      let oldName = prop_name
 
       unless (objectPermW obj) $ checkPermission (objectOwner obj)
 
       when (propertyInherited prop) $ raise E_INVARG
-      unless (newName' == oldName') $ flip traverseDescendants object $ \obj ->
-        when (isJust $ lookupPropertyRef obj newName') $ raise E_INVARG
+      unless (newName == oldName) $ flip traverseDescendants object $ \obj ->
+        when (isJust $ lookupPropertyRef obj newName) $ raise E_INVARG
 
       setInfo
 
       db <- getDatabase
       flip (modifyDescendants db) object $ \obj -> do
-        let Just propTVar = lookupPropertyRef obj oldName'
+        let Just propTVar = lookupPropertyRef obj oldName
         prop <- readTVar propTVar
         writeTVar propTVar $ prop { propertyName = newName }
 
         return obj { objectProperties =
-                        HM.insert newName' propTVar $
-                        HM.delete oldName' (objectProperties obj) }
+                        HM.insert newName propTVar $
+                        HM.delete oldName (objectProperties obj) }
 
   return nothing
 
@@ -472,9 +475,9 @@ bf_add_property = Builtin "add_property" 4 (Just 4)
           unless (objectPermW obj) $ checkPermission (objectOwner obj)
           checkPermission owner
 
-          when (isBuiltinProperty name) $ raise E_INVARG
+          when (isBuiltinProperty prop_name) $ raise E_INVARG
           flip traverseDescendants object $ \obj ->
-            when (isJust $ lookupPropertyRef obj name) $ raise E_INVARG
+            when (isJust $ lookupPropertyRef obj prop_name) $ raise E_INVARG
 
           let newProperty = initProperty {
                   propertyName      = prop_name
@@ -493,8 +496,6 @@ bf_add_property = Builtin "add_property" 4 (Just 4)
 
           return nothing
 
-          where name = T.toCaseFold prop_name
-
 bf_delete_property = Builtin "delete_property" 2 (Just 2) [TObj, TStr] TAny go
   where go [Obj object, Str prop_name] = do
           obj <- checkValid object
@@ -505,11 +506,9 @@ bf_delete_property = Builtin "delete_property" 2 (Just 2) [TObj, TStr] TAny go
           db <- getDatabase
           flip (modifyDescendants db) object $ \obj ->
             return obj { objectProperties =
-                            HM.delete name (objectProperties obj) }
+                            HM.delete prop_name (objectProperties obj) }
 
           return nothing
-
-          where name = T.toCaseFold prop_name
 
 bf_is_clear_property = Builtin "is_clear_property" 2 (Just 2)
                        [TObj, TStr] TInt $ \[Obj object, Str prop_name] -> do
@@ -552,10 +551,10 @@ bf_verb_info = Builtin "verb_info" 2 (Just 2)
   return $ fromList
     [Obj $ verbOwner verb, Str $ perms verb, Str $ verbNames verb]
 
-  where perms verb = T.pack $ concat [['r' | verbPermR verb],
-                                      ['w' | verbPermW verb],
-                                      ['x' | verbPermX verb],
-                                      ['d' | verbPermD verb]]
+  where perms verb = Str.fromString $ concat [['r' | verbPermR verb],
+                                              ['w' | verbPermW verb],
+                                              ['x' | verbPermX verb],
+                                              ['d' | verbPermD verb]]
 
 verbInfo :: LstT -> MOO (ObjId, Set Char, StrT)
 verbInfo info = do
@@ -565,7 +564,7 @@ verbInfo info = do
     _                                 -> raise E_INVARG
   permSet <- checkPerms "rwxd" perms
   checkValid owner
-  when (null $ T.words names) $ raise E_INVARG
+  when (null $ Str.words names) $ raise E_INVARG
 
   return (owner, permSet, names)
 
@@ -578,9 +577,7 @@ bf_set_verb_info = Builtin "set_verb_info" 3 (Just 3) [TObj, TAny, TLst]
   unless (verbPermW verb) $ checkPermission (verbOwner verb)
   checkPermission owner
 
-  let newNames = T.toCaseFold names
-      oldNames = T.toCaseFold (verbNames verb)
-  unless (newNames == oldNames || objectPermW obj) $
+  unless (names == verbNames verb || objectPermW obj) $
     checkPermission (objectOwner obj)
 
   modifyVerb (object, obj) verb_desc $ \verb ->
@@ -603,20 +600,20 @@ bf_verb_args = Builtin "verb_args" 2 (Just 2)
 
   return $ stringList [dobj verb, prep verb, iobj verb]
 
-  where dobj = obj2text  . verbDirectObject
-        iobj = obj2text  . verbIndirectObject
-        prep = prep2text . verbPreposition
+  where dobj = obj2string  . verbDirectObject
+        iobj = obj2string  . verbIndirectObject
+        prep = prep2string . verbPreposition
 
 verbArgs :: LstT -> MOO (ObjSpec, PrepSpec, ObjSpec)
 verbArgs args = do
   (dobj, prep, iobj) <- case V.toList args of
     [Str dobj, Str prep, Str iobj] -> return (dobj, breakSlash prep, iobj)
-      where breakSlash = fst . T.breakOn "/"
+      where breakSlash = fst . Str.breakOn "/"
     [_       , _       , _       ] -> raise E_TYPE
     _                              -> raise E_INVARG
-  dobj' <- maybe (raise E_INVARG) return $ text2obj  (T.toCaseFold dobj)
-  prep' <- maybe (raise E_INVARG) return $ text2prep (T.toCaseFold prep)
-  iobj' <- maybe (raise E_INVARG) return $ text2obj  (T.toCaseFold iobj)
+  dobj' <- maybe (raise E_INVARG) return $ string2obj  dobj
+  prep' <- maybe (raise E_INVARG) return $ string2prep prep
+  iobj' <- maybe (raise E_INVARG) return $ string2obj  iobj
 
   return (dobj', prep', iobj')
 
@@ -684,7 +681,7 @@ bf_verb_code = Builtin "verb_code" 2 (Just 4) [TObj, TAny, TAny, TAny] TLst go
           unless (verbPermR verb) $ checkPermission (verbOwner verb)
           checkProgrammer
 
-          let code = init $ T.splitOn "\n" $ TL.toStrict $
+          let code = init $ Str.splitOn "\n" $ Str.fromText $ TL.toStrict $
                      unparse fully_paren indent (verbProgram verb)
           return (stringList code)
 
@@ -699,7 +696,7 @@ bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
   checkProgrammer
 
   case parse text of
-    Left errors   -> return $ fromListBy (Str . T.pack) errors
+    Left errors   -> return $ fromListBy (Str . Str.fromString) errors
     Right program -> do
       modifyVerb (object, obj) verb_desc $ \verb ->
         return verb {
@@ -708,8 +705,8 @@ bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
         }
       return $ Lst V.empty
 
-  where addLine :: ([StrT] -> [StrT]) -> Value -> MOO ([StrT] -> [StrT])
-        addLine add (Str line) = return (add [line, "\n"] ++)
+  where addLine :: ([Text] -> [Text]) -> Value -> MOO ([Text] -> [Text])
+        addLine add (Str line) = return (add [Str.toText line, "\n"] ++)
         addLine _    _         = raise E_INVARG
 
 bf_disassemble = Builtin "disassemble" 2 (Just 2)
@@ -719,7 +716,7 @@ bf_disassemble = Builtin "disassemble" 2 (Just 2)
   unless (verbPermR verb) $ checkPermission (verbOwner verb)
 
   let Program statements = verbProgram verb
-  return $ fromListBy (Str . T.pack . show) statements
+  return $ fromListBy (Str . Str.fromString . show) statements
 
 -- § 4.4.3.5 Operations on Player Objects
 

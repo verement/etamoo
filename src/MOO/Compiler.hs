@@ -10,7 +10,6 @@ import Control.Monad.Reader (asks, local)
 import Control.Monad.State (gets)
 
 import qualified Data.Map as M
-import qualified Data.Text as T
 import qualified Data.Vector as V
 
 import MOO.Types
@@ -18,6 +17,8 @@ import MOO.AST
 import MOO.Task
 import MOO.Builtins
 import MOO.Object
+
+import qualified MOO.String as Str
 
 -- | Compile a complete MOO program into a computation in the 'MOO' monad that
 -- returns whatever the MOO program returns.
@@ -53,16 +54,14 @@ compileStatements (statement:rest) yield = case statement of
         _        -> raise E_TYPE
 
       callCC $ \break -> do
-        pushLoopContext (Just var') (Continuation break)
-        loop var' elts (compile' body)
+        pushLoopContext (Just var) (Continuation break)
+        loop var elts (compile' body)
       popContext
       return nothing
 
     compile' rest
 
-    where var' = T.toCaseFold var
-
-          loop var (elt:elts) body = runTick >> do
+    where loop var (elt:elts) body = runTick >> do
             storeVariable var elt
             callCC $ \continue -> do
               setLoopContinue (Continuation continue)
@@ -81,16 +80,14 @@ compileStatements (statement:rest) yield = case statement of
         (_    , _    ) -> raise E_TYPE
 
       callCC $ \break -> do
-        pushLoopContext (Just var') (Continuation break)
-        loop var' ty s e (compile' body)
+        pushLoopContext (Just var) (Continuation break)
+        loop var ty s e (compile' body)
       popContext
       return nothing
 
     compile' rest
 
-    where var' = T.toCaseFold var
-
-          loop var ty i end body
+    where loop var ty i end body
             | i > end   = return ()
             | otherwise = runTick >> do
               storeVariable var (ty i)
@@ -101,15 +98,13 @@ compileStatements (statement:rest) yield = case statement of
 
   While lineNumber var expr body -> do
     callCC $ \break -> do
-      pushLoopContext var' (Continuation break)
-      loop lineNumber var' (evaluate expr) (compile' body)
+      pushLoopContext var (Continuation break)
+      loop lineNumber var (evaluate expr) (compile' body)
     popContext
 
     compile' rest
 
-    where var' = fmap T.toCaseFold var
-
-          loop lineNumber var expr body = runTick >> do
+    where loop lineNumber var expr body = runTick >> do
             setLineNumber lineNumber
             expr' <- expr
             maybe return storeVariable var expr'
@@ -142,8 +137,8 @@ compileStatements (statement:rest) yield = case statement of
 
     compile' rest
 
-  Break    name -> breakLoop    (fmap T.toCaseFold name)
-  Continue name -> continueLoop (fmap T.toCaseFold name)
+  Break    name -> breakLoop    name
+  Continue name -> continueLoop name
 
   Return _          Nothing     -> runTick >> yield nothing
   Return lineNumber (Just expr) -> runTick >> do
@@ -226,7 +221,7 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
 
     callVerb oid oid name args'
 
-  BuiltinFunc func args -> callBuiltin (T.toCaseFold func) =<< expand args
+  BuiltinFunc func args -> callBuiltin func =<< expand args
 
   a `Plus`   b -> binary plus   a b
   a `Minus`  b -> binary minus  a b
@@ -309,12 +304,10 @@ storeVariable var value = do
 fetchProperty :: (ObjT, StrT) -> MOO Value
 fetchProperty (oid, name) = do
   obj <- getObject oid >>= maybe (raise E_INVIND) return
-  maybe (search False obj) (return . ($ obj)) $ builtinProperty name'
+  maybe (search False obj) (return . ($ obj)) $ builtinProperty name
 
-  where name' = T.toCaseFold name
-
-        search skipPermCheck obj = do
-          prop <- getProperty obj name'
+  where search skipPermCheck obj = do
+          prop <- getProperty obj name
           unless (skipPermCheck || propertyPermR prop) $
             checkPermission (propertyOwner prop)
           case propertyValue prop of
@@ -322,25 +315,23 @@ fetchProperty (oid, name) = do
             Nothing    -> do
               parentObj <- maybe (return Nothing) getObject (objectParent obj)
               maybe (error $ "No inherited value for property " ++
-                     T.unpack name) (search True) parentObj
+                     Str.toString name) (search True) parentObj
 
 storeProperty :: (ObjT, StrT) -> Value -> MOO Value
 storeProperty (oid, name) value = do
   obj <- getObject oid >>= maybe (raise E_INVIND) return
-  if isBuiltinProperty name'
-    then setBuiltinProperty (oid, obj) name' value
-    else modifyProperty obj name' $ \prop -> do
+  if isBuiltinProperty name
+    then setBuiltinProperty (oid, obj) name value
+    else modifyProperty obj name $ \prop -> do
       unless (propertyPermW prop) $ checkPermission (propertyOwner prop)
       return prop { propertyValue = Just value }
   return value
-
-  where name' = T.toCaseFold name
 
 withIndexLength :: Value -> MOO a -> MOO a
 withIndexLength expr =
   local $ \env -> env { indexLength = case expr of
                            Lst v -> return (V.length v)
-                           Str t -> return (T.length t)
+                           Str t -> return (Str.length t)
                            _     -> raise E_TYPE
                       }
 
@@ -348,7 +339,8 @@ checkLstRange :: LstT -> Int -> MOO ()
 checkLstRange v i = when (i < 1 || i > V.length v) $ raise E_RANGE
 
 checkStrRange :: StrT -> Int -> MOO ()
-checkStrRange t i = when (i < 1 || t `T.compareLength` i == LT) $ raise E_RANGE
+checkStrRange t i = when (i < 1 ||
+                          t `Str.compareLength` i == LT) $ raise E_RANGE
 
 checkIndex :: Value -> MOO Int
 checkIndex (Int i) = return (fromIntegral i)
@@ -363,9 +355,8 @@ data LValue = LValue {
 lValue :: Expr -> LValue
 
 lValue (Variable var) = LValue fetch store change
-  where var'  = T.toCaseFold var
-        fetch = fetchVariable var'
-        store = storeVariable var'
+  where fetch = fetchVariable var
+        store = storeVariable var
 
         change = do
           value <- fetch
@@ -403,7 +394,7 @@ lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
           value' <- case value of
             Lst v -> checkLstRange v index' >> return (v V.! (index' - 1))
             Str t -> checkStrRange t index' >>
-                     return (Str $ T.singleton $ t `T.index` (index' - 1))
+                     return (Str $ Str.singleton $ t `Str.index` (index' - 1))
             _     -> raise E_TYPE
           return (value', changeValue value index' changeExpr)
 
@@ -411,9 +402,9 @@ lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
           changeExpr $ Lst $ listSet v index newValue
 
         changeValue (Str t) index changeExpr (Str c) = do
-          when (c `T.compareLength` 1 /= EQ) $ raise E_INVARG
-          let (s, r) = T.splitAt (index - 1) t
-          changeExpr $ Str $ T.concat [s, c, T.tail r]
+          when (c `Str.compareLength` 1 /= EQ) $ raise E_INVARG
+          let (s, r) = Str.splitAt (index - 1) t
+          changeExpr $ Str $ Str.concat [s, c, Str.tail r]
 
         changeValue _ _ _ _ = raise E_TYPE
 
@@ -424,13 +415,13 @@ lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
           if start' > end'
             then case value of
               Lst{} -> return $ Lst V.empty
-              Str{} -> return $ Str T.empty
+              Str{} -> return $ Str Str.empty
               _     -> raise E_TYPE
             else let len = end' - start' + 1 in case value of
               Lst v -> do checkLstRange v start' >> checkLstRange v end'
                           return $ Lst $ V.slice (start' - 1) len v
               Str t -> do checkStrRange t start' >> checkStrRange t end'
-                          return $ Str $ T.take len $ T.drop (start' - 1) t
+                          return $ Str $ Str.take len $ Str.drop (start' - 1) t
               _     -> raise E_TYPE
 
         getIndices value = withIndexLength value $ do
@@ -456,13 +447,13 @@ lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
 
         changeValue (Str t) start end changeExpr (Str r) = do
           when (end < 0 ||
-                t `T.compareLength` (start - 1) == LT) $ raise E_RANGE
+                t `Str.compareLength` (start - 1) == LT) $ raise E_RANGE
           let pre  = substr t 1 (start - 1)
-              post = substr t (end + 1) (T.length t)
+              post = substr t (end + 1) (Str.length t)
               substr t s e
-                | e < s     = T.empty
-                | otherwise = T.take (e - s + 1) $ T.drop (s - 1) t
-          changeExpr $ Str $ T.concat [pre, r, post]
+                | e < s     = Str.empty
+                | otherwise = Str.take (e - s + 1) $ Str.drop (s - 1) t
+          changeExpr $ Str $ Str.concat [pre, r, post]
 
         changeValue _ _ _ _ _ = raise E_TYPE
 
@@ -501,22 +492,21 @@ scatterAssign items args = do
         walk (item:items) args noptAvail =
           case item of
             ScatRequired var -> do
-              assign var (V.head args)
+              storeVariable var (V.head args)
               walk items (V.tail args) noptAvail
             ScatOptional var opt
-              | noptAvail > 0 -> do assign var (V.head args)
+              | noptAvail > 0 -> do storeVariable var (V.head args)
                                     walk items (V.tail args) (noptAvail - 1)
               | otherwise     -> do
-                case opt of Nothing   -> return ()
-                            Just expr -> void $ assign var =<< evaluate expr
+                case opt of
+                  Nothing   -> return ()
+                  Just expr -> void $ storeVariable var =<< evaluate expr
                 walk items args noptAvail
             ScatRest var -> do
               let (s, r) = V.splitAt nrest args
-              assign var (Lst s)
+              storeVariable var (Lst s)
               walk items r noptAvail
         walk [] _ _ = return ()
-
-        assign var = storeVariable (T.toCaseFold var)
 
 expand :: [Argument] -> MOO [Value]
 expand (a:as) = case a of
@@ -531,7 +521,7 @@ expand [] = return []
 plus :: Value -> Value -> MOO Value
 Int a `plus` Int b = return $ Int (a + b)
 Flt a `plus` Flt b = checkFloat (a + b)
-Str a `plus` Str b = return $ Str (T.append a b)
+Str a `plus` Str b = return $ Str (a `Str.append` b)
 _     `plus` _     = raise E_TYPE
 
 minus :: Value -> Value -> MOO Value

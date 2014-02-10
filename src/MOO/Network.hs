@@ -36,9 +36,11 @@ import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Vector as V
 
-import MOO.Types
-import MOO.Task
 import {-# SOURCE #-} MOO.Database (systemObject, getServerOption')
+import MOO.Task
+import MOO.Types
+
+import qualified MOO.String as Str
 
 data Listener = Listener {
     listenerSocket        :: Socket
@@ -66,7 +68,7 @@ formatListener listener =
            ]
 
   where formatPoint (PortNumber port) = Int $ fromIntegral port
-        formatPoint (UnixSocket path) = Str $ T.pack path
+        formatPoint (UnixSocket path) = Str $ Str.fromString path
 
 data Connection = Connection {
     connectionHandle                  :: Handle
@@ -143,9 +145,9 @@ connectionOption "disable-oob"        =
 connectionOption "client-echo"        =
   Just (truthValue . connectionOptionClientEcho)
 connectionOption "flush-command"      =
-  Just (Str . connectionOptionFlushCommand)
+  Just (Str . Str.fromText . connectionOptionFlushCommand)
 connectionOption "intrinsic-commands" =
-  Just (fromListBy (Str . ic2text) .
+  Just (fromListBy (Str . Str.fromText . ic2text) .
         S.toList . connectionOptionIntrinsicCommands)
 connectionOption _                    = Nothing
 
@@ -171,13 +173,14 @@ setConnectionOption "client-echo" value conn = do
 setConnectionOption "flush-command" value conn =
   return conn { connectionOptionFlushCommand = flushCommand }
   where flushCommand = case value of
-          Str t -> t
+          Str t -> Str.toText t
           _     -> T.empty
 setConnectionOption "intrinsic-commands" value conn = do
   intrinsicCommands <- case value of
     Lst v -> foldM command S.empty (V.toList v)
       where command set (Str cmd) = maybe (raise E_INVARG)
-                                    (return . flip S.insert set) $ text2ic cmd
+                                    (return . flip S.insert set) $
+                                    text2ic (Str.toText cmd)
             command _   _         = raise E_INVARG
     Int 0 -> return S.empty
     Int _ -> return allIntrinsicCommands
@@ -188,8 +191,8 @@ setConnectionOption _ _ _ = raise E_INVARG
 bootPlayer :: ObjId -> MOO ()
 bootPlayer oid = notyet "bootPlayer"
 
-notify :: ObjId -> Text -> MOO ()
-notify who what = delayIO (putStrLn $ T.unpack what)
+notify :: ObjId -> StrT -> MOO ()
+notify who what = delayIO (putStrLn $ Str.toString what)
 
 getConnectionName :: ObjId -> MOO Text
 getConnectionName player = do

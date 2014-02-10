@@ -13,18 +13,19 @@ import Data.List (sort)
 import Data.Time (getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
-import MOO.Types
-import MOO.Task
-import MOO.Object
-import MOO.Verb
-import MOO.Parser
-import {-# SOURCE #-} MOO.Compiler
-import {-# SOURCE #-} MOO.Builtins
-import MOO.Builtins.Common
-
 import qualified Data.Map as M
 import qualified Data.Set as S
-import qualified Data.Text as T
+
+import MOO.Builtins.Common
+import {-# SOURCE #-} MOO.Builtins
+import {-# SOURCE #-} MOO.Compiler
+import MOO.Object
+import MOO.Parser
+import MOO.Task
+import MOO.Types
+import MOO.Verb
+
+import qualified MOO.String as Str
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
@@ -51,11 +52,11 @@ builtins = [
 
 bf_raise = Builtin "raise" 1 (Just 3) [TAny, TStr, TAny] TAny go
   where go (code : optional) = raiseException code message value
-          where [Str message, value] = defaults optional
-                                       [Str $ toText code, nothing]
+          where [Str message, value] =
+                  defaults optional [Str $ Str.fromText $ toText code, nothing]
 
 bf_call_function = Builtin "call_function" 1 Nothing [TStr] TAny go
-  where go (Str func_name : args) = callBuiltin (T.toCaseFold func_name) args
+  where go (Str func_name : args) = callBuiltin (toId func_name) args
 
 formatInfo :: Builtin -> Value
 formatInfo Builtin { builtinName     = name
@@ -63,7 +64,7 @@ formatInfo Builtin { builtinName     = name
                    , builtinMaxArgs  = max
                    , builtinArgTypes = types
                    } =
-  fromList [ Str name
+  fromList [ Str $ fromId name
            , Int $ fromIntegral min
            , Int $ maybe (-1) fromIntegral max
            , fromListBy (Int . typeCode) types
@@ -72,16 +73,16 @@ formatInfo Builtin { builtinName     = name
 bf_function_info = Builtin "function_info" 0 (Just 1) [TStr] TLst go
   where go [] = return $ fromListBy formatInfo $ M.elems builtinFunctions
         go [Str name] =
-          case M.lookup name' builtinFunctions of
+          case M.lookup (toId name) builtinFunctions of
             Just builtin -> return $ formatInfo builtin
             Nothing      -> raise E_INVARG
-          where name' = T.toCaseFold name
 
 bf_eval = Builtin "eval" 1 (Just 1) [TStr] TLst $ \[Str string] -> do
   checkProgrammer
-  case parse string of
-    Left errors   -> return $ fromList [truthValue False,
-                                        fromListBy (Str . T.pack) errors]
+  case parse (Str.toText string) of
+    Left errors   ->
+      return $ fromList [truthValue False,
+                         fromListBy (Str . Str.fromString) errors]
     Right program -> do
       (programmer, this, player) <- frame $ \frame ->
         (permissions frame, initialThis frame, initialPlayer frame)
