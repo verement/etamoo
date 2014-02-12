@@ -10,7 +10,6 @@ import Data.Map (Map)
 import Data.Maybe (fromMaybe)
 import Data.Time (formatTime, utcToLocalZonedTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
-import System.IO.Unsafe (unsafePerformIO)
 import System.Locale (defaultTimeLocale)
 
 import qualified Data.Map as M
@@ -156,11 +155,11 @@ bf_ctime []         = ctime =<< currentTime
 bf_ctime [Int time] = ctime time
 
 ctime :: IntT -> MOO Value
-ctime time =
+ctime time = do
+  zonedTime <- unsafeIOtoMOO (utcToLocalZonedTime utcTime)
   return $ Str $ T.pack $ formatTime defaultTimeLocale format zonedTime
-  where format    = "%a %b %_d %T %Y %Z"
-        zonedTime = unsafePerformIO $ utcToLocalZonedTime utcTime
-        utcTime   = posixSecondsToUTCTime (fromIntegral time)
+  where utcTime = posixSecondsToUTCTime (fromIntegral time)
+        format  = "%a %b %_d %T %Y %Z"
 
 -- § 4.4.7 Administrative Operations
 

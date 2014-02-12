@@ -42,6 +42,7 @@ module MOO.Task (
   , interrupt
   , requestIO
   , delayIO
+  , unsafeIOtoMOO
   , getTask
   , putTask
   , purgeTask
@@ -122,9 +123,10 @@ module MOO.Task (
 import Control.Arrow (first, (&&&))
 import Control.Concurrent (ThreadId, myThreadId, forkIO, threadDelay,
                            newEmptyMVar, putMVar, takeMVar)
-import Control.Concurrent.STM (STM, TVar, atomically, retry,
+import Control.Concurrent.STM (STM, TVar, atomically, retry, throwSTM,
                                newEmptyTMVar, putTMVar, takeTMVar,
                                readTVar, writeTVar, modifyTVar)
+import Control.Exception (SomeException, catch)
 import Control.Monad (when, unless, join, liftM, void, (>=>))
 import Control.Monad.Cont (ContT, runContT, callCC)
 import Control.Monad.Reader (ReaderT, runReaderT, local, asks)
@@ -140,6 +142,7 @@ import Data.Monoid (Monoid(mempty, mappend), (<>))
 import Data.Text (Text)
 import Data.Time (UTCTime, getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (nanosleep)
 import System.Random (Random, StdGen, newStdGen, mkStdGen, split,
                       randomR, randomRs)
@@ -540,11 +543,29 @@ requestIO io = callCC $ interrupt . RequestIO io . Resume
 -- | Perform the given IO computation after the current task commits its 'STM'
 -- transaction.
 --
--- Since IO can't be performed within a transaction, this is a simple
+-- Since general IO can't be performed within a transaction, this is a simple
 -- alternative when the value returned by the IO isn't needed.
 delayIO :: IO () -> MOO ()
 delayIO io = modify $ \state ->
   state { delayedIO = delayedIO state `mappend` DelayedIO io }
+
+-- | Unsafely perform the given IO computation within the current 'STM'
+-- transaction.
+--
+-- Since 'STM' transactions may be aborted at any time, the IO is performed in
+-- a separate thread in order to guarantee consistency with any finalizers,
+-- brackets, and so forth. The IO must be idempotent as it may be run more
+-- than once.
+unsafeIOtoMOO :: IO a -> MOO a
+unsafeIOtoMOO io = liftSTM $ do
+  let result = unsafePerformIO $ do
+        r <- newEmptyMVar
+        forkIO $ (io >>= putMVar r . Right) `catch` \e ->
+          putMVar r $ Left (e :: SomeException)
+        takeMVar r
+  case result of
+    Right x -> return x
+    Left  e -> throwSTM e
 
 -- | A 'Reader' environment for state that either doesn't change, or can be
 -- locally modified for subcomputations
