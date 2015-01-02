@@ -748,11 +748,9 @@ callVerb' :: (ObjId, Verb) -> ObjId -> StrT -> [Value] -> MOO Value
 callVerb' (verbOid, verb) this name args = do
   thisFrame <- frame id
   wizard <- isWizard (permissions thisFrame)
-  let player = if wizard
-               then case vars M.! "player" of
-                 (Obj oid) -> oid
-                 _         -> initialPlayer thisFrame
-               else initialPlayer thisFrame
+  let player = case (wizard, vars M.! "player") of
+        (True, Obj oid) -> oid
+        _               -> initialPlayer thisFrame
       vars   = variables thisFrame
       vars'  = mkVariables [
           ("this"   , Obj this)
