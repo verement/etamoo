@@ -131,7 +131,7 @@ miscBuiltins = [
   , ("verb_cache_stats",
                      (bf_verb_cache_stats, Info 0 (Just 0) []           TLst))
   , ("log_cache_stats",
-                     (bf_log_cache_stats , Info 0 (Just 0) []           TAny))
+                      (bf_log_cache_stats, Info 0 (Just 0) []           TAny))
   ]
 
 -- § 4.4.1 Object-Oriented Programming
@@ -184,7 +184,7 @@ bf_reset_max_object [] = do
 
 bf_server_version [] = return (Str serverVersionText)
 
-bf_memory_usage [] = return $ Lst V.empty  -- ... nothing to see here
+bf_memory_usage [] = return (Lst V.empty)  -- ... nothing to see here
 
 bf_db_disk_size [] = raise E_QUOTA  -- not yet?
 

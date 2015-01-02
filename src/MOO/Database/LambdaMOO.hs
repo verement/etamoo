@@ -465,7 +465,7 @@ read_program :: DBParser (Either [String] Program)
 read_program = (<?> "program") $ do
   source <- try (string ".\n" >> return "") <|>
             manyTill anyToken (try $ string "\n.\n")
-  return $ MOO.Parser.parse (T.pack source)
+  return $ parse (T.pack source)
 
 read_task_queue :: DBParser ()
 read_task_queue = (<?> "task_queue") $ do
