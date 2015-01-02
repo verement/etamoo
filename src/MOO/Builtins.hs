@@ -31,21 +31,26 @@ import MOO.Builtins.Tasks   as Tasks
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
 -- | A 'Map' of all built-in functions, keyed by name
-builtinFunctions :: Map Id (Builtin, Info)
+builtinFunctions :: Map Id Builtin
 builtinFunctions =
-  M.fromList $ miscBuiltins ++
+  M.fromList $ map assoc $ miscBuiltins ++
   Values.builtins ++ Objects.builtins ++ Network.builtins ++ Tasks.builtins
+  where assoc builtin = (builtinName builtin, builtin)
 
 -- | Call the named built-in function with the given arguments, checking first
 -- for the appropriate number and types of arguments. Raise 'E_INVARG' if the
 -- built-in function is unknown.
 callBuiltin :: Id -> [Value] -> MOO Value
 callBuiltin func args = case M.lookup func builtinFunctions of
-  Just (bf, info) -> checkArgs info args >> bf args
-  Nothing -> raiseException (Err E_INVARG)
-             "Unknown built-in function" (Str func)
+  Just builtin -> checkArgs builtin args >> builtinFunction builtin args
+  Nothing      -> raiseException (Err E_INVARG)
+                  "Unknown built-in function" (Str func)
 
-  where checkArgs (Info min max types _) args = do
+  where checkArgs Builtin {
+            builtinMinArgs  = min
+          , builtinMaxArgs  = max
+          , builtinArgTypes = types
+          } args = do
           let nargs = length args
             in when (nargs < min || nargs > fromMaybe nargs max) $ raise E_ARGS
           checkTypes types args
@@ -69,9 +74,15 @@ callBuiltin func args = case M.lookup func builtinFunctions of
 -- describing an inconsistency, or an integer giving the total number of
 -- (verified) built-in functions.
 verifyBuiltins :: Either String Int
-verifyBuiltins = foldM accum 0 $ M.assocs builtinFunctions
+verifyBuiltins = foldM accum 0 $ M.elems builtinFunctions
   where accum a b = valid b >>= Right . (+ a)
-        valid (name, (func, Info min max types _))
+        valid Builtin {
+            builtinName     = name
+          , builtinMinArgs  = min
+          , builtinMaxArgs  = max
+          , builtinArgTypes = types
+          , builtinFunction = func
+          }
           | name /= T.toCaseFold name         = invalid "name not case-folded"
           | min < 0                           = invalid "arg min < 0"
           | maybe False (< min) max           = invalid "arg max < min"
@@ -105,38 +116,34 @@ verifyBuiltins = foldM accum 0 $ M.assocs builtinFunctions
 
 -- § 4.4 Built-in Functions
 
-miscBuiltins :: [BuiltinSpec]
+miscBuiltins :: [Builtin]
 miscBuiltins = [
     -- § 4.4.1 Object-Oriented Programming
-    ("pass"          , (bf_pass          , Info 0 Nothing  []           TAny))
+    bf_pass
 
     -- § 4.4.5 Operations Involving Times and Dates
-  , ("time"          , (bf_time          , Info 0 (Just 0) []           TInt))
-  , ("ctime"         , (bf_ctime         , Info 0 (Just 1) [TInt]       TStr))
+  , bf_time
+  , bf_ctime
 
     -- § 4.4.7 Administrative Operations
-  , ("dump_database" , (bf_dump_database , Info 0 (Just 0) []           TAny))
-  , ("shutdown"      , (bf_shutdown      , Info 0 (Just 1) [TStr]       TAny))
-  , ("load_server_options",
-                  (bf_load_server_options, Info 0 (Just 0) []           TAny))
-  , ("server_log"    , (bf_server_log    , Info 1 (Just 2) [TStr, TAny] TAny))
-  , ("renumber"      , (bf_renumber      , Info 1 (Just 1) [TObj]       TObj))
-  , ("reset_max_object",
-                     (bf_reset_max_object, Info 0 (Just 0) []           TAny))
+  , bf_dump_database
+  , bf_shutdown
+  , bf_load_server_options
+  , bf_server_log
+  , bf_renumber
+  , bf_reset_max_object
 
     -- § 4.4.8 Server Statistics and Miscellaneous Information
-  , ("server_version", (bf_server_version, Info 0 (Just 0) []           TStr))
-  , ("memory_usage"  , (bf_memory_usage  , Info 0 (Just 0) []           TLst))
-  , ("db_disk_size"  , (bf_db_disk_size  , Info 0 (Just 0) []           TInt))
-  , ("verb_cache_stats",
-                     (bf_verb_cache_stats, Info 0 (Just 0) []           TLst))
-  , ("log_cache_stats",
-                      (bf_log_cache_stats, Info 0 (Just 0) []           TAny))
+  , bf_server_version
+  , bf_memory_usage
+  , bf_db_disk_size
+  , bf_verb_cache_stats
+  , bf_log_cache_stats
   ]
 
 -- § 4.4.1 Object-Oriented Programming
 
-bf_pass args = do
+bf_pass = Builtin "pass" 0 Nothing [] TAny $ \args -> do
   (name, verbLoc, this) <- frame $ \frame ->
     (verbName frame, verbLocation frame, initialThis frame)
   maybeMaybeParent <- fmap objectParent `liftM` getObject verbLoc
@@ -149,10 +156,11 @@ bf_pass args = do
 currentTime :: MOO IntT
 currentTime = (floor . utcTimeToPOSIXSeconds) `liftM` gets startTime
 
-bf_time [] = Int `liftM` currentTime
+bf_time = Builtin "time" 0 (Just 0) [] TInt $ \[] -> Int `liftM` currentTime
 
-bf_ctime []         = ctime =<< currentTime
-bf_ctime [Int time] = ctime time
+bf_ctime = Builtin "ctime" 0 (Just 1) [TInt] TStr go
+  where go []         = ctime =<< currentTime
+        go [Int time] = ctime time
 
 ctime :: IntT -> MOO Value
 ctime time = do
@@ -163,30 +171,40 @@ ctime time = do
 
 -- § 4.4.7 Administrative Operations
 
-bf_dump_database [] = notyet "dump_database"
+bf_dump_database = Builtin "dump_database" 0 (Just 0) [] TAny $ \[] ->
+  notyet "dump_database"
 
-bf_shutdown optional = notyet "shutdown"
-  where (message : _) = maybeDefaults optional
+bf_shutdown = Builtin "shutdown" 0 (Just 1) [TStr] TAny go
+  where go optional = notyet "shutdown"
+          where (message : _) = maybeDefaults optional
 
-bf_load_server_options [] = checkWizard >> loadServerOptions >> return nothing
+bf_load_server_options = Builtin "load_server_options" 0 (Just 0) [] TAny go
+  where go [] = checkWizard >> loadServerOptions >> return nothing
 
-bf_server_log (Str message : optional) = notyet "server_log"
-  where [is_error] = booleanDefaults optional [False]
+bf_server_log = Builtin "server_log" 1 (Just 2) [TStr, TAny] TAny go
+  where go (Str message : optional) = notyet "server_log"
+          where [is_error] = booleanDefaults optional [False]
 
-bf_renumber [Obj object] = notyet "renumber"
+bf_renumber = Builtin "renumber" 1 (Just 1) [TObj] TObj $ \[Obj object] ->
+  notyet "renumber"
 
-bf_reset_max_object [] = do
+bf_reset_max_object = Builtin "reset_max_object" 0 (Just 0) [] TAny $ \[] -> do
   checkWizard
   getDatabase >>= liftSTM . resetMaxObject >>= putDatabase
   return nothing
 
 -- § 4.4.8 Server Statistics and Miscellaneous Information
 
-bf_server_version [] = return (Str serverVersionText)
+bf_server_version = Builtin "server_version" 0 (Just 0) [] TStr $ \[] ->
+  return (Str serverVersionText)
 
-bf_memory_usage [] = return (Lst V.empty)  -- ... nothing to see here
+bf_memory_usage = Builtin "memory_usage" 0 (Just 0) [] TLst $ \[] ->
+  return (Lst V.empty)  -- ... nothing to see here
 
-bf_db_disk_size [] = raise E_QUOTA  -- not yet?
+bf_db_disk_size = Builtin "db_disk_size" 0 (Just 0) [] TInt $ \[] ->
+  raise E_QUOTA  -- not yet?
 
-bf_verb_cache_stats [] = notyet "verb_cache_stats"
-bf_log_cache_stats [] = notyet "log_cache_stats"
+bf_verb_cache_stats = Builtin "verb_cache_stats" 0 (Just 0) [] TLst $ \[] ->
+  notyet "verb_cache_stats"
+bf_log_cache_stats  = Builtin "log_cache_stats"  0 (Just 0) [] TAny $ \[] ->
+  notyet "log_cache_stats"

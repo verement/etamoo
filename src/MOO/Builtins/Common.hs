@@ -1,25 +1,21 @@
 
-module MOO.Builtins.Common ( BuiltinSpec, Builtin, Info(..)
+module MOO.Builtins.Common ( Builtin(..)
                            , defaults, booleanDefaults, maybeDefaults ) where
 
 import MOO.Types
 import MOO.Task
 
--- | A pair associating a named built-in function with its implementation and
--- a description of the required arguments
-type BuiltinSpec = (Id, (Builtin, Info))
-
--- | The type of each built-in function implementation
-type Builtin = [Value] -> MOO Value
-
--- | A description of the number and types of required and optional arguments
---
--- @Info@ /min/ /max/ @[@/types/@]@ /return-type/ describes a function
--- requiring at least /min/ and at most /max/ arguments (or no maximum if
--- /max/ is 'Nothing'), with each argument having the specified 'Type'. The
--- /return-type/ is for documentation purposes and is not otherwise currently
--- used.
-data Info = Info Int (Maybe Int) [Type] Type
+-- | A complete description of a builtin function, including its name, the
+-- number and types of required and optional arguments, the return type, and
+-- the implementing Haskell function
+data Builtin = Builtin {
+    builtinName       :: Id
+  , builtinMinArgs    :: Int
+  , builtinMaxArgs    :: Maybe Int
+  , builtinArgTypes   :: [Type]
+  , builtinReturnType :: Type
+  , builtinFunction   :: [Value] -> MOO Value
+  }
 
 defaultOptions :: (Value -> a) -> [Value] -> [a] -> [a]
 defaultOptions f = defaultOptions'

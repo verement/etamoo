@@ -8,5 +8,5 @@ import MOO.Types
 import MOO.Task
 import MOO.Builtins.Common
 
-builtinFunctions :: Map Id (Builtin, Info)
+builtinFunctions :: Map Id Builtin
 callBuiltin :: Id -> [Value] -> MOO Value

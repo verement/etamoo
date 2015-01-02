@@ -29,49 +29,55 @@ import qualified Data.Text as T
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
 -- | § 4.4.6 MOO-Code Evaluation and Task Manipulation
-builtins :: [BuiltinSpec]
+builtins :: [Builtin]
 builtins = [
-    ("raise"         , (bf_raise         , Info 1 (Just 3) [TAny, TStr,
-                                                            TAny]       TAny))
-  , ("call_function" , (bf_call_function , Info 1 Nothing  [TStr]       TAny))
-  , ("function_info" , (bf_function_info , Info 0 (Just 1) [TStr]       TLst))
-  , ("eval"          , (bf_eval          , Info 1 (Just 1) [TStr]       TLst))
-  , ("set_task_perms", (bf_set_task_perms, Info 1 (Just 1) [TObj]       TAny))
-  , ("caller_perms"  , (bf_caller_perms  , Info 0 (Just 0) []           TObj))
-  , ("ticks_left"    , (bf_ticks_left    , Info 0 (Just 0) []           TInt))
-  , ("seconds_left"  , (bf_seconds_left  , Info 0 (Just 0) []           TInt))
-  , ("task_id"       , (bf_task_id       , Info 0 (Just 0) []           TInt))
-  , ("suspend"       , (bf_suspend       , Info 0 (Just 1) [TNum]       TAny))
-  , ("resume"        , (bf_resume        , Info 1 (Just 2) [TInt, TAny] TAny))
-  , ("queue_info"    , (bf_queue_info    , Info 0 (Just 1) [TObj]       TLst))
-  , ("queued_tasks"  , (bf_queued_tasks  , Info 0 (Just 0) []           TLst))
-  , ("kill_task"     , (bf_kill_task     , Info 1 (Just 1) [TInt]       TAny))
-  , ("callers"       , (bf_callers       , Info 0 (Just 1) [TAny]       TLst))
-  , ("task_stack"    , (bf_task_stack    , Info 1 (Just 2) [TInt, TAny] TLst))
+    bf_raise
+  , bf_call_function
+  , bf_function_info
+  , bf_eval
+  , bf_set_task_perms
+  , bf_caller_perms
+  , bf_ticks_left
+  , bf_seconds_left
+  , bf_task_id
+  , bf_suspend
+  , bf_resume
+  , bf_queue_info
+  , bf_queued_tasks
+  , bf_kill_task
+  , bf_callers
+  , bf_task_stack
   ]
 
-bf_raise (code : optional) = raiseException code message value
-  where [Str message, value] = defaults optional [Str $ toText code, nothing]
+bf_raise = Builtin "raise" 1 (Just 3) [TAny, TStr, TAny] TAny go
+  where go (code : optional) = raiseException code message value
+          where [Str message, value] = defaults optional
+                                       [Str $ toText code, nothing]
 
-bf_call_function (Str func_name : args) =
-  callBuiltin (T.toCaseFold func_name) args
+bf_call_function = Builtin "call_function" 1 Nothing [TStr] TAny go
+  where go (Str func_name : args) = callBuiltin (T.toCaseFold func_name) args
 
-formatInfo :: (Id, (Builtin, Info)) -> Value
-formatInfo (name, (_, Info min max types _)) =
+formatInfo :: Builtin -> Value
+formatInfo Builtin { builtinName     = name
+                   , builtinMinArgs  = min
+                   , builtinMaxArgs  = max
+                   , builtinArgTypes = types
+                   } =
   fromList [ Str name
            , Int $ fromIntegral min
            , Int $ maybe (-1) fromIntegral max
            , fromListBy (Int . typeCode) types
            ]
 
-bf_function_info [] = return $ fromListBy formatInfo $ M.assocs builtinFunctions
-bf_function_info [Str name] =
-  case M.lookup name' builtinFunctions of
-    Just detail -> return $ formatInfo (name', detail)
-    Nothing     -> raise E_INVARG
-  where name' = T.toCaseFold name
+bf_function_info = Builtin "function_info" 0 (Just 1) [TStr] TLst go
+  where go [] = return $ fromListBy formatInfo $ M.elems builtinFunctions
+        go [Str name] =
+          case M.lookup name' builtinFunctions of
+            Just builtin -> return $ formatInfo builtin
+            Nothing      -> raise E_INVARG
+          where name' = T.toCaseFold name
 
-bf_eval [Str string] = do
+bf_eval = Builtin "eval" 1 (Just 1) [TStr] TLst $ \[Str string] -> do
   checkProgrammer
   case parse string of
     Left errors   -> return $ fromList [truthValue False,
@@ -97,94 +103,101 @@ bf_eval [Str string] = do
           }
       return $ fromList [truthValue True, value]
 
-bf_set_task_perms [Obj who] = do
+bf_set_task_perms = Builtin "set_task_perms" 1 (Just 1)
+                    [TObj] TAny $ \[Obj who] -> do
   checkPermission who
   modifyFrame $ \frame -> frame { permissions = who }
   return nothing
 
-bf_caller_perms [] = (Obj . objectForMaybe) `liftM` caller permissions
+bf_caller_perms = Builtin "caller_perms" 0 (Just 0) [] TObj $ \[] ->
+  (Obj . objectForMaybe) `liftM` caller permissions
 
-bf_ticks_left [] = (Int . fromIntegral) `liftM` gets ticksLeft
+bf_ticks_left = Builtin "ticks_left" 0 (Just 0) [] TInt $ \[] ->
+  (Int . fromIntegral) `liftM` gets ticksLeft
 
-bf_seconds_left [] = return (Int 5)  -- XXX can this be measured?
+bf_seconds_left = Builtin "seconds_left" 0 (Just 0) [] TInt $ \[] ->
+  return (Int 5)  -- XXX can this be measured?
 
-bf_task_id [] = (Int . fromIntegral) `liftM` asks (taskId . task)
+bf_task_id = Builtin "task_id" 0 (Just 0) [] TInt $ \[] ->
+  (Int . fromIntegral) `liftM` asks (taskId . task)
 
-bf_suspend optional = do
-  maybeMicroseconds <- case maybeSeconds of
-    Just (Int secs)
-      | secs < 0  -> raise E_INVARG
-      | otherwise -> return (Just $ fromIntegral secs * 1000000)
-    Just (Flt secs)
-      | secs < 0  -> raise E_INVARG
-      | otherwise -> return (Just $ ceiling    $ secs * 1000000)
-    Nothing -> return Nothing
+bf_suspend = Builtin "suspend" 0 (Just 1) [TNum] TAny go
+  where go optional = do
+          maybeMicroseconds <- case maybeSeconds of
+            Just (Int secs)
+              | secs < 0  -> raise E_INVARG
+              | otherwise -> return (Just $ fromIntegral secs * 1000000)
+            Just (Flt secs)
+              | secs < 0  -> raise E_INVARG
+              | otherwise -> return (Just $ ceiling    $ secs * 1000000)
+            Nothing -> return Nothing
 
-  state <- get
+          state <- get
 
-  estimatedWakeup <- case maybeMicroseconds of
-    Just usecs
-      | time < now || time > endOfTime -> raise E_INVARG
-      | otherwise                      -> return time
-      where now = startTime state
-            time = (fromIntegral usecs / 1000000) `addUTCTime` now
+          estimatedWakeup <- case maybeMicroseconds of
+            Just usecs
+              | time < now || time > endOfTime -> raise E_INVARG
+              | otherwise                      -> return time
+              where now = startTime state
+                    time = (fromIntegral usecs / 1000000) `addUTCTime` now
 
-    Nothing -> return endOfTime  -- XXX this is a sad wart in need of remedy
+            Nothing -> return endOfTime
+                       -- XXX this is a sad wart in need of remedy
 
-  resumeTMVar <- liftSTM newEmptyTMVar
-  task <- asks task
+          resumeTMVar <- liftSTM newEmptyTMVar
+          task <- asks task
 
-  let wake value = do
-        now <- getCurrentTime
-        atomically $ putTMVar resumeTMVar (now, value)
+          let wake value = do
+                now <- getCurrentTime
+                atomically $ putTMVar resumeTMVar (now, value)
 
-      task' = task {
-          taskStatus = Suspended (Wake wake)
-        , taskState  = state { startTime = estimatedWakeup }
-        }
+              task' = task {
+                  taskStatus = Suspended (Wake wake)
+                , taskState  = state { startTime = estimatedWakeup }
+                }
 
-  case maybeMicroseconds of
-    Just usecs -> delayIO $ void $ forkIO $ delay usecs >> wake nothing
-    Nothing    -> return ()
+          case maybeMicroseconds of
+            Just usecs -> delayIO $ void $ forkIO $ delay usecs >> wake nothing
+            Nothing    -> return ()
 
-  putTask task'
+          putTask task'
 
-  callCC $ interrupt . Suspend maybeMicroseconds . Resume
-  (now, value) <- liftSTM $ takeTMVar resumeTMVar
+          callCC $ interrupt . Suspend maybeMicroseconds . Resume
+          (now, value) <- liftSTM $ takeTMVar resumeTMVar
 
-  putTask task' { taskStatus = Running }
+          putTask task' { taskStatus = Running }
 
-  modify $ \state -> state { ticksLeft = 15000, startTime = now }  -- XXX ticks
+          modify $ \state -> state { ticksLeft = 15000, startTime = now }
+                             -- XXX ticks
 
-  case value of
-    Err error -> raise error
-    _         -> return value
+          case value of
+            Err error -> raise error
+            _         -> return value
 
-  where (maybeSeconds : _) = maybeDefaults optional
+          where (maybeSeconds : _) = maybeDefaults optional
 
-bf_resume (Int task_id : optional) = do
-  maybeTask <- getTask task_id'
-  case maybeTask of
-    Just task@Task { taskStatus = Suspended (Wake wake) } -> do
-      checkPermission (taskOwner task)
-      putTask task { taskStatus = Running }
-      delayIO (wake value)
-    _ -> raise E_INVARG
+bf_resume = Builtin "resume" 1 (Just 2) [TInt, TAny] TAny go
+  where go (Int task_id : optional) = do
+          maybeTask <- getTask task_id'
+          case maybeTask of
+            Just task@Task { taskStatus = Suspended (Wake wake) } -> do
+              checkPermission (taskOwner task)
+              putTask task { taskStatus = Running }
+              delayIO (wake value)
+            _ -> raise E_INVARG
 
-  return nothing
+          return nothing
 
-  where [value] = defaults optional [nothing]
-        task_id' = fromIntegral task_id
+          where [value] = defaults optional [nothing]
+                task_id' = fromIntegral task_id
 
-bf_queue_info [] =
-  (objectList . S.toList . foldr (S.insert . taskOwner) S.empty) `liftM`
-  queuedTasks
+bf_queue_info = Builtin "queue_info" 0 (Just 1) [TObj] TLst go
+  where go [] = (objectList . S.toList .
+                 foldr (S.insert . taskOwner) S.empty) `liftM` queuedTasks
+        go [Obj player] = (Int . fromIntegral . length .
+                           filter ((== player) . taskOwner)) `liftM` queuedTasks
 
-bf_queue_info [Obj player] =
-  (Int . fromIntegral . length . filter ((== player) . taskOwner)) `liftM`
-  queuedTasks
-
-bf_queued_tasks [] = do
+bf_queued_tasks = Builtin "queued_tasks" 0 (Just 0) [] TLst $ \[] -> do
   tasks <- queuedTasks
   programmer <- frame permissions
   wizard <- isWizard programmer
@@ -207,36 +220,39 @@ bf_queued_tasks [] = do
           , Int . fromIntegral . storageBytes  -- task-size
           ]
 
-bf_kill_task [Int task_id] = do
-  maybeTask <- getTask task_id'
-  case maybeTask of
-    Just task@Task { taskStatus = status } | isQueued status -> do
-      checkPermission (taskOwner task)
-      purgeTask task
-      delayIO $ killThread (taskThread task)
-      return nothing
-    _ -> do
-      thisTaskId <- taskId `liftM` asks task
-      if task_id' == thisTaskId
-        then interrupt Suicide
-        else raise E_INVARG
+bf_kill_task = Builtin "kill_task" 1 (Just 1) [TInt] TAny go
+  where go [Int task_id] = do
+          maybeTask <- getTask task_id'
+          case maybeTask of
+            Just task@Task { taskStatus = status } | isQueued status -> do
+              checkPermission (taskOwner task)
+              purgeTask task
+              delayIO $ killThread (taskThread task)
+              return nothing
+            _ -> do
+              thisTaskId <- taskId `liftM` asks task
+              if task_id' == thisTaskId
+                then interrupt Suicide
+                else raise E_INVARG
 
-  where task_id' = fromIntegral task_id
+          where task_id' = fromIntegral task_id
 
-bf_callers optional = do
-  Stack frames <- gets stack
-  return $ formatFrames include_line_numbers (tail frames)
+bf_callers = Builtin "callers" 0 (Just 1) [TAny] TLst go
+  where go optional = do
+          Stack frames <- gets stack
+          return $ formatFrames include_line_numbers (tail frames)
 
-  where [include_line_numbers] = booleanDefaults optional [False]
+          where [include_line_numbers] = booleanDefaults optional [False]
 
-bf_task_stack (Int task_id : optional) = do
-  maybeTask <- getTask task_id'
-  case maybeTask of
-    Just task@Task { taskStatus = Suspended{} } -> do
-      checkPermission (taskOwner task)
-      let Stack frames = stack $ taskState task
-      return $ formatFrames include_line_numbers frames
-    _ -> raise E_INVARG
+bf_task_stack = Builtin "task_stack" 1 (Just 2) [TInt, TAny] TLst go
+  where go (Int task_id : optional) = do
+          maybeTask <- getTask task_id'
+          case maybeTask of
+            Just task@Task { taskStatus = Suspended{} } -> do
+              checkPermission (taskOwner task)
+              let Stack frames = stack $ taskState task
+              return $ formatFrames include_line_numbers frames
+            _ -> raise E_INVARG
 
-  where [include_line_numbers] = booleanDefaults optional [False]
-        task_id' = fromIntegral task_id
+          where [include_line_numbers] = booleanDefaults optional [False]
+                task_id' = fromIntegral task_id
