@@ -279,12 +279,12 @@ encodeBinary :: [Value] -> MOO String
 encodeBinary (Int n : args)
   | n >= 0 && n <= 255 = prepend `liftM` encodeBinary args
   | otherwise          = raise E_INVARG
-  where c = toEnum n'
-        n' = fromIntegral n
+  where n'     = fromIntegral n
+        c      = toEnum n'
+        (q, r) = n' `divMod` 16
         prepend | validStrChar c &&
                   c /= '~' && c /= '\t' = (c :)
-                | otherwise             = \r -> '~' : hex (n' `div` 16)
-                                                    : hex (n' `mod` 16) : r
+                | otherwise             = \rest -> '~' : hex q : hex r : rest
         hex = intToDigit  -- N.B. not uppercase
 encodeBinary (Str str : args) = (encodeStr (T.unpack str) ++) `liftM`
                                 encodeBinary args
