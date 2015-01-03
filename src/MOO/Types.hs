@@ -210,7 +210,7 @@ data Value = Int !IntT  -- ^ integer
            | Obj !ObjT  -- ^ object number
            | Err !ErrT  -- ^ error
            | Lst !LstT  -- ^ list
-           deriving Show
+           deriving (Eq, Show)
 
 instance Sizeable Value where
   storageBytes value = case value of
@@ -243,16 +243,6 @@ fromErr (Err x) = x
 
 fromLst :: Value -> LstT
 fromLst (Lst x) = x
-
--- Case-insensitive equality
-instance Eq Value where
-  (Int a) == (Int b) = a == b
-  (Flt a) == (Flt b) = a == b
-  (Str a) == (Str b) = a == b
-  (Obj a) == (Obj b) = a == b
-  (Err a) == (Err b) = a == b
-  (Lst a) == (Lst b) = a == b
-  _       == _       = False
 
 -- | Test two MOO values for indistinguishable (case-sensitive) equality.
 equal :: Value -> Value -> Bool
