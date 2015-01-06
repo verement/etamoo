@@ -42,6 +42,9 @@ module MOO.String (
   , words
   , unwords
 
+  -- * Predicates
+  , isPrefixOf
+
   -- * Indexing
   , index
   ) where
@@ -179,6 +182,9 @@ words = map fromText . T.words . toText
 
 unwords :: [MOOString] -> MOOString
 unwords = fromText . T.unwords . map toText
+
+isPrefixOf :: MOOString -> MOOString -> Bool
+isPrefixOf = T.isPrefixOf `on` toCaseFold
 
 index :: MOOString -> Int -> Char
 index str =  T.index (toText str)

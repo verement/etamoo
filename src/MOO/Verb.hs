@@ -161,7 +161,6 @@ verbNameMatch name = any matchName
           | post == ""  = name     == vname
           | post == "*" = preName  == pre
           | otherwise   = preName  == pre &&
-                          postName == Str.take (Str.length postName)
-                                               (Str.tail post)
+                          postName `Str.isPrefixOf` Str.tail post
           where (pre, post)         = Str.breakOn "*" vname
                 (preName, postName) = Str.splitAt (Str.length pre) name

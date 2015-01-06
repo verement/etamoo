@@ -177,9 +177,9 @@ matchObject player str
 
         nameMatch :: StrT -> Value -> Match
         nameMatch str (Str name)
-          | name                           == str = ExactMatch
-          | Str.take (Str.length str) name == str = PrefixMatch
-          | otherwise                             = NoMatch
+          | str ==               name = ExactMatch
+          | str `Str.isPrefixOf` name = PrefixMatch
+          | otherwise                 = NoMatch
         nameMatch _ _ = NoMatch
 
         nothing        = -1
