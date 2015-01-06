@@ -36,6 +36,7 @@ module MOO.String (
   , splitAt
   , breakOn
   , breakOnEnd
+  , break
   -- ** Breaking into many substrings
   , splitOn
   -- ** Breaking into lines and words
@@ -56,7 +57,7 @@ import Data.String (IsString(..))
 import Data.Text (Text)
 import Foreign.Storable (sizeOf)
 import Prelude hiding (tail, null, length, concat, concatMap, take, drop,
-                       splitAt, words, unwords)
+                       splitAt, break, words, unwords)
 
 import qualified Data.Text as T
 
@@ -171,6 +172,10 @@ breakOn sep str = (fromText before, fromText match)
 breakOnEnd :: MOOString -> MOOString -> (MOOString, MOOString)
 breakOnEnd sep str = (fromText before, fromText match)
   where (before, match) = T.breakOnEnd (toText sep) (toText str)
+
+break :: (Char -> Bool) -> MOOString -> (MOOString, MOOString)
+break p str = (fromText prefix, fromText remainder)
+  where (prefix, remainder) = T.break p (toText str)
 
 splitOn :: MOOString -> MOOString -> [MOOString]
 splitOn sep = map fromText . T.splitOn (toText sep) . toText

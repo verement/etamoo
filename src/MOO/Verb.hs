@@ -71,7 +71,7 @@ initVerb = Verb {
 data ObjSpec = ObjNone  -- ^ none
              | ObjAny   -- ^ any
              | ObjThis  -- ^ this
-             deriving (Enum, Bounded, Show)
+             deriving (Enum, Bounded, Eq, Show)
 
 instance Sizeable ObjSpec where
   storageBytes _ = storageBytes ()

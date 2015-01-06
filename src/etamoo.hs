@@ -1,19 +1,27 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module Main where
+module Main (main) where
 
-import Control.Concurrent.STM
-import Control.Monad
-import Control.Monad.IO.Class
-import Data.Maybe
-import Data.Text
+import Control.Concurrent.STM (STM, TVar, atomically, newTVarIO,
+                               readTVarIO, readTVar, modifyTVar)
+import Control.Monad (liftM, filterM, unless)
+import Control.Monad.IO.Class (liftIO)
+import Data.List (sort, nub, (\\))
+import Data.Maybe (mapMaybe, catMaybes, listToMaybe, fromMaybe)
 import Network (withSocketsDo)
-import System.Console.Haskeline
-import System.Environment
+import System.Console.Haskeline (InputT, CompletionFunc, Completion(..),
+                                 runInputT, getInputLine,
+                                 setComplete, defaultSettings,
+                                 completeWordWithPrev, simpleCompletion)
+import System.Environment (getArgs)
 import System.Posix (installHandler, sigPIPE, Handler(..))
 
+import qualified Data.HashMap.Strict as HM
+import qualified Data.IntSet as IS
 import qualified Data.Map as M
+import qualified Data.Text as T
+import qualified Data.Vector as V
 
 import MOO.Builtins
 import MOO.Command
@@ -24,6 +32,7 @@ import MOO.Object
 import MOO.Task
 import MOO.Types
 import MOO.Parser
+import MOO.Verb
 
 import qualified MOO.String as Str
 
@@ -40,7 +49,8 @@ main = withSocketsDo $ do
       testFrame <- atomically $ mkTestFrame db
       state <- newState
 
-      runInputT (setComplete noCompletion defaultSettings) $
+      let completion = mooCompletion worldTVar (initialPlayer testFrame)
+      runInputT (setComplete completion defaultSettings) $
         repLoop worldTVar $ addFrame testFrame state
 
 replDatabase :: IO Database
@@ -49,6 +59,112 @@ replDatabase = do
   case args of
     [dbFile] -> loadLMDatabase dbFile >>= either (error . show) return
     []       -> return initDatabase
+
+mooCompletion :: TVar World -> ObjId -> CompletionFunc IO
+mooCompletion world player = completeWordWithPrev Nothing sep completions
+  where sep = " \t.:$"
+
+        completions prev word =
+          liftM (mkCompletions $ null prev) $
+          runTask =<< newTask world player completionTask
+          where completionTask =
+                  getCompletions prev word `catchException` \_ -> return nothing
+
+        mkCompletions :: Bool -> Maybe Value -> [Completion]
+        mkCompletions finished (Just (Lst v)) =
+          mapMaybe (mkCompletion finished) (V.toList v)
+        mkCompletions _ _ = []
+
+        mkCompletion :: Bool -> Value -> Maybe Completion
+        mkCompletion finished (Str str) =
+          Just $ (simpleCompletion $ Str.toString str) { isFinished = finished }
+        mkCompletion _ _ = Nothing
+
+        getCompletions :: String -> String -> MOO Value
+        getCompletions "" word = completeCommandVerb word
+        getCompletions ('$':_) word = completeProperty word 0
+        getCompletions ('.':prev) word =
+          objectForCompletion prev >>= completeProperty word
+        getCompletions (':':prev) word =
+          objectForCompletion prev >>= completeVerb word
+        getCompletions _ word = completeName word
+
+        objectForCompletion :: String -> MOO ObjId
+        objectForCompletion prev = return (-1)
+
+        completeProperty :: String -> ObjId -> MOO Value
+        completeProperty word oid = do
+          maybeObj <- getObject oid
+          case maybeObj of
+            Nothing  -> return nothing
+            Just obj -> do
+              unless (objectPermR obj) $ checkPermission (objectOwner obj)
+              properties <- liftSTM $ mapM readTVar $
+                            HM.elems $ objectProperties obj
+              return $ mkResults word $
+                map fromId builtinProperties ++ map propertyName properties
+
+        completeVerb :: String -> ObjId -> MOO Value
+        completeVerb word oid = return nothing
+
+        completeCommandVerb :: String -> MOO Value
+        completeCommandVerb word = do
+          objects <- localObjects True
+          verbs <- concat `liftM` mapM verbsForObject objects
+          return $ mkResults word $ concatMap simpleVerbNames $
+            filter isCommandVerb verbs
+
+        simpleVerbNames :: Verb -> [StrT]
+        simpleVerbNames = map removeStar . Str.words . verbNames
+          where removeStar name =
+                  let (before, after) = Str.break (== '*') name
+                  in before `Str.append` if Str.null after
+                                         then after else Str.tail after
+
+        isCommandVerb :: Verb -> Bool
+        isCommandVerb verb =
+          not $ verbDirectObject   verb /= ObjNone  &&
+                verbPreposition    verb == PrepNone &&
+                verbIndirectObject verb /= ObjNone
+
+        verbsForObject :: Object -> MOO [Verb]
+        verbsForObject obj = do
+          verbs <- liftSTM $ mapM (readTVar . snd) $ objectVerbs obj
+          case objectParent obj of
+            Nothing        -> return verbs
+            Just parentOid -> do
+              maybeParent <- getObject parentOid
+              case maybeParent of
+                Nothing     -> return verbs
+                Just parent -> (verbs ++) `liftM` verbsForObject parent
+
+        completeName :: String -> MOO Value
+        completeName word = do
+          objects <- localObjects False
+          return $ mkResults word $ map objectName objects ++ ["me", "here"]
+
+        localObjects :: Bool -> MOO [Object]
+        localObjects includeRoom = do
+          player <- getPlayer
+          maybePlayer <- getObject player
+          case maybePlayer of
+            Nothing      -> return []
+            Just player' -> do
+              let holding   = objectContents player'
+                  maybeRoom = objectLocation player'
+              roomContents <-
+                maybe (return IS.empty)
+                (liftM (maybe IS.empty objectContents) . getObject) maybeRoom
+              let oids = maybe id (:) (if includeRoom
+                                       then maybeRoom else Nothing) $
+                         IS.toList (holding `IS.union` roomContents)
+              liftM ((player' :) . catMaybes) $
+                mapM getObject (oids \\ [player])
+
+        mkResults :: String -> [StrT] -> Value
+        mkResults word = stringList . sort . nub . filter isPrefix
+          where isPrefix name = word' `Str.isPrefixOf` name
+                word' = Str.fromString word
 
 repLoop :: TVar World -> TaskState -> InputT IO ()
 repLoop world state = do
@@ -101,21 +217,21 @@ run world          line  state = evalC world line state
 evalC :: TVar World -> String -> TaskState -> IO TaskState
 evalC world line state@State { stack = Stack (frame:_) } = do
   let player  = initialPlayer frame
-      command = parseCommand (pack line)
+      command = parseCommand (T.pack line)
   runTask =<< newTask world player (runCommand command)
   return state
 
 evalE :: TVar World -> String -> TaskState -> IO TaskState
 evalE world line state@State { stack = Stack (frame:_) } =
   case runParser (between whiteSpace eof expression)
-       initParserState "" (pack line) of
+       initParserState "" (T.pack line) of
     Left err -> putStr "Parse error " >> print err >> return state
     Right expr -> eval state =<<
                   newTask world (initialPlayer frame) (evaluate expr)
 
 evalP :: TVar World -> String -> TaskState -> IO TaskState
 evalP world line state@State { stack = Stack (frame:_) } =
-  case runParser program initParserState "" (pack line) of
+  case runParser program initParserState "" (T.pack line) of
     Left err -> putStr "Parse error" >> print err >> return state
     Right program -> eval state =<<
                      newTask world (initialPlayer frame) (compile program)
@@ -138,7 +254,7 @@ evalPrint task = do
   (result, task') <- stepTask task
   case result of
     Complete value -> do
-      putStrLn $ "=> " ++ unpack (toLiteral value)
+      putStrLn $ "=> " ++ T.unpack (toLiteral value)
       return task'
     Suspend Nothing _  -> do
       putStrLn   ".. Suspended indefinitely"
@@ -167,7 +283,7 @@ evalPrint task = do
       return task'
 
   where formatValue (Int 0) = ""
-        formatValue v = " [" ++ unpack (toLiteral v) ++ "]"
+        formatValue v = " [" ++ T.unpack (toLiteral v) ++ "]"
 
         notifyLines :: [StrT] -> IO ()
         notifyLines = mapM_ (putStrLn . Str.toString)
