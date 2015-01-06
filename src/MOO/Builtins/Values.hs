@@ -3,7 +3,7 @@
 
 module MOO.Builtins.Values ( builtins ) where
 
-import Control.Monad (mplus, unless, liftM)
+import Control.Monad (mplus, unless, liftM, (>=>))
 import Data.ByteString (ByteString)
 import Data.Char (intToDigit, isDigit)
 import Data.Digest.Pure.MD5 (MD5Digest)
@@ -15,6 +15,7 @@ import Text.Printf (printf)
 import qualified Data.Digest.Pure.MD5 as MD5
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
+import qualified Data.Text as T
 
 import MOO.Builtins.Common
 import MOO.Builtins.Crypt
@@ -95,8 +96,8 @@ builtins = [
 bf_typeof = Builtin "typeof" 1 (Just 1) [TAny] TInt $ \[value] ->
   return $ Int $ typeCode $ typeOf value
 
-bf_tostr = Builtin "tostr" 0 Nothing [] TStr $ \values ->
-  return $ Str $ Str.concat $ map (Str.fromText . toText) values
+bf_tostr = Builtin "tostr" 0 Nothing [] TStr $
+           return . Str . Str.fromText . T.concat . map toText
 
 bf_toliteral = Builtin "toliteral" 1 (Just 1) [TAny] TStr $ \[value] ->
   return $ Str $ Str.fromText $ toLiteral value
@@ -129,8 +130,8 @@ bf_toobj = Builtin "toobj" 1 (Just 1) [TAny] TObj $ \[value] -> toobj value
           Err x -> return (Obj $ fromIntegral $ fromEnum x)
           Lst _ -> raise E_TYPE
 
-bf_tofloat = Builtin "tofloat" 1 (Just 1) [TAny] TFlt $
-             \[value] -> tofloat value
+bf_tofloat = Builtin "tofloat" 1 (Just 1)
+             [TAny] TFlt $ \[value] -> tofloat value
   where tofloat value = case value of
           Int x -> return (Flt $ fromIntegral x)
           Flt _ -> return value
@@ -145,25 +146,24 @@ bf_equal = Builtin "equal" 2 (Just 2) [TAny, TAny] TInt $ \[value1, value2] ->
 bf_value_bytes = Builtin "value_bytes" 1 (Just 1) [TAny] TInt $ \[value] ->
   return $ Int $ fromIntegral $ storageBytes value
 
-bf_value_hash = Builtin "value_hash" 1 (Just 1) [TAny] TStr $ \[value] -> do
-  literal <- builtinFunction bf_toliteral [value]
-  builtinFunction bf_string_hash [literal]
+bf_value_hash = Builtin "value_hash" 1 (Just 1) [TAny] TStr $
+                builtinFunction bf_toliteral >=>
+                builtinFunction bf_string_hash . return
 
 -- § 4.4.2.2 Operations on Numbers
 
-bf_random = Builtin "random" 0 (Just 1) [TInt] TInt go
-  where go optional
-          | mod <= 0  = raise E_INVARG
-          | otherwise = Int `liftM` random (1, mod)
-          where [Int mod] = defaults optional [Int maxBound]
+bf_random = Builtin "random" 0 (Just 1) [TInt] TInt $ \optional ->
+  let [Int mod] = defaults optional [Int maxBound]
+  in if mod <= 0 then raise E_INVARG
+     else Int `liftM` random (1, mod)
 
-bf_min = Builtin "min" 1 Nothing [TNum] TNum go
-  where go (Int x:xs) = minMaxInt min x xs
-        go (Flt x:xs) = minMaxFlt min x xs
+bf_min = Builtin "min" 1 Nothing [TNum] TNum $ \args -> case args of
+  Int x:xs -> minMaxInt min x xs
+  Flt x:xs -> minMaxFlt min x xs
 
-bf_max = Builtin "max" 1 Nothing [TNum] TNum go
-  where go (Int x:xs) = minMaxInt max x xs
-        go (Flt x:xs) = minMaxFlt max x xs
+bf_max = Builtin "max" 1 Nothing [TNum] TNum $ \args -> case args of
+  Int x:xs -> minMaxInt max x xs
+  Flt x:xs -> minMaxFlt max x xs
 
 minMaxInt :: (IntT -> IntT -> IntT) -> IntT -> [Value] -> MOO Value
 minMaxInt f = go
@@ -177,101 +177,93 @@ minMaxFlt f = go
         go x []         = return $ Flt x
         go _ _          = raise E_TYPE
 
-bf_abs = Builtin "abs" 1 (Just 1) [TNum] TNum go
-  where go [Int x] = return $ Int $ abs x
-        go [Flt x] = return $ Flt $ abs x
+bf_abs = Builtin "abs" 1 (Just 1) [TNum] TNum $ \[arg] -> case arg of
+  Int x -> return $ Int $ abs x
+  Flt x -> return $ Flt $ abs x
 
-bf_floatstr = Builtin "floatstr" 2 (Just 3) [TFlt, TInt, TAny] TStr go
-  where go (Flt x : Int precision : optional)
-          | precision < 0 = raise E_INVARG
-          | otherwise = return $ Str $ Str.fromString $ printf format x
-          where [scientific] = booleanDefaults optional [False]
-                prec = min precision 19
-                format = printf "%%.%d%c" prec $ if scientific then 'e' else 'f'
+bf_floatstr = Builtin "floatstr" 2 (Just 3)
+              [TFlt, TInt, TAny] TStr $ \(Flt x : Int precision : optional) ->
+  let [scientific] = booleanDefaults optional [False]
+      prec = min precision 19
+      format = printf "%%.%d%c" prec $ if scientific then 'e' else 'f'
+  in if precision < 0 then raise E_INVARG
+     else return $ Str $ Str.fromString $ printf format x
 
-floatBuiltin :: Id -> ([Value] -> MOO Value) -> Builtin
-floatBuiltin name = Builtin name 1 (Just 1) [TFlt] TFlt
+floatBuiltin :: Id -> (FltT -> FltT) -> Builtin
+floatBuiltin name f = Builtin name 1 (Just 1)
+                      [TFlt] TFlt $ \[Flt x] -> checkFloat (f x)
 
-bf_sqrt  = floatBuiltin "sqrt"  $ \[Flt x] -> checkFloat $ sqrt x
+bf_sqrt  = floatBuiltin "sqrt" sqrt
 
-bf_sin   = floatBuiltin "sin"   $ \[Flt x] -> checkFloat $ sin x
-bf_cos   = floatBuiltin "cos"   $ \[Flt x] -> checkFloat $ cos x
-bf_tan   = floatBuiltin "tan"   $ \[Flt x] -> checkFloat $ tan x
+bf_sin   = floatBuiltin "sin"  sin
+bf_cos   = floatBuiltin "cos"  cos
+bf_tan   = floatBuiltin "tan"  tan
 
-bf_asin  = floatBuiltin "asin"  $ \[Flt x] -> checkFloat $ asin x
-bf_acos  = floatBuiltin "acos"  $ \[Flt x] -> checkFloat $ acos x
-bf_atan  = Builtin "atan" 1 (Just 2) [TFlt, TFlt] TFlt go
-  where go [Flt y] = checkFloat $ atan y
-        go [Flt y,
-            Flt x] = checkFloat $ atan2 y x
+bf_asin  = floatBuiltin "asin" asin
+bf_acos  = floatBuiltin "acos" acos
+bf_atan  = Builtin "atan" 1 (Just 2) [TFlt, TFlt] TFlt $ \args ->
+  checkFloat $ case args of
+    [Flt y]        -> atan  y
+    [Flt y, Flt x] -> atan2 y x
 
-bf_sinh  = floatBuiltin "sinh"  $ \[Flt x] -> checkFloat $ sinh x
-bf_cosh  = floatBuiltin "cosh"  $ \[Flt x] -> checkFloat $ cosh x
-bf_tanh  = floatBuiltin "tanh"  $ \[Flt x] -> checkFloat $ tanh x
+bf_sinh  = floatBuiltin "sinh" sinh
+bf_cosh  = floatBuiltin "cosh" cosh
+bf_tanh  = floatBuiltin "tanh" tanh
 
-bf_exp   = floatBuiltin "exp"   $ \[Flt x] -> checkFloat $ exp x
-bf_log   = floatBuiltin "log"   $ \[Flt x] -> checkFloat $ log x
-bf_log10 = floatBuiltin "log10" $ \[Flt x] -> checkFloat $ logBase 10 x
+bf_exp   = floatBuiltin "exp"  exp
+bf_log   = floatBuiltin "log"  log
+bf_log10 = floatBuiltin "log10" (logBase 10)
 
-bf_ceil  = floatBuiltin "ceil"  $ \[Flt x] ->
-  checkFloat $ fromIntegral (ceiling x :: Integer)
-bf_floor = floatBuiltin "floor" $ \[Flt x] ->
-  checkFloat $ fromIntegral (floor   x :: Integer)
-bf_trunc = floatBuiltin "trunc" go
-  where go [Flt x]
-          | x < 0     = checkFloat $ fromIntegral (ceiling x :: Integer)
-          | otherwise = checkFloat $ fromIntegral (floor   x :: Integer)
+bf_ceil  = floatBuiltin "ceil"  $ fromInteger . ceiling
+bf_floor = floatBuiltin "floor" $ fromInteger . floor
+bf_trunc = floatBuiltin "trunc" $ \x ->
+  fromInteger $ if x < 0 then ceiling x else floor x
 
 -- § 4.4.2.3 Operations on Strings
 
-bf_length = Builtin "length" 1 (Just 1) [TAny] TInt go
-  where go [Str string] = return $ Int $ fromIntegral $ Str.length string
-        go [Lst list]   = return $ Int $ fromIntegral $ V.length list
-        go _            = raise E_TYPE
+bf_length = Builtin "length" 1 (Just 1) [TAny] TInt $ \[arg] -> case arg of
+  Str string -> return $ Int $ fromIntegral $ Str.length string
+  Lst list   -> return $ Int $ fromIntegral $ V.length list
+  _          -> raise E_TYPE
 
-bf_strsub = Builtin "strsub" 3 (Just 4) [TStr, TStr, TStr, TAny] TStr go
-  where go (Str subject : Str what : Str with : optional)
-          | Str.null what = raise E_INVARG
-          | otherwise   = return $ Str $ Str.concat $ subs subject
-          where [case_matters] = booleanDefaults optional [False]
-                caseFold str = if case_matters
-                               then str else Str.fromText (Str.toCaseFold str)
-                -- XXX this won't work for Unicode in general
-                subs "" = []
-                subs subject = case Str.breakOn what' (caseFold subject) of
-                  (_, "")     -> [subject]
-                  (prefix, _) ->
-                    let (s, r) = Str.splitAt (Str.length prefix) subject
-                    in s : with : subs (Str.drop whatLen r)
-                what' = caseFold what
-                whatLen = Str.length what
+bf_strsub = Builtin "strsub" 3 (Just 4) [TStr, TStr, TStr, TAny]
+            TStr $ \(Str subject : Str what : Str with : optional) ->
+  let [case_matters] = booleanDefaults optional [False]
+      caseFold str = if case_matters then str
+                     else Str.fromText (Str.toCaseFold str)
+                          -- XXX this won't work for Unicode in general
+      subs ""      = []
+      subs subject = case Str.breakOn (caseFold what) (caseFold subject) of
+        (_, "")     -> [subject]
+        (prefix, _) -> let (s, r) = Str.splitAt (Str.length prefix) subject
+                       in s : with : subs (Str.drop whatLen r)
+      whatLen = Str.length what
+  in if Str.null what then raise E_INVARG
+     else return $ Str $ Str.concat $ subs subject
 
-bf_index = Builtin "index" 2 (Just 3) [TStr, TStr, TAny] TInt go
-  where go (Str str1 : Str str2 : optional)
-          | Str.null str2 = return (Int 1)
-          | otherwise   =
-            return $ Int $ case Str.breakOn (caseFold str2) (caseFold str1) of
-              (_, "")     -> 0
-              (prefix, _) -> fromIntegral $ 1 + Str.length prefix
-          where [case_matters] = booleanDefaults optional [False]
-                caseFold str = if case_matters
-                               then str else Str.fromText (Str.toCaseFold str)
-                -- XXX this won't work for Unicode in general
+indexBuiltin :: Id -> (StrT -> IntT) -> (StrT -> StrT -> IntT) -> Builtin
+indexBuiltin name nullCase mainCase =
+  Builtin name 2 (Just 3) [TStr, TStr, TAny]
+  TInt $ \(Str str1 : Str str2 : optional) ->
+  let [case_matters] = booleanDefaults optional [False]
+      caseFold str = if case_matters then str
+                     else Str.fromText (Str.toCaseFold str)
+                          -- XXX this won't work for Unicode in general
+  in return $ Int $ if Str.null str2 then nullCase str1
+                    else mainCase (caseFold str2) (caseFold str1)
 
-bf_rindex = Builtin "rindex" 2 (Just 3) [TStr, TStr, TAny] TInt go
-  where go (Str str1 : Str str2 : optional)
-          | Str.null str2 = return (Int $ fromIntegral $ Str.length str1 + 1)
-          | otherwise   =
-            return $ Int $ case Str.breakOnEnd needle haystack of
-              ("", _)     -> 0
-              (prefix, _) -> fromIntegral $
-                             1 + Str.length prefix - Str.length needle
-          where [case_matters] = booleanDefaults optional [False]
-                needle   = caseFold str2
-                haystack = caseFold str1
-                caseFold str = if case_matters
-                               then str else Str.fromText (Str.toCaseFold str)
-                -- XXX this won't work for Unicode in general
+bf_index = indexBuiltin "index" nullCase mainCase
+  where nullCase = const 1
+        mainCase needle haystack = case Str.breakOn needle haystack of
+          (_, "")     -> 0
+          (prefix, _) -> fromIntegral $ 1 + Str.length prefix
+
+bf_rindex = indexBuiltin "rindex" nullCase mainCase
+  where nullCase haystack = fromIntegral $ Str.length haystack + 1
+        mainCase needle haystack = case Str.breakOnEnd needle haystack of
+          ("", _)     -> 0
+          (prefix, _) -> fromIntegral $
+                         1 + Str.length prefix - Str.length needle
 
 bf_strcmp = Builtin "strcmp" 2 (Just 2)
             [TStr, TStr] TInt $ \[Str str1, Str str2] ->
@@ -280,27 +272,24 @@ bf_strcmp = Builtin "strcmp" 2 (Just 2)
     EQ ->  0
     GT ->  1
 
-bf_decode_binary = Builtin "decode_binary" 1 (Just 2) [TStr, TAny] TLst go
-  where go (Str bin_string : optional) =
-          maybe (raise E_INVARG) (return . mkResult) $ string2binary bin_string
+bf_decode_binary = Builtin "decode_binary" 1 (Just 2)
+                   [TStr, TAny] TLst $ \(Str bin_string : optional) ->
+  let [fully] = booleanDefaults optional [False]
+      mkResult | fully     = fromListBy (Int . fromIntegral)
+               | otherwise = fromList . groupPrinting ("" ++)
+  in maybe (raise E_INVARG) (return . mkResult) $ string2binary bin_string
 
-          where [fully] = booleanDefaults optional [False]
-
-                mkResult | fully     = fromListBy (Int . fromIntegral)
-                         | otherwise = fromList . groupPrinting ("" ++)
-
-                groupPrinting g (w:ws)
-                  | validStrChar c = groupPrinting (g [c] ++) ws
-                  | null group     = Int (fromIntegral w) : groupPrinting g ws
-                  | otherwise      = Str (Str.fromString group) :
-                                     Int (fromIntegral w) :
-                                     groupPrinting ("" ++) ws
-                  where c = toEnum (fromIntegral w)
-                        group = g ""
-                groupPrinting g []
-                  | null group = []
-                  | otherwise  = [Str $ Str.fromString group]
-                  where group = g ""
+  where groupPrinting g (w:ws)
+          | validStrChar c = groupPrinting (g [c] ++) ws
+          | null group     = Int (fromIntegral w) : groupPrinting g ws
+          | otherwise      = Str (Str.fromString group) : Int (fromIntegral w) :
+                             groupPrinting ("" ++) ws
+          where c = toEnum (fromIntegral w)
+                group = g ""
+        groupPrinting g []
+          | null group = []
+          | otherwise  = [Str $ Str.fromString group]
+          where group = g ""
 
 bf_encode_binary = Builtin "encode_binary" 0 Nothing [] TStr $
                    liftM (Str . Str.fromString) . encodeBinary
@@ -329,10 +318,10 @@ encodeBinary (_:_) = raise E_INVARG
 encodeBinary []    = return ""
 
 matchBuiltin :: Id -> (Regexp -> Text -> MatchResult) -> Builtin
-matchBuiltin name matchFunc = Builtin name 2 (Just 3) [TStr, TStr, TAny] TLst go
-  where go (Str subject : Str pattern : optional) =
-          runMatch matchFunc subject pattern case_matters
-          where [case_matters] = booleanDefaults optional [False]
+matchBuiltin name matchFunc = Builtin name 2 (Just 3) [TStr, TStr, TAny]
+                              TLst $ \(Str subject : Str pattern : optional) ->
+  let [case_matters] = booleanDefaults optional [False]
+  in runMatch matchFunc subject pattern case_matters
 
 bf_match  = matchBuiltin "match"  match
 bf_rmatch = matchBuiltin "rmatch" rmatch
@@ -363,82 +352,85 @@ runMatch match subject pattern caseMatters =
           | n > 0      = fromList [Int 0, Int (-1)] : repls (n - 1) []
           | otherwise  = []
 
-bf_substitute = Builtin "substitute" 2 (Just 2) [TStr, TLst] TStr go
-  where go [Str template, Lst subs] =
-          case V.toList subs of
-            [Int start', Int end', Lst replacements', Str subject'] -> do
-              let start      = fromIntegral start'
-                  end        = fromIntegral end'
-                  subject    = Str.toString subject'
-                  subjectLen = Str.length subject'
+bf_substitute = Builtin "substitute" 2 (Just 2)
+                [TStr, TLst] TStr $ \[Str template, Lst subs] ->
+  case V.toList subs of
+    [Int start', Int end', Lst replacements', Str subject'] -> do
+      let start      = fromIntegral start'
+          end        = fromIntegral end'
+          subject    = Str.toString subject'
+          subjectLen = Str.length subject'
 
-                  valid s e  = (s == 0 && e == -1) ||
-                               (s >  0 && e >= s - 1 && e <= subjectLen)
+          valid s e  = (s == 0 && e == -1) ||
+                       (s >  0 && e >= s - 1 && e <= subjectLen)
 
-                  substr start end =
-                    let len = end - start + 1
-                    in take len $ drop (start - 1) subject
+          substr start end =
+            let len = end - start + 1
+            in take len $ drop (start - 1) subject
 
-                  substitution (Lst sub) = case V.toList sub of
-                    [Int start', Int end'] -> do
-                      let start = fromIntegral start'
-                          end   = fromIntegral end'
-                      unless (valid start end) $ raise E_INVARG
-                      return $ substr start end
-                    _ -> raise E_INVARG
-                  substitution _ = raise E_INVARG
-
-              unless (valid start end && V.length replacements' == 9) $
-                raise E_INVARG
-              replacements <- (substr start end :) `liftM`
-                              mapM substitution (V.toList replacements')
-
-              let walk ('%':c:cs)
-                    | isDigit c = let i = fromEnum c - fromEnum '0'
-                                  in (replacements !! i ++) `liftM` walk cs
-                    | c == '%'  = ("%" ++) `liftM` walk cs
-                    | otherwise = raise E_INVARG
-                  walk (c:cs) = ([c] ++) `liftM` walk cs
-                  walk []     = return []
-
-              (Str . Str.fromString) `liftM` walk (Str.toString template)
+          substitution (Lst sub) = case V.toList sub of
+            [Int start', Int end'] -> do
+              let start = fromIntegral start'
+                  end   = fromIntegral end'
+              unless (valid start end) $ raise E_INVARG
+              return $ substr start end
             _ -> raise E_INVARG
+          substitution _ = raise E_INVARG
 
-bf_crypt = Builtin "crypt" 1 (Just 2) [TStr, TStr] TStr go
-  where go (Str text : optional)
-          | maybe True invalidSalt saltArg = generateSalt >>= go
-          | otherwise                      = go $ fromStr $ fromJust saltArg
-          where (saltArg : _) = maybeDefaults optional
-                invalidSalt (Str salt) = salt `Str.compareLength` 2 == LT
-                generateSalt = do
-                  c1 <- randSaltChar
-                  c2 <- randSaltChar
-                  return $ Str.fromString [c1, c2]
-                randSaltChar = (saltStuff !!) `liftM`
-                               random (0, length saltStuff - 1)
-                saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
-                go salt = case crypt (Str.toString text) (Str.toString salt) of
-                  Just encrypted -> return $ Str $ Str.fromString encrypted
-                  Nothing        -> raise E_QUOTA
+      unless (valid start end && V.length replacements' == 9) $
+        raise E_INVARG
+      replacements <- (substr start end :) `liftM`
+                      mapM substitution (V.toList replacements')
+
+      let walk ('%':c:cs)
+            | isDigit c = let i = fromEnum c - fromEnum '0'
+                          in (replacements !! i ++) `liftM` walk cs
+            | c == '%'  = ("%" ++) `liftM` walk cs
+            | otherwise = raise E_INVARG
+          walk (c:cs) = ([c] ++) `liftM` walk cs
+          walk []     = return []
+
+      (Str . Str.fromString) `liftM` walk (Str.toString template)
+    _ -> raise E_INVARG
+
+bf_crypt = Builtin "crypt" 1 (Just 2)
+           [TStr, TStr] TStr $ \(Str text : optional) ->
+  let (saltArg : _) = maybeDefaults optional
+      go salt = case crypt (Str.toString text) (Str.toString salt) of
+        Just encrypted -> return $ Str $ Str.fromString encrypted
+        Nothing        -> raise E_QUOTA
+  in if maybe True invalidSalt saltArg
+     then generateSalt >>= go
+     else go $ fromStr $ fromJust saltArg
+
+  where invalidSalt (Str salt) = salt `Str.compareLength` 2 == LT
+        generateSalt = do
+          c1 <- randSaltChar
+          c2 <- randSaltChar
+          return $ Str.fromString [c1, c2]
+        randSaltChar = (saltStuff !!) `liftM` random (0, length saltStuff - 1)
+        saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
 
 hash :: ByteString -> Value
 hash bs = Str $ Str.fromString $ show md5hash
   where md5hash = MD5.hash' bs :: MD5Digest
 
-bf_string_hash = Builtin "string_hash" 1 (Just 1) [TStr] TStr go
-  where go [Str text] = return $ hash $ encodeUtf8 (Str.toText text)
+bf_string_hash = Builtin "string_hash" 1 (Just 1)
+                 [TStr] TStr $ \[Str text] ->
+  return $ hash $ encodeUtf8 (Str.toText text)
 
-bf_binary_hash = Builtin "binary_hash" 1 (Just 1) [TStr] TStr go
-  where go [Str bin_string] = hash `liftM` binaryString bin_string
+bf_binary_hash = Builtin "binary_hash" 1 (Just 1)
+                 [TStr] TStr $ \[Str bin_string] ->
+  hash `liftM` binaryString bin_string
 
 -- § 4.4.2.4 Operations on Lists
 
 -- bf_length already defined above
 
-bf_is_member = Builtin "is_member" 2 (Just 2) [TAny, TLst] TInt go
-  where go [value, Lst list] =
-          return $ Int $ maybe 0 (fromIntegral . succ) $
-          V.findIndex (`equal` value) list
+bf_is_member = Builtin "is_member" 2 (Just 2)
+               [TAny, TLst] TInt $ \[value, Lst list] ->
+  return $ Int $ maybe 0 (fromIntegral . succ) $
+  V.findIndex (`equal` value) list
 
 listInsert :: LstT -> Int -> Value -> LstT
 listInsert list index value
@@ -467,35 +459,34 @@ listDelete list index
     return $ VM.init list'
   where listLen = V.length list
 
-bf_listinsert = Builtin "listinsert" 2 (Just 3) [TLst, TAny, TInt] TLst go
-  where go (Lst list : value : optional) =
-          return $ Lst $ listInsert list (fromIntegral index - 1) value
-          where [Int index] = defaults optional [Int 1]
+bf_listinsert = Builtin "listinsert" 2 (Just 3)
+                [TLst, TAny, TInt] TLst $ \(Lst list : value : optional) ->
+  let [Int index] = defaults optional [Int 1]
+  in return $ Lst $ listInsert list (fromIntegral index - 1) value
 
-bf_listappend = Builtin "listappend" 2 (Just 3) [TLst, TAny, TInt] TLst go
-  where go (Lst list : value : optional) =
-          return $ Lst $ listInsert list (fromIntegral index) value
-          where [Int index] = defaults optional
-                              [Int $ fromIntegral $ V.length list]
+bf_listappend = Builtin "listappend" 2 (Just 3)
+                [TLst, TAny, TInt] TLst $ \(Lst list : value : optional) ->
+  let [Int index] = defaults optional [Int $ fromIntegral $ V.length list]
+  in return $ Lst $ listInsert list (fromIntegral index) value
 
-bf_listdelete = Builtin "listdelete" 2 (Just 2) [TLst, TInt] TLst go
-  where go [Lst list, Int index]
-          | index' < 1 || index' > V.length list = raise E_RANGE
-          | otherwise = return $ Lst $ listDelete list (index' - 1)
-          where index' = fromIntegral index
+bf_listdelete = Builtin "listdelete" 2 (Just 2)
+                [TLst, TInt] TLst $ \[Lst list, Int index] ->
+  let index' = fromIntegral index
+  in if index' < 1 || index' > V.length list then raise E_RANGE
+     else return $ Lst $ listDelete list (index' - 1)
 
-bf_listset = Builtin "listset" 3 (Just 3) [TLst, TAny, TInt] TLst go
-  where go [Lst list, value, Int index]
-          | index' < 1 || index' > V.length list = raise E_RANGE
-          | otherwise = return $ Lst $ listSet list index' value
-          where index' = fromIntegral index
+bf_listset = Builtin "listset" 3 (Just 3)
+             [TLst, TAny, TInt] TLst $ \[Lst list, value, Int index] ->
+  let index' = fromIntegral index
+  in if index' < 1 || index' > V.length list then raise E_RANGE
+     else return $ Lst $ listSet list index' value
 
-bf_setadd = Builtin "setadd" 2 (Just 2) [TLst, TAny] TLst go
-  where go [Lst list, value] =
-          return $ Lst $ if value `V.elem` list then list else V.snoc list value
+bf_setadd = Builtin "setadd" 2 (Just 2)
+            [TLst, TAny] TLst $ \[Lst list, value] ->
+  return $ Lst $ if value `V.elem` list then list else V.snoc list value
 
-bf_setremove = Builtin "setremove" 2 (Just 2) [TLst, TAny] TLst go
-  where go [Lst list, value] =
-          return $ Lst $ case V.elemIndex value list of
-            Nothing    -> list
-            Just index -> listDelete list (fromIntegral index)
+bf_setremove = Builtin "setremove" 2 (Just 2)
+               [TLst, TAny] TLst $ \[Lst list, value] ->
+  return $ Lst $ case V.elemIndex value list of
+    Nothing    -> list
+    Just index -> listDelete list (fromIntegral index)

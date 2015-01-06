@@ -89,58 +89,56 @@ modifyQuota player f = do
 
   where ownershipQuota = "ownership_quota"
 
-bf_create = Builtin "create" 1 (Just 2) [TObj, TObj] TObj go
-  where go (Obj parent : optional) = do
-          maybeParent <- case parent of
-            -1  -> return Nothing
-            oid -> checkFertile oid >> return (Just oid)
+bf_create = Builtin "create" 1 (Just 2)
+            [TObj, TObj] TObj $ \(Obj parent : optional) -> do
+  let (maybeOwner : _) = maybeDefaults optional
 
-          db <- getDatabase
-          let newOid = maxObject db + 1
+  maybeParent <- case parent of
+    -1  -> return Nothing
+    oid -> checkFertile oid >> return (Just oid)
 
-          ownerOid <- case maybeOwner of
-            Nothing         -> frame permissions
-            Just (Obj (-1)) -> checkWizard         >> return newOid
-            Just (Obj oid)  -> checkPermission oid >> return oid
+  db <- getDatabase
+  let newOid = maxObject db + 1
 
-          modifyQuota ownerOid $ \quota ->
-            if quota <= 0 then raise E_QUOTA else return (quota - 1)
+  ownerOid <- case maybeOwner of
+    Nothing         -> frame permissions
+    Just (Obj (-1)) -> checkWizard         >> return newOid
+    Just (Obj oid)  -> checkPermission oid >> return oid
 
-          properties <- case maybeParent of
-            Nothing  -> return $ objectProperties initObject
-            Just oid -> do
-              -- add to parent's set of children
-              liftSTM $ modifyObject oid db $ addChild newOid
+  modifyQuota ownerOid $ \quota ->
+    if quota <= 0 then raise E_QUOTA else return (quota - 1)
 
-              -- properties inherited from parent
-              Just parent <- getObject oid
-              HM.fromList `liftM` mapM mkProperty
-                (HM.toList $ objectProperties parent)
+  properties <- case maybeParent of
+    Nothing  -> return $ objectProperties initObject
+    Just oid -> do
+      -- add to parent's set of children
+      liftSTM $ modifyObject oid db $ addChild newOid
 
-                where mkProperty (name, propTVar) = liftSTM $ do
-                        prop <- readTVar propTVar
-                        let prop' = prop {
-                                propertyValue     = Nothing
-                              , propertyInherited = True
-                              , propertyOwner     = if propertyPermC prop
-                                                    then ownerOid
-                                                    else propertyOwner prop
-                              }
-                        propTVar' <- newTVar prop'
-                        return (name, propTVar')
+      -- properties inherited from parent
+      Just parent <- getObject oid
+      HM.fromList `liftM` mapM mkProperty (HM.toList $ objectProperties parent)
 
-          let newObj = initObject {
-                  objectParent     = maybeParent
-                , objectOwner      = ownerOid
-                , objectProperties = properties
-                }
+        where mkProperty (name, propTVar) = liftSTM $ do
+                prop <- readTVar propTVar
+                let prop' = prop {
+                        propertyValue     = Nothing
+                      , propertyInherited = True
+                      , propertyOwner     = if propertyPermC prop then ownerOid
+                                            else propertyOwner prop
+                      }
+                propTVar' <- newTVar prop'
+                return (name, propTVar')
 
-          putDatabase =<< liftSTM (addObject newObj db)
+  let newObj = initObject {
+          objectParent     = maybeParent
+        , objectOwner      = ownerOid
+        , objectProperties = properties
+        }
 
-          callFromFunc "create" 0 (newOid, "initialize") []
-          return (Obj newOid)
+  putDatabase =<< liftSTM (addObject newObj db)
 
-          where (maybeOwner : _) = maybeDefaults optional
+  callFromFunc "create" 0 (newOid, "initialize") []
+  return (Obj newOid)
 
 reparentObject :: (ObjId, Object) -> (ObjId, Maybe Object) -> MOO ()
 reparentObject (object, obj) (new_parent, maybeNewParent) = do
@@ -214,21 +212,21 @@ reparentObject (object, obj) (new_parent, maybeNewParent) = do
                   props <- liftSTM $ definedProperties obj
                   return (acc props ++)
 
-bf_chparent = Builtin "chparent" 2 (Just 2) [TObj, TObj] TAny go
-  where go [Obj object, Obj new_parent] = do
-          obj <- checkValid object
-          maybeNewParent <- case new_parent of
-            -1  -> return Nothing
-            oid -> do
-              newParent <- checkValid oid
-              checkFertile oid
-              return (Just newParent)
-          checkPermission (objectOwner obj)
-          checkRecurrence objectParent object new_parent
+bf_chparent = Builtin "chparent" 2 (Just 2)
+              [TObj, TObj] TAny $ \[Obj object, Obj new_parent] -> do
+  obj <- checkValid object
+  maybeNewParent <- case new_parent of
+    -1  -> return Nothing
+    oid -> do
+      newParent <- checkValid oid
+      checkFertile oid
+      return (Just newParent)
+  checkPermission (objectOwner obj)
+  checkRecurrence objectParent object new_parent
 
-          reparentObject (object, obj) (new_parent, maybeNewParent)
+  reparentObject (object, obj) (new_parent, maybeNewParent)
 
-          return nothing
+  return nothing
 
 bf_valid = Builtin "valid" 1 (Just 1) [TObj] TInt $ \[Obj object] ->
   (truthValue . isJust) `liftM` getObject object
@@ -292,18 +290,17 @@ bf_recycle = Builtin "recycle" 1 (Just 1) [TObj] TAny $ \[Obj object] -> do
               reparentObject (object, obj) newParent
             Nothing -> return ()
 
-bf_object_bytes = Builtin "object_bytes" 1 (Just 1) [TObj] TInt go
-  where go [Obj object] = do
-          checkWizard
-          obj <- checkValid object
+bf_object_bytes = Builtin "object_bytes" 1 (Just 1)
+                  [TObj] TInt $ \[Obj object] -> do
+  checkWizard
+  obj <- checkValid object
 
-          propertyBytes <- liftM storageBytes $ liftSTM $
-                           mapM readTVar $ HM.elems (objectProperties obj)
-          verbBytes     <- liftM storageBytes $ liftSTM $
-                           mapM (readTVar . snd) $ objectVerbs obj
+  propertyBytes <- liftM storageBytes $ liftSTM $
+                   mapM readTVar $ HM.elems (objectProperties obj)
+  verbBytes     <- liftM storageBytes $ liftSTM $
+                   mapM (readTVar . snd) $ objectVerbs obj
 
-          return $ Int $ fromIntegral $
-            storageBytes obj + propertyBytes + verbBytes
+  return $ Int $ fromIntegral $ storageBytes obj + propertyBytes + verbBytes
 
 bf_max_object = Builtin "max_object" 0 (Just 0) [] TObj $ \[] ->
   (Obj . maxObject) `liftM` getDatabase
@@ -350,46 +347,45 @@ moveObject funcName what where_ = do
             when (objectLocation whatObj == newWhere) $
             void $ callFromFunc funcName 2 (where_, "enterfunc") [Obj what]
 
-bf_move = Builtin "move" 2 (Just 2) [TObj, TObj] TAny go
-  where go [Obj what, Obj where_] = do
-          what' <- checkValid what
-          where' <- case where_ of
-            -1  -> return Nothing
-            oid -> Just `liftM` checkValid oid
-          checkPermission (objectOwner what')
+bf_move = Builtin "move" 2 (Just 2)
+          [TObj, TObj] TAny $ \[Obj what, Obj where_] -> do
+  what' <- checkValid what
+  where' <- case where_ of
+    -1  -> return Nothing
+    oid -> Just `liftM` checkValid oid
+  checkPermission (objectOwner what')
 
-          when (isJust where') $ do
-            accepted <- maybe False truthOf `liftM`
-                        callFromFunc "move" 0 (where_, "accept") [Obj what]
-            unless accepted $ do
-              wizard <- isWizard =<< frame permissions
-              unless wizard $ raise E_NACC
+  when (isJust where') $ do
+    accepted <- maybe False truthOf `liftM`
+                callFromFunc "move" 0 (where_, "accept") [Obj what]
+    unless accepted $ do
+      wizard <- isWizard =<< frame permissions
+      unless wizard $ raise E_NACC
 
-          moveObject "move" what where_
+  moveObject "move" what where_
 
-          return nothing
+  return nothing
 
 -- § 4.4.3.3 Operations on Properties
 
-bf_properties = Builtin "properties" 1 (Just 1) [TObj] TLst go
-  where go [Obj object] = do
-          obj <- checkValid object
-          unless (objectPermR obj) $ checkPermission (objectOwner obj)
+bf_properties = Builtin "properties" 1 (Just 1)
+                [TObj] TLst $ \[Obj object] -> do
+  obj <- checkValid object
+  unless (objectPermR obj) $ checkPermission (objectOwner obj)
 
-          stringList `liftM` liftSTM (definedProperties obj)
+  stringList `liftM` liftSTM (definedProperties obj)
 
-bf_property_info = Builtin "property_info" 2 (Just 2) [TObj, TStr] TLst go
-  where go [Obj object, Str prop_name] = do
-          obj <- checkValid object
-          prop <- getProperty obj prop_name
-          unless (propertyPermR prop) $ checkPermission (propertyOwner prop)
+bf_property_info = Builtin "property_info" 2 (Just 2)
+                   [TObj, TStr] TLst $ \[Obj object, Str prop_name] -> do
+  obj <- checkValid object
+  prop <- getProperty obj prop_name
+  unless (propertyPermR prop) $ checkPermission (propertyOwner prop)
 
-          return $ fromList [Obj $ propertyOwner prop, Str $ perms prop]
+  return $ fromList [Obj $ propertyOwner prop, Str $ perms prop]
 
-          where perms prop = Str.fromString $
-                             concat [['r' | propertyPermR prop],
-                                     ['w' | propertyPermW prop],
-                                     ['c' | propertyPermC prop]]
+  where perms prop = Str.fromString $ concat [['r' | propertyPermR prop],
+                                              ['w' | propertyPermW prop],
+                                              ['c' | propertyPermC prop]]
 
 traverseDescendants :: (Object -> MOO a) -> ObjId -> MOO ()
 traverseDescendants f oid = do
@@ -461,54 +457,52 @@ bf_set_property_info = Builtin "set_property_info" 3 (Just 3)
 
   return nothing
 
-bf_add_property = Builtin "add_property" 4 (Just 4)
-                  [TObj, TStr, TAny, TLst] TAny go
-  where go [Obj object, Str prop_name, value, Lst info] = do
-          (owner, perms) <- case V.toList info of
-            [Obj owner, Str perms] -> return (owner, perms)
-            [_        , _        ] -> raise E_TYPE
-            _                      -> raise E_INVARG
-          permSet <- checkPerms "rwc" perms
-          checkValid owner
+bf_add_property = Builtin "add_property" 4 (Just 4) [TObj, TStr, TAny, TLst]
+                  TAny $ \[Obj object, Str prop_name, value, Lst info] -> do
+  (owner, perms) <- case V.toList info of
+    [Obj owner, Str perms] -> return (owner, perms)
+    [_        , _        ] -> raise E_TYPE
+    _                      -> raise E_INVARG
+  permSet <- checkPerms "rwc" perms
+  checkValid owner
 
-          obj <- checkValid object
-          unless (objectPermW obj) $ checkPermission (objectOwner obj)
-          checkPermission owner
+  obj <- checkValid object
+  unless (objectPermW obj) $ checkPermission (objectOwner obj)
+  checkPermission owner
 
-          when (isBuiltinProperty prop_name) $ raise E_INVARG
-          flip traverseDescendants object $ \obj ->
-            when (isJust $ lookupPropertyRef obj prop_name) $ raise E_INVARG
+  when (isBuiltinProperty prop_name) $ raise E_INVARG
+  flip traverseDescendants object $ \obj ->
+    when (isJust $ lookupPropertyRef obj prop_name) $ raise E_INVARG
 
-          let newProperty = initProperty {
-                  propertyName      = prop_name
-                , propertyValue     = Just value
-                , propertyInherited = False
-                , propertyOwner     = owner
-                , propertyPermR     = 'r' `S.member` permSet
-                , propertyPermW     = 'w' `S.member` permSet
-                , propertyPermC     = 'c' `S.member` permSet
-                }
+  let newProperty = initProperty {
+          propertyName      = prop_name
+        , propertyValue     = Just value
+        , propertyInherited = False
+        , propertyOwner     = owner
+        , propertyPermR     = 'r' `S.member` permSet
+        , propertyPermW     = 'w' `S.member` permSet
+        , propertyPermC     = 'c' `S.member` permSet
+        }
 
-          db <- getDatabase
-          liftSTM $ modifyObject object db (addProperty newProperty)
-          forM_ (getChildren obj) $
-            modifyDescendants db $ addInheritedProperty newProperty
+  db <- getDatabase
+  liftSTM $ modifyObject object db (addProperty newProperty)
+  forM_ (getChildren obj) $
+    modifyDescendants db $ addInheritedProperty newProperty
 
-          return nothing
+  return nothing
 
-bf_delete_property = Builtin "delete_property" 2 (Just 2) [TObj, TStr] TAny go
-  where go [Obj object, Str prop_name] = do
-          obj <- checkValid object
-          unless (objectPermW obj) $ checkPermission (objectOwner obj)
-          prop <- getProperty obj prop_name
-          when (propertyInherited prop) $ raise E_PROPNF
+bf_delete_property = Builtin "delete_property" 2 (Just 2)
+                     [TObj, TStr] TAny $ \[Obj object, Str prop_name] -> do
+  obj <- checkValid object
+  unless (objectPermW obj) $ checkPermission (objectOwner obj)
+  prop <- getProperty obj prop_name
+  when (propertyInherited prop) $ raise E_PROPNF
 
-          db <- getDatabase
-          flip (modifyDescendants db) object $ \obj ->
-            return obj { objectProperties =
-                            HM.delete prop_name (objectProperties obj) }
+  db <- getDatabase
+  flip (modifyDescendants db) object $ \obj ->
+    return obj { objectProperties = HM.delete prop_name (objectProperties obj) }
 
-          return nothing
+  return nothing
 
 bf_is_clear_property = Builtin "is_clear_property" 2 (Just 2)
                        [TObj, TStr] TInt $ \[Obj object, Str prop_name] -> do
@@ -674,18 +668,18 @@ bf_delete_verb = Builtin "delete_verb" 2 (Just 2)
 
   return nothing
 
-bf_verb_code = Builtin "verb_code" 2 (Just 4) [TObj, TAny, TAny, TAny] TLst go
-  where go (Obj object : verb_desc : optional) = do
-          obj <- checkValid object
-          verb <- getVerb obj verb_desc
-          unless (verbPermR verb) $ checkPermission (verbOwner verb)
-          checkProgrammer
+bf_verb_code = Builtin "verb_code" 2 (Just 4) [TObj, TAny, TAny, TAny]
+               TLst $ \(Obj object : verb_desc : optional) -> do
+  let [fully_paren, indent] = booleanDefaults optional [False, True]
 
-          let code = init $ Str.splitOn "\n" $ Str.fromText $ TL.toStrict $
-                     unparse fully_paren indent (verbProgram verb)
-          return (stringList code)
+  obj <- checkValid object
+  verb <- getVerb obj verb_desc
+  unless (verbPermR verb) $ checkPermission (verbOwner verb)
+  checkProgrammer
 
-          where [fully_paren, indent] = booleanDefaults optional [False, True]
+  let code = init $ Str.splitOn "\n" $ Str.fromText $ TL.toStrict $
+             unparse fully_paren indent (verbProgram verb)
+  return (stringList code)
 
 bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
                    TLst $ \[Obj object, verb_desc, Lst code] -> do
@@ -726,18 +720,18 @@ bf_players = Builtin "players" 0 (Just 0) [] TLst $ \[] ->
 bf_is_player = Builtin "is_player" 1 (Just 1) [TObj] TInt $ \[Obj object] ->
   (truthValue . objectIsPlayer) `liftM` checkValid object
 
-bf_set_player_flag = Builtin "set_player_flag" 2 (Just 2) [TObj, TAny] TAny go
-  where go [Obj object, value] = do
-          checkValid object
-          checkWizard
+bf_set_player_flag = Builtin "set_player_flag" 2 (Just 2)
+                     [TObj, TAny] TAny $ \[Obj object, value] -> do
+  let isPlayer = truthOf value
 
-          db <- getDatabase
-          liftSTM $ modifyObject object db $
-            \obj -> return obj { objectIsPlayer = isPlayer }
-          putDatabase $ setPlayer isPlayer object db
+  checkValid object
+  checkWizard
 
-          unless isPlayer $ bootPlayer object
+  db <- getDatabase
+  liftSTM $ modifyObject object db $
+    \obj -> return obj { objectIsPlayer = isPlayer }
+  putDatabase $ setPlayer isPlayer object db
 
-          return nothing
+  unless isPlayer $ bootPlayer object
 
-          where isPlayer = truthOf value
+  return nothing

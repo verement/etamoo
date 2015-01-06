@@ -3,7 +3,7 @@
 
 module MOO.Builtins ( builtinFunctions, callBuiltin, verifyBuiltins ) where
 
-import Control.Monad (when, foldM, liftM, join)
+import Control.Monad (foldM, liftM, join)
 import Control.Monad.State (gets)
 import Data.List (transpose, inits)
 import Data.Map (Map)
@@ -47,20 +47,22 @@ callBuiltin func args = case M.lookup func builtinFunctions of
   Nothing      -> raiseException (Err E_INVARG)
                   "Unknown built-in function" (Str $ fromId func)
 
-  where checkArgs Builtin {
-            builtinMinArgs  = min
-          , builtinMaxArgs  = max
-          , builtinArgTypes = types
-          } args = do
+  where checkArgs :: Builtin -> [Value] -> MOO ()
+        checkArgs Builtin { builtinMinArgs  = min
+                          , builtinMaxArgs  = max
+                          , builtinArgTypes = types
+                          } args =
           let nargs = length args
-            in when (nargs < min || nargs > fromMaybe nargs max) $ raise E_ARGS
-          checkTypes types args
+          in if nargs < min || nargs > fromMaybe nargs max then raise E_ARGS
+             else checkTypes types args
 
-        checkTypes (t:ts) (a:as) = do
-          when (typeMismatch t $ typeOf a) $ raise E_TYPE
-          checkTypes ts as
+        checkTypes :: [Type] -> [Value] -> MOO ()
+        checkTypes (t:ts) (a:as) =
+          if typeMismatch t (typeOf a) then raise E_TYPE
+          else checkTypes ts as
         checkTypes _ _ = return ()
 
+        typeMismatch :: Type -> Type -> Bool
         typeMismatch x    y    | x == y = False
         typeMismatch TAny _             = False
         typeMismatch TNum TInt          = False
@@ -77,13 +79,12 @@ callBuiltin func args = case M.lookup func builtinFunctions of
 verifyBuiltins :: Either String Int
 verifyBuiltins = foldM accum 0 $ M.elems builtinFunctions
   where accum a b = valid b >>= Right . (+ a)
-        valid Builtin {
-            builtinName     = name
-          , builtinMinArgs  = min
-          , builtinMaxArgs  = max
-          , builtinArgTypes = types
-          , builtinFunction = func
-          }
+        valid Builtin { builtinName     = name
+                      , builtinMinArgs  = min
+                      , builtinMaxArgs  = max
+                      , builtinArgTypes = types
+                      , builtinFunction = func
+                      }
           | min < 0                           = invalid "arg min < 0"
           | maybe False (< min) max           = invalid "arg max < min"
           | length types /= fromMaybe min max = invalid "incorrect # types"
@@ -91,6 +92,7 @@ verifyBuiltins = foldM accum 0 $ M.elems builtinFunctions
           where invalid msg = Left $ fromId name ++ ": " ++ msg
                 ok = Right 1
 
+        testArgs :: ([Value] -> MOO Value) -> Int -> Maybe Int -> [Type] -> Bool
         testArgs func min max types = all test argSpecs
           where argSpecs = drop min $ inits $ map mkArgs augmentedTypes
                 augmentedTypes = maybe (types ++ [TAny]) (const types) max
@@ -158,9 +160,9 @@ currentTime = (floor . utcTimeToPOSIXSeconds) `liftM` gets startTime
 
 bf_time = Builtin "time" 0 (Just 0) [] TInt $ \[] -> Int `liftM` currentTime
 
-bf_ctime = Builtin "ctime" 0 (Just 1) [TInt] TStr go
-  where go []         = ctime =<< currentTime
-        go [Int time] = ctime time
+bf_ctime = Builtin "ctime" 0 (Just 1) [TInt] TStr $ \arg -> case arg of
+  []         -> ctime =<< currentTime
+  [Int time] -> ctime time
 
 ctime :: IntT -> MOO Value
 ctime time = do
@@ -174,16 +176,18 @@ ctime time = do
 bf_dump_database = Builtin "dump_database" 0 (Just 0) [] TAny $ \[] ->
   notyet "dump_database"
 
-bf_shutdown = Builtin "shutdown" 0 (Just 1) [TStr] TAny go
-  where go optional = notyet "shutdown"
-          where (message : _) = maybeDefaults optional
+bf_shutdown = Builtin "shutdown" 0 (Just 1) [TStr] TAny $ \optional ->
+  let (message : _) = maybeDefaults optional
+  in notyet "shutdown"
 
-bf_load_server_options = Builtin "load_server_options" 0 (Just 0) [] TAny go
-  where go [] = checkWizard >> loadServerOptions >> return nothing
+bf_load_server_options = Builtin "load_server_options" 0 (Just 0)
+                         [] TAny $ \[] ->
+  checkWizard >> loadServerOptions >> return nothing
 
-bf_server_log = Builtin "server_log" 1 (Just 2) [TStr, TAny] TAny go
-  where go (Str message : optional) = notyet "server_log"
-          where [is_error] = booleanDefaults optional [False]
+bf_server_log = Builtin "server_log" 1 (Just 2)
+                [TStr, TAny] TAny $ \(Str message : optional) ->
+  let [is_error] = booleanDefaults optional [False]
+  in notyet "server_log"
 
 bf_renumber = Builtin "renumber" 1 (Just 1) [TObj] TObj $ \[Obj object] ->
   notyet "renumber"
@@ -202,7 +206,8 @@ bf_memory_usage = Builtin "memory_usage" 0 (Just 0) [] TLst $ \[] ->
   return (Lst V.empty)  -- ... nothing to see here
 
 bf_db_disk_size = Builtin "db_disk_size" 0 (Just 0) [] TInt $ \[] ->
-  raise E_QUOTA  -- not yet?
+  notyet "db_disk_size"
+  -- raise E_QUOTA
 
 bf_verb_cache_stats = Builtin "verb_cache_stats" 0 (Just 0) [] TLst $ \[] ->
   notyet "verb_cache_stats"
