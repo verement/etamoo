@@ -189,7 +189,7 @@ setConnectionOption "intrinsic-commands" value conn = do
 setConnectionOption _ _ _ = raise E_INVARG
 
 bootPlayer :: ObjId -> MOO ()
-bootPlayer oid = notyet "bootPlayer"
+bootPlayer oid = return ()  -- notyet
 
 notify :: ObjId -> StrT -> MOO ()
 notify who what = delayIO (putStrLn $ Str.toString what)
