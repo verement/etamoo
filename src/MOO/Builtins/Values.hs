@@ -14,7 +14,6 @@ import Text.Printf (printf)
 
 import qualified Data.Digest.Pure.MD5 as MD5
 import qualified Data.Vector as V
-import qualified Data.Vector.Mutable as VM
 import qualified Data.Text as T
 
 import MOO.Builtins.Common
@@ -432,33 +431,6 @@ bf_is_member = Builtin "is_member" 2 (Just 2)
   return $ Int $ maybe 0 (fromIntegral . succ) $
   V.findIndex (`equal` value) list
 
-listInsert :: LstT -> Int -> Value -> LstT
-listInsert list index value
-  | index <= 0      = V.cons value list
-  | index > listLen = V.snoc list value
-  | otherwise       = V.create $ do
-    list' <- V.thaw list >>= flip VM.grow 1
-    let moveLen = listLen - index
-        s = VM.slice  index      moveLen list'
-        t = VM.slice (index + 1) moveLen list'
-    VM.move t s
-    VM.write list' index value
-    return list'
-  where listLen = V.length list
-
-listDelete :: LstT -> Int -> LstT
-listDelete list index
-  | index == 0           = V.create $ VM.tail `liftM` V.thaw list
-  | index == listLen - 1 = V.create $ VM.init `liftM` V.thaw list
-  | otherwise            = V.create $ do
-    list' <- V.thaw list
-    let moveLen = listLen - index - 1
-        s = VM.slice  index      moveLen list'
-        t = VM.slice (index + 1) moveLen list'
-    VM.move s t
-    return $ VM.init list'
-  where listLen = V.length list
-
 bf_listinsert = Builtin "listinsert" 2 (Just 3)
                 [TLst, TAny, TInt] TLst $ \(Lst list : value : optional) ->
   let [Int index] = defaults optional [Int 1]
@@ -479,7 +451,7 @@ bf_listset = Builtin "listset" 3 (Just 3)
              [TLst, TAny, TInt] TLst $ \[Lst list, value, Int index] ->
   let index' = fromIntegral index
   in if index' < 1 || index' > V.length list then raise E_RANGE
-     else return $ Lst $ listSet list index' value
+     else return $ Lst $ listSet list (index' - 1) value
 
 bf_setadd = Builtin "setadd" 2 (Just 2)
             [TLst, TAny] TLst $ \[Lst list, value] ->

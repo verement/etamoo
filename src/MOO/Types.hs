@@ -54,6 +54,8 @@ module MOO.Types (
   , objectList
 
   , listSet
+  , listInsert
+  , listDelete
 
   -- * Miscellaneous
   , validStrChar
@@ -66,6 +68,7 @@ module MOO.Types (
 
 import Control.Concurrent (ThreadId)
 import Control.Concurrent.STM (TVar)
+import Control.Monad (liftM)
 import Data.CaseInsensitive (CI)
 import Data.Char (isAscii, isPrint, isDigit)
 import Data.HashMap.Strict (HashMap)
@@ -416,10 +419,40 @@ stringList = fromListBy Str
 objectList :: [ObjT] -> Value
 objectList = fromListBy Obj
 
--- | Return a modified list with the given 1-based index replaced with the
+-- | Return a modified list with the given 0-based index replaced with the
 -- given value.
 listSet :: LstT -> Int -> Value -> LstT
-listSet v i value = V.modify (\m -> VM.write m (i - 1) value) v
+listSet v i value = V.modify (\m -> VM.write m i value) v
+
+-- | Return a modified list with the given value inserted at the given 0-based
+-- index.
+listInsert :: LstT -> Int -> Value -> LstT
+listInsert list index value
+  | index <= 0      = V.cons value list
+  | index > listLen = V.snoc list value
+  | otherwise       = V.create $ do
+    list' <- V.thaw list >>= flip VM.grow 1
+    let moveLen = listLen - index
+        s = VM.slice  index      moveLen list'
+        t = VM.slice (index + 1) moveLen list'
+    VM.move t s
+    VM.write list' index value
+    return list'
+  where listLen = V.length list
+
+-- | Return a modified list with the value at the given 0-based index removed.
+listDelete :: LstT -> Int -> LstT
+listDelete list index
+  | index == 0           = V.create $ VM.tail `liftM` V.thaw list
+  | index == listLen - 1 = V.create $ VM.init `liftM` V.thaw list
+  | otherwise            = V.create $ do
+    list' <- V.thaw list
+    let moveLen = listLen - index - 1
+        s = VM.slice  index      moveLen list'
+        t = VM.slice (index + 1) moveLen list'
+    VM.move s t
+    return $ VM.init list'
+  where listLen = V.length list
 
 -- | This is the last UTC time value representable as a signed 32-bit
 -- seconds-since-1970 value. Unfortunately it is used as a sentinel value in

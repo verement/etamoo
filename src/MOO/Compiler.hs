@@ -399,7 +399,7 @@ lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
           return (value', changeValue value index' changeExpr)
 
         changeValue (Lst v) index changeExpr newValue =
-          changeExpr $ Lst $ listSet v index newValue
+          changeExpr $ Lst $ listSet v (index - 1) newValue
 
         changeValue (Str t) index changeExpr (Str c) = do
           when (c `Str.compareLength` 1 /= EQ) $ raise E_INVARG
