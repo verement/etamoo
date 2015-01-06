@@ -20,7 +20,6 @@ import Control.Concurrent.STM (STM, TVar)
 import Control.Monad.Reader (ReaderT)
 import Control.Monad.Cont (ContT)
 import Control.Monad.State.Strict (StateT)
-import Data.Text (Text)
 
 import {-# SOURCE #-} MOO.Command
 import {-# SOURCE #-} MOO.Object
@@ -51,4 +50,4 @@ callCommandVerb :: ObjId -> (ObjId, Verb) -> ObjId ->
                    Command -> (ObjId, ObjId) -> MOO Value
 
 raise :: Error -> MOO a
-notyet :: Text -> MOO a
+notyet :: StrT -> MOO a

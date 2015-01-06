@@ -139,7 +139,6 @@ import Data.List (find)
 import Data.Map (Map)
 import Data.Maybe (isNothing, fromMaybe, fromJust)
 import Data.Monoid (Monoid(mempty, mappend), (<>))
-import Data.Text (Text)
 import Data.Time (UTCTime, getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import System.IO.Unsafe (unsafePerformIO)
@@ -1232,8 +1231,8 @@ handleDebug = (`catchException` handler)
         handler except = passException except
 
 -- | Placeholder for features not yet implemented
-notyet :: Text -> MOO a
-notyet = raiseException (Err E_QUOTA) "Not yet implemented" . Str . Str.fromText
+notyet :: StrT -> MOO a
+notyet = raiseException (Err E_QUOTA) "Not yet implemented" . Str
 
 -- | Create and raise an exception for the given MOO error.
 raise :: Error -> MOO a
