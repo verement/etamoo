@@ -414,8 +414,8 @@ lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
           (start', end') <- getIndices value
           if start' > end'
             then case value of
-              Lst{} -> return $ Lst V.empty
-              Str{} -> return $ Str Str.empty
+              Lst{} -> return emptyList
+              Str{} -> return emptyString
               _     -> raise E_TYPE
             else let len = end' - start' + 1 in case value of
               Lst v -> do checkLstRange v start' >> checkLstRange v end'

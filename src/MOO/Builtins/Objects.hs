@@ -699,7 +699,7 @@ bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
             verbProgram = program
           , verbCode    = compile program
         }
-      return $ Lst V.empty
+      return emptyList
 
   where addLine :: ([Text] -> [Text]) -> Value -> MOO ([Text] -> [Text])
         addLine add (Str line) = return (add [Str.toText line, "\n"] ++)

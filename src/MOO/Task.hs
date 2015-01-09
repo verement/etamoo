@@ -149,7 +149,6 @@ import System.Random (Random, StdGen, newStdGen, mkStdGen, split,
 import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import qualified Data.Text as T
-import qualified Data.Vector as V
 
 import MOO.Command
 import {-# SOURCE #-} MOO.Database
@@ -1132,14 +1131,14 @@ initVariables = M.fromList $ [
   , ("this"   , Obj (-1))
   , ("caller" , Obj (-1))
 
-  , ("args"   , Lst V.empty)
-  , ("argstr" , Str Str.empty)
+  , ("args"   , emptyList)
+  , ("argstr" , emptyString)
 
-  , ("verb"   , Str Str.empty)
-  , ("dobjstr", Str Str.empty)
+  , ("verb"   , emptyString)
+  , ("dobjstr", emptyString)
   , ("dobj"   , Obj (-1))
-  , ("prepstr", Str Str.empty)
-  , ("iobjstr", Str Str.empty)
+  , ("prepstr", emptyString)
+  , ("iobjstr", emptyString)
   , ("iobj"   , Obj (-1))
   ] ++ typeVariables
 

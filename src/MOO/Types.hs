@@ -21,6 +21,8 @@ module MOO.Types (
   , Error(..)
 
   , zero
+  , emptyString
+  , emptyList
 
   -- * Type and Value Functions
   , fromId
@@ -229,6 +231,14 @@ instance Sizeable Value where
 -- | A default (false) MOO value
 zero :: Value
 zero = truthValue False
+
+-- | An empty MOO string
+emptyString :: Value
+emptyString = Str Str.empty
+
+-- | An empty MOO list
+emptyList :: Value
+emptyList = Lst V.empty
 
 fromInt :: Value -> IntT
 fromInt (Int x) = x

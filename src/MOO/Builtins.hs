@@ -13,7 +13,6 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import System.Locale (defaultTimeLocale)
 
 import qualified Data.Map as M
-import qualified Data.Vector as V
 
 import MOO.Builtins.Common
 import MOO.Types
@@ -111,10 +110,10 @@ verifyBuiltins = foldM accum 0 $ M.elems builtinFunctions
         mkArgs TNum = mkArgs TInt ++ mkArgs TFlt
         mkArgs TInt = [Int 0]
         mkArgs TFlt = [Flt 0]
-        mkArgs TStr = [Str Str.empty]
+        mkArgs TStr = [emptyString]
         mkArgs TObj = [Obj 0]
         mkArgs TErr = [Err E_NONE]
-        mkArgs TLst = [Lst V.empty]
+        mkArgs TLst = [emptyList]
 
 -- § 4.4 Built-in Functions
 
@@ -203,7 +202,7 @@ bf_server_version = Builtin "server_version" 0 (Just 0) [] TStr $ \[] ->
   return (Str $ Str.fromText serverVersionText)
 
 bf_memory_usage = Builtin "memory_usage" 0 (Just 0) [] TLst $ \[] ->
-  return (Lst V.empty)  -- ... nothing to see here
+  return emptyList  -- ... nothing to see here
 
 bf_db_disk_size = Builtin "db_disk_size" 0 (Just 0) [] TInt $ \[] ->
   notyet "db_disk_size"

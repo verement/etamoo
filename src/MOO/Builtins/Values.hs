@@ -333,7 +333,7 @@ runMatch match subject pattern caseMatters =
                       (Str.fromString $ "Invalid pattern: " ++ err)
                       (Int $ fromIntegral at)
     Right regexp   -> case match regexp (Str.toText subject) of
-      MatchFailed            -> return (Lst V.empty)
+      MatchFailed            -> return emptyList
       MatchAborted           -> raise E_QUOTA
       MatchSucceeded offsets ->
         let (m : offs)   = offsets
