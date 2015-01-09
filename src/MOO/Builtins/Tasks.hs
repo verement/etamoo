@@ -203,7 +203,8 @@ bf_queued_tasks = Builtin "queued_tasks" 0 (Just 0) [] TLst $ \[] -> do
 
   return $ fromListBy formatTask $ sort ownedTasks
 
-  where formatTask task = fromListBy ($ task) [
+  where formatTask :: Task -> Value
+        formatTask task = fromListBy ($ task) [
             Int . fromIntegral . taskId        -- task-id
           , Int . floor . utcTimeToPOSIXSeconds . startTime . taskState
                                                -- start-time

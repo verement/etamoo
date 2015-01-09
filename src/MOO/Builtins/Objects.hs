@@ -3,7 +3,7 @@
 
 module MOO.Builtins.Objects ( builtins ) where
 
-import Control.Concurrent.STM (STM, newTVar, readTVar, writeTVar)
+import Control.Concurrent.STM (STM, TVar, newTVar, readTVar, writeTVar)
 import Control.Monad (when, unless, liftM, void, forM_, foldM, join)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Set (Set)
@@ -118,7 +118,8 @@ bf_create = Builtin "create" 1 (Just 2)
       Just parent <- getObject oid
       HM.fromList `liftM` mapM mkProperty (HM.toList $ objectProperties parent)
 
-        where mkProperty (name, propTVar) = liftSTM $ do
+        where mkProperty :: (StrT, TVar Property) -> MOO (StrT, TVar Property)
+              mkProperty (name, propTVar) = liftSTM $ do
                 prop <- readTVar propTVar
                 let prop' = prop {
                         propertyValue     = Nothing

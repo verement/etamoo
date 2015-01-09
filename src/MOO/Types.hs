@@ -46,6 +46,7 @@ module MOO.Types (
   , error2text
 
   , string2binary
+  , Word8
 
   -- * List Convenience Functions
   , fromList

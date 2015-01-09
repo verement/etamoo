@@ -278,7 +278,8 @@ bf_decode_binary = Builtin "decode_binary" 1 (Just 2)
                | otherwise = fromList . groupPrinting ("" ++)
   in maybe (raise E_INVARG) (return . mkResult) $ string2binary bin_string
 
-  where groupPrinting g (w:ws)
+  where groupPrinting :: (String -> String) -> [Word8] -> [Value]
+        groupPrinting g (w:ws)
           | validStrChar c = groupPrinting (g [c] ++) ws
           | null group     = Int (fromIntegral w) : groupPrinting g ws
           | otherwise      = Str (Str.fromString group) : Int (fromIntegral w) :
@@ -341,8 +342,9 @@ runMatch match subject pattern caseMatters =
         in return $ fromList
            [Int start, Int end, fromList replacements, Str subject]
 
-  where -- convert from 0-based open interval to 1-based closed one
-        convert (s,e)  = (1 + fromIntegral s, fromIntegral e)
+  where convert :: (Int, Int) -> (IntT, IntT)
+        convert (s, e) = (1 + fromIntegral s, fromIntegral e)
+        -- convert from 0-based open interval to 1-based closed one
 
         repls :: Int -> [(Int, Int)] -> [Value]
         repls n (r:rs) = let (s,e) = convert r
