@@ -68,7 +68,7 @@ mooCompletion world player = completeWordWithPrev Nothing sep completions
           liftM (mkCompletions $ null prev) $
           runTask =<< newTask world player completionTask
           where completionTask =
-                  getCompletions prev word `catchException` \_ -> return nothing
+                  getCompletions prev word `catchException` \_ -> return zero
 
         mkCompletions :: Bool -> Maybe Value -> [Completion]
         mkCompletions finished (Just (Lst v)) =
@@ -96,7 +96,7 @@ mooCompletion world player = completeWordWithPrev Nothing sep completions
         completeProperty word oid = do
           maybeObj <- getObject oid
           case maybeObj of
-            Nothing  -> return nothing
+            Nothing  -> return zero
             Just obj -> do
               unless (objectPermR obj) $ checkPermission (objectOwner obj)
               properties <- liftSTM $ mapM readTVar $
@@ -105,7 +105,7 @@ mooCompletion world player = completeWordWithPrev Nothing sep completions
                 map fromId builtinProperties ++ map propertyName properties
 
         completeVerb :: String -> ObjId -> MOO Value
-        completeVerb word oid = return nothing
+        completeVerb word oid = return zero
 
         completeCommandVerb :: String -> MOO Value
         completeCommandVerb word = do

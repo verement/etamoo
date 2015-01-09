@@ -131,7 +131,7 @@ bf_listen = Builtin "listen" 2 (Just 3)
   return (Int $ fromIntegral canon)
 
 bf_unlisten = Builtin "unlisten" 1 (Just 1) [TInt] TAny $ \[Int canon] ->
-  checkWizard >> unlisten (fromIntegral canon) >> return nothing
+  checkWizard >> unlisten (fromIntegral canon) >> return zero
 
 bf_listeners = Builtin "listeners" 0 (Just 0) [] TLst $ \[] ->
   (fromListBy formatListener . M.elems . listeners) `liftM` getWorld

@@ -20,7 +20,7 @@ module MOO.Types (
   , Value(..)
   , Error(..)
 
-  , nothing
+  , zero
 
   -- * Type and Value Functions
   , fromId
@@ -226,9 +226,9 @@ instance Sizeable Value where
     Lst x -> box + storageBytes x
     where box = storageBytes ()
 
--- | The default false value (zero)
-nothing :: Value
-nothing = truthValue False
+-- | A default (false) MOO value
+zero :: Value
+zero = truthValue False
 
 fromInt :: Value -> IntT
 fromInt (Int x) = x

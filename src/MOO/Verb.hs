@@ -54,7 +54,7 @@ instance Sizeable Verb where
 initVerb = Verb {
     verbNames          = ""
   , verbProgram        = Program []
-  , verbCode           = return nothing
+  , verbCode           = return zero
 
   , verbOwner          = -1
   , verbPermR          = False

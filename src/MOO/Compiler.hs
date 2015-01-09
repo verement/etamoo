@@ -57,7 +57,7 @@ compileStatements (statement:rest) yield = case statement of
         pushLoopContext (Just var) (Continuation break)
         loop var elts (compile' body)
       popContext
-      return nothing
+      return zero
 
     compile' rest
 
@@ -83,7 +83,7 @@ compileStatements (statement:rest) yield = case statement of
         pushLoopContext (Just var) (Continuation break)
         loop var ty s e (compile' body)
       popContext
-      return nothing
+      return zero
 
     compile' rest
 
@@ -133,14 +133,14 @@ compileStatements (statement:rest) yield = case statement of
       maybe return storeVariable var (Int $ fromIntegral taskId)
 
       forkTask taskId usecs (compileStatements body return)
-      return nothing
+      return zero
 
     compile' rest
 
   Break    name -> breakLoop    name
   Continue name -> continueLoop name
 
-  Return _          Nothing     -> runTick >> yield nothing
+  Return _          Nothing     -> runTick >> yield zero
   Return lineNumber (Just expr) -> runTick >> do
     setLineNumber lineNumber
     yield =<< evaluate expr
@@ -189,7 +189,7 @@ compileStatements (statement:rest) yield = case statement of
 
   where compile' ss = compileStatements ss yield
 
-compileStatements [] _ = return nothing
+compileStatements [] _ = return zero
 
 -- | Compile a MOO expression into a computation in the 'MOO' monad. If a MOO
 -- exception is raised and the current verb frame's debug bit is not set,

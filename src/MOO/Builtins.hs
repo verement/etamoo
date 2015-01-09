@@ -182,7 +182,7 @@ bf_shutdown = Builtin "shutdown" 0 (Just 1) [TStr] TAny $ \optional ->
 
 bf_load_server_options = Builtin "load_server_options" 0 (Just 0)
                          [] TAny $ \[] ->
-  checkWizard >> loadServerOptions >> return nothing
+  checkWizard >> loadServerOptions >> return zero
 
 bf_server_log = Builtin "server_log" 1 (Just 2)
                 [TStr, TAny] TAny $ \(Str message : optional) ->
@@ -195,7 +195,7 @@ bf_renumber = Builtin "renumber" 1 (Just 1) [TObj] TObj $ \[Obj object] ->
 bf_reset_max_object = Builtin "reset_max_object" 0 (Just 0) [] TAny $ \[] -> do
   checkWizard
   getDatabase >>= liftSTM . resetMaxObject >>= putDatabase
-  return nothing
+  return zero
 
 -- § 4.4.8 Server Statistics and Miscellaneous Information
 

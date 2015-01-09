@@ -214,7 +214,7 @@ runCommand command = do
       case maybeVerb of
         (Just oid, Just verb) ->
           callCommandVerb player (oid, verb) room command (dobj, iobj)
-        _ -> notify player "I couldn't understand that." >> return nothing
+        _ -> notify player "I couldn't understand that." >> return zero
 
   where locateVerb :: ObjId -> ObjId -> ObjId ->
                       MOO (Maybe (ObjId, (ObjId, Verb)))

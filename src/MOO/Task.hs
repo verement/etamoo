@@ -220,7 +220,7 @@ initTask = Task {
   , taskPlayer      = -1
 
   , taskState       = initState
-  , taskComputation = return nothing
+  , taskComputation = return zero
   }
 
 instance Sizeable Task where
@@ -326,7 +326,7 @@ showResource Seconds = "seconds"
 timeoutException :: Resource -> CallStack -> Exception
 timeoutException resource stack = except { exceptionCallStack = stack }
   where message = "Task ran out of " <> showResource resource
-        except  = newException (Err E_QUOTA) message nothing
+        except  = newException (Err E_QUOTA) message zero
 
 stepTask :: Task -> IO (TaskDisposition, Task)
 stepTask task = do
@@ -422,7 +422,7 @@ runTask task = do
           state <- newState
           handleAbortedTask' traceback task {
               taskState = state
-            , taskComputation = fromMaybe nothing `fmap` call
+            , taskComputation = fromMaybe zero `fmap` call
             }
 
           where handleAbortedTask' :: [StrT] -> Task -> IO ()
@@ -1180,7 +1180,7 @@ type Message = StrT
 initException = Exception {
     exceptionCode      = Err E_NONE
   , exceptionMessage   = Str.fromText (error2text E_NONE)
-  , exceptionValue     = nothing
+  , exceptionValue     = zero
 
   , exceptionCallStack = Stack []
   , exceptionDebugBit  = True
@@ -1236,7 +1236,7 @@ notyet = raiseException (Err E_QUOTA) "Not yet implemented" . Str
 
 -- | Create and raise an exception for the given MOO error.
 raise :: Error -> MOO a
-raise err = raiseException (Err err) (Str.fromText $ error2text err) nothing
+raise err = raiseException (Err err) (Str.fromText $ error2text err) zero
 
 -- | Verify that the given floating point number is neither infinite nor NaN,
 -- raising 'E_FLOAT' or 'E_INVARG' respectively if so. Also, return the

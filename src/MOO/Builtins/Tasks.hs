@@ -53,7 +53,7 @@ builtins = [
 bf_raise = Builtin "raise" 1 (Just 3)
            [TAny, TStr, TAny] TAny $ \(code : optional) ->
   let [Str message, value] =
-        defaults optional [Str $ Str.fromText $ toText code, nothing]
+        defaults optional [Str $ Str.fromText $ toText code, zero]
   in raiseException code message value
 
 bf_call_function = Builtin "call_function" 1 Nothing
@@ -106,7 +106,7 @@ bf_set_task_perms = Builtin "set_task_perms" 1 (Just 1)
                     [TObj] TAny $ \[Obj who] -> do
   checkPermission who
   modifyFrame $ \frame -> frame { permissions = who }
-  return nothing
+  return zero
 
 bf_caller_perms = Builtin "caller_perms" 0 (Just 0) [] TObj $ \[] ->
   (Obj . objectForMaybe) `liftM` caller permissions
@@ -156,7 +156,7 @@ bf_suspend = Builtin "suspend" 0 (Just 1) [TNum] TAny $ \optional -> do
         }
 
   case maybeMicroseconds of
-    Just usecs -> delayIO $ void $ forkIO $ delay usecs >> wake nothing
+    Just usecs -> delayIO $ void $ forkIO $ delay usecs >> wake zero
     Nothing    -> return ()
 
   putTask task'
@@ -174,7 +174,7 @@ bf_suspend = Builtin "suspend" 0 (Just 1) [TNum] TAny $ \optional -> do
 
 bf_resume = Builtin "resume" 1 (Just 2)
             [TInt, TAny] TAny $ \(Int task_id : optional) -> do
-  let [value] = defaults optional [nothing]
+  let [value] = defaults optional [zero]
 
   maybeTask <- getTask (fromIntegral task_id)
   case maybeTask of
@@ -184,7 +184,7 @@ bf_resume = Builtin "resume" 1 (Just 2)
       delayIO (wake value)
     _ -> raise E_INVARG
 
-  return nothing
+  return zero
 
 bf_queue_info = Builtin "queue_info" 0 (Just 1) [TObj] TLst $ \args ->
   let info = case args of
@@ -227,7 +227,7 @@ bf_kill_task = Builtin "kill_task" 1 (Just 1) [TInt] TAny $ \[Int task_id] -> do
       checkPermission (taskOwner task)
       purgeTask task
       delayIO $ killThread (taskThread task)
-      return nothing
+      return zero
     _ -> do
       thisTaskId <- taskId `liftM` asks task
       if task_id' == thisTaskId

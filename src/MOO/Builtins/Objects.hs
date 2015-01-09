@@ -227,7 +227,7 @@ bf_chparent = Builtin "chparent" 2 (Just 2)
 
   reparentObject (object, obj) (new_parent, maybeNewParent)
 
-  return nothing
+  return zero
 
 bf_valid = Builtin "valid" 1 (Just 1) [TObj] TInt $ \[Obj object] ->
   (truthValue . isJust) `liftM` getObject object
@@ -256,7 +256,7 @@ bf_recycle = Builtin "recycle" 1 (Just 1) [TObj] TAny $ \[Obj object] -> do
 
   modifyQuota owner $ return . (+ 1)
 
-  return nothing
+  return zero
 
   where moveContentsToNothing :: ObjId -> MOO ()
         moveContentsToNothing object = do
@@ -366,7 +366,7 @@ bf_move = Builtin "move" 2 (Just 2)
 
   moveObject "move" what where_
 
-  return nothing
+  return zero
 
 -- § 4.4.3.3 Operations on Properties
 
@@ -457,7 +457,7 @@ bf_set_property_info = Builtin "set_property_info" 3 (Just 3)
                         HM.insert newName propTVar $
                         HM.delete oldName (objectProperties obj) }
 
-  return nothing
+  return zero
 
 bf_add_property = Builtin "add_property" 4 (Just 4) [TObj, TStr, TAny, TLst]
                   TAny $ \[Obj object, Str prop_name, value, Lst info] -> do
@@ -491,7 +491,7 @@ bf_add_property = Builtin "add_property" 4 (Just 4) [TObj, TStr, TAny, TLst]
   forM_ (getChildren obj) $
     modifyDescendants db $ addInheritedProperty newProperty
 
-  return nothing
+  return zero
 
 bf_delete_property = Builtin "delete_property" 2 (Just 2)
                      [TObj, TStr] TAny $ \[Obj object, Str prop_name] -> do
@@ -504,7 +504,7 @@ bf_delete_property = Builtin "delete_property" 2 (Just 2)
   flip (modifyDescendants db) object $ \obj ->
     return obj { objectProperties = HM.delete prop_name (objectProperties obj) }
 
-  return nothing
+  return zero
 
 bf_is_clear_property = Builtin "is_clear_property" 2 (Just 2)
                        [TObj, TStr] TInt $ \[Obj object, Str prop_name] -> do
@@ -528,7 +528,7 @@ bf_clear_property = Builtin "clear_property" 2 (Just 2)
         unless (propertyInherited prop) $ raise E_INVARG
         return prop { propertyValue = Nothing }
 
-      return nothing
+      return zero
 
 -- § 4.4.3.4 Operations on Verbs
 
@@ -586,7 +586,7 @@ bf_set_verb_info = Builtin "set_verb_info" 3 (Just 3) [TObj, TAny, TLst]
       , verbPermD = 'd' `S.member` permSet
     }
 
-  return nothing
+  return zero
 
 bf_verb_args = Builtin "verb_args" 2 (Just 2)
                [TObj, TAny] TLst $ \[Obj object, verb_desc] -> do
@@ -628,7 +628,7 @@ bf_set_verb_args = Builtin "set_verb_args" 3 (Just 3) [TObj, TAny, TLst]
       , verbIndirectObject = iobj
     }
 
-  return nothing
+  return zero
 
 bf_add_verb = Builtin "add_verb" 3 (Just 3)
               [TObj, TLst, TLst] TInt $ \[Obj object, Lst info, Lst args] -> do
@@ -668,7 +668,7 @@ bf_delete_verb = Builtin "delete_verb" 2 (Just 2)
       db <- getDatabase
       liftSTM $ modifyObject object db $ deleteVerb index
 
-  return nothing
+  return zero
 
 bf_verb_code = Builtin "verb_code" 2 (Just 4) [TObj, TAny, TAny, TAny]
                TLst $ \(Obj object : verb_desc : optional) -> do
@@ -738,4 +738,4 @@ bf_set_player_flag = Builtin "set_player_flag" 2 (Just 2)
 
   setPlayerFlag object (truthOf value)
 
-  return nothing
+  return zero
