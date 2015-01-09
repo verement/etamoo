@@ -153,7 +153,7 @@ bf_value_hash = Builtin "value_hash" 1 (Just 1) [TAny] TStr $
 
 bf_random = Builtin "random" 0 (Just 1) [TInt] TInt $ \optional ->
   let [Int mod] = defaults optional [Int maxBound]
-  in if mod <= 0 then raise E_INVARG
+  in if mod < 1 then raise E_INVARG
      else Int `liftM` random (1, mod)
 
 bf_min = Builtin "min" 1 Nothing [TNum] TNum $ \args -> case args of
@@ -266,7 +266,7 @@ bf_rindex = indexBuiltin "rindex" nullCase mainCase
 
 bf_strcmp = Builtin "strcmp" 2 (Just 2)
             [TStr, TStr] TInt $ \[Str str1, Str str2] ->
-  return $ Int $ case compare (Str.toText str1) (Str.toText str2) of
+  return $ Int $ case Str.toText str1 `compare` Str.toText str2 of
     LT -> -1
     EQ ->  0
     GT ->  1
