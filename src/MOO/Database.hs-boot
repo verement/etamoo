@@ -1,7 +1,6 @@
 -- -*- Haskell -*-
 
 module MOO.Database ( Database
-                    , systemObject
                     , serverOptions
                     , maxStackDepth
                     , getServerOption'
@@ -17,8 +16,6 @@ import MOO.Types
 
 data Database
 data ServerOptions
-
-systemObject :: ObjId
 
 serverOptions :: Database -> ServerOptions
 maxStackDepth :: ServerOptions -> IntT

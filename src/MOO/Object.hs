@@ -28,6 +28,12 @@ module MOO.Object ( Object (..)
                   , deleteVerb
                   , definedProperties
                   , definedVerbs
+
+                  -- * Special Object Numbers
+                  , systemObject
+                  , nothing
+                  , ambiguousMatch
+                  , failedMatch
                   ) where
 
 import Control.Arrow (second)
@@ -94,7 +100,7 @@ initObject = Object {
   , objectChildren   = IS.empty
 
   , objectName       = Str.empty
-  , objectOwner      = -1
+  , objectOwner      = nothing
   , objectLocation   = Nothing
   , objectContents   = IS.empty
   , objectProgrammer = False
@@ -156,7 +162,7 @@ initProperty = Property {
   , propertyValue     = Nothing
   , propertyInherited = False
 
-  , propertyOwner     = -1
+  , propertyOwner     = nothing
   , propertyPermR     = False
   , propertyPermW     = False
   , propertyPermC     = False
@@ -186,7 +192,7 @@ isBuiltinProperty = isJust . builtinProperty
 
 objectForMaybe :: Maybe ObjId -> ObjId
 objectForMaybe (Just oid) = oid
-objectForMaybe Nothing    = -1
+objectForMaybe Nothing    = nothing
 
 setProperties :: [Property] -> Object -> IO Object
 setProperties props obj = do
@@ -279,3 +285,10 @@ definedVerbs :: Object -> STM [StrT]
 definedVerbs obj = do
   verbs <- mapM (readTVar . snd) $ objectVerbs obj
   return $ map verbNames verbs
+
+-- | Special object numbers
+systemObject, nothing, ambiguousMatch, failedMatch :: ObjId
+systemObject   =  0
+nothing        = -1
+ambiguousMatch = -2
+failedMatch    = -3

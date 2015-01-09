@@ -268,7 +268,7 @@ bf_recycle = Builtin "recycle" 1 (Just 1) [TObj] TAny $ \[Obj object] -> do
             _ -> return ()
 
         moveToNothing :: ObjId -> MOO ()
-        moveToNothing oid = moveObject "recycle" oid (-1)
+        moveToNothing oid = moveObject "recycle" oid nothing
 
         reparentChildren :: ObjId -> Maybe ObjId -> MOO ()
         reparentChildren object maybeParent = do
@@ -288,7 +288,7 @@ bf_recycle = Builtin "recycle" 1 (Just 1) [TObj] TAny $ \[Obj object] -> do
                 Just parentOid -> do
                   parent <- getObject parentOid
                   return (parentOid, parent)
-                Nothing -> return (-1, Nothing)
+                Nothing -> return (nothing, Nothing)
               reparentObject (object, obj) newParent
             Nothing -> return ()
 

@@ -16,6 +16,7 @@ module MOO.Verb ( Verb(..)
                 ) where
 
 import MOO.AST
+import {-# SOURCE #-} MOO.Object (nothing)
 import {-# SOURCE #-} MOO.Task
 import MOO.Types
 
@@ -56,7 +57,7 @@ initVerb = Verb {
   , verbProgram        = Program []
   , verbCode           = return zero
 
-  , verbOwner          = -1
+  , verbOwner          = nothing
   , verbPermR          = False
   , verbPermW          = False
   , verbPermX          = False
@@ -86,10 +87,9 @@ string2obj = flip lookup $ map mkAssoc [minBound ..]
   where mkAssoc objSpec = (obj2string objSpec, objSpec)
 
 objMatch :: ObjId -> ObjSpec -> ObjId -> Bool
-objMatch _    ObjNone (-1) = True
-objMatch _    ObjNone _    = False
-objMatch _    ObjAny  _    = True
-objMatch this ObjThis oid  = oid == this
+objMatch _    ObjNone oid = oid == nothing
+objMatch _    ObjAny  _   = True
+objMatch this ObjThis oid = oid == this
 
 -- | Preposition specifier
 data PrepSpec = PrepAny                     -- ^ any

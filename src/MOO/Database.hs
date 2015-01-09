@@ -5,7 +5,6 @@ module MOO.Database ( Database
                     , ServerOptions(..)
                     , serverOptions
                     , initDatabase
-                    , systemObject
                     , dbObjectRef
                     , dbObject
                     , maxObject
@@ -70,7 +69,7 @@ resetMaxObject db = do
   where findLastValid oid
           | oid >= 0  = dbObject oid db >>=
                         maybe (findLastValid $ oid - 1) (return . const oid)
-          | otherwise = return (-1)
+          | otherwise = return nothing
 
 setObjects :: [Maybe Object] -> Database -> IO Database
 setObjects objs db = do
@@ -153,9 +152,6 @@ data ServerOptions = Options {
   , supportNumericVerbnameStrings :: Bool
     -- ^ Enables use of an obsolete verb-naming mechanism
 }
-
-systemObject :: ObjId
-systemObject = 0
 
 getServerOptions :: ObjId -> MOO (Id -> MOO (Maybe Value))
 getServerOptions oid = do

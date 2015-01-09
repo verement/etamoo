@@ -10,8 +10,8 @@ import Data.Time (UTCTime, diffUTCTime)
 import qualified Data.Map as M
 
 import MOO.Builtins.Common
-import MOO.Database (systemObject)
 import MOO.Network
+import MOO.Object (systemObject)
 import MOO.Task
 import MOO.Types
 

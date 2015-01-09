@@ -182,10 +182,6 @@ matchObject player str
           | otherwise                 = NoMatch
         nameMatch _ _ = NoMatch
 
-        nothing        = -1
-        ambiguousMatch = -2
-        failedMatch    = -3
-
 data Match = NoMatch | PrefixMatch | ExactMatch
 
 instance Monoid Match where

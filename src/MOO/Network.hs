@@ -36,7 +36,8 @@ import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Vector as V
 
-import {-# SOURCE #-} MOO.Database (systemObject, getServerOption')
+import {-# SOURCE #-} MOO.Database (getServerOption')
+import MOO.Object (systemObject)
 import MOO.Task
 import MOO.Types
 

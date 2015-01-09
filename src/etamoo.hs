@@ -90,7 +90,7 @@ mooCompletion world player = completeWordWithPrev Nothing sep completions
         getCompletions _ word = completeName word
 
         objectForCompletion :: String -> MOO ObjId
-        objectForCompletion prev = return (-1)
+        objectForCompletion prev = return nothing
 
         completeProperty :: String -> ObjId -> MOO Value
         completeProperty word oid = do
@@ -181,7 +181,7 @@ addFrame frame state@State { stack = Stack frames } =
 mkTestFrame :: Database -> STM StackFrame
 mkTestFrame db = do
   wizards <- filterM isWizard $ allPlayers db
-  let player = fromMaybe (-1) $ listToMaybe wizards
+  let player = fromMaybe nothing $ listToMaybe wizards
   return initFrame {
       variables     = mkVariables [("player", Obj player)]
     , permissions   = player

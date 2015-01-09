@@ -216,7 +216,7 @@ initTask = Task {
 
   , taskThread      = undefined
   , taskWorld       = undefined
-  , taskPlayer      = -1
+  , taskPlayer      = nothing
 
   , taskState       = initState
   , taskComputation = return zero
@@ -988,13 +988,13 @@ initFrame = Frame {
   , contextStack  = []
   , variables     = initVariables
   , debugBit      = True
-  , permissions   = -1
+  , permissions   = nothing
 
   , verbName      = Str.empty
   , verbFullName  = Str.empty
-  , verbLocation  = -1
-  , initialThis   = -1
-  , initialPlayer = -1
+  , verbLocation  = nothing
+  , initialThis   = nothing
+  , initialPlayer = nothing
 
   , builtinFunc   = False
   , lineNumber    = 0
@@ -1127,19 +1127,19 @@ continueLoop maybeName = do
 -- | The default collection of verb variables
 initVariables :: Map Id Value
 initVariables = M.fromList $ [
-    ("player" , Obj (-1))
-  , ("this"   , Obj (-1))
-  , ("caller" , Obj (-1))
+    ("player" , Obj nothing)
+  , ("this"   , Obj nothing)
+  , ("caller" , Obj nothing)
 
   , ("args"   , emptyList)
   , ("argstr" , emptyString)
 
   , ("verb"   , emptyString)
   , ("dobjstr", emptyString)
-  , ("dobj"   , Obj (-1))
+  , ("dobj"   , Obj nothing)
   , ("prepstr", emptyString)
   , ("iobjstr", emptyString)
-  , ("iobj"   , Obj (-1))
+  , ("iobj"   , Obj nothing)
   ] ++ typeVariables
 
   where typeVariables = [
