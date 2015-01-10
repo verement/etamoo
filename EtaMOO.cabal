@@ -22,7 +22,7 @@ description:
 license:             BSD3
 license-file:        LICENSE
 
-copyright:           © 2014 Robert Leslie
+copyright:           © 2014–2015 Robert Leslie
 author:              Rob Leslie <rob@mars.org>
 maintainer:          Rob Leslie <rob@mars.org>
 
@@ -31,6 +31,7 @@ category:            Network
 
 build-type:          Simple
 cabal-version:       >=1.8
+tested-with:         GHC == 7.6.3
 
 homepage:            http://verement.github.io/etamoo
 bug-reports:         https://github.com/verement/etamoo/issues
@@ -83,9 +84,12 @@ executable etamoo
   if flag(llvm)
     ghc-options:       -fllvm
 
-  extensions:          OverloadedStrings, ForeignFunctionInterface,
-                       EmptyDataDecls, ExistentialQuantification,
-                       TypeSynonymInstances, FlexibleInstances
+  extensions:          EmptyDataDecls
+                       ExistentialQuantification
+                       FlexibleInstances
+                       ForeignFunctionInterface
+                       OverloadedStrings
+                       TypeSynonymInstances
 
   if !os(darwin)
     extra-libraries:   crypt
