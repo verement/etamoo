@@ -1,5 +1,5 @@
 
-{-# LANGUAGE CPP, OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Basic data types used throughout the MOO server code
 module MOO.Types (
