@@ -699,8 +699,8 @@ findVerb acceptable name = findVerb'
 callSystemVerb :: StrT -> [Value] -> MOO (Maybe Value)
 callSystemVerb name args = do
   player <- asks (taskPlayer . task)
-  (maybeOid, maybeVerb) <- findVerb verbPermX name systemObject
-  case (maybeOid, maybeVerb) of
+  maybeVerb <- findVerb verbPermX name systemObject
+  case maybeVerb of
     (Just verbOid, Just verb) -> do
       let vars = mkVariables [
               ("player", Obj player)
@@ -774,19 +774,19 @@ callVerb' (verbOid, verb) this name args = do
 
 callVerb :: ObjId -> ObjId -> StrT -> [Value] -> MOO Value
 callVerb verbLoc this name args = do
-  (maybeOid, maybeVerb) <- findVerb verbPermX name verbLoc
-  case (maybeOid, maybeVerb) of
-    (Nothing     , _)         -> raise E_INVIND
-    (Just _      , Nothing)   -> raise E_VERBNF
+  maybeVerb <- findVerb verbPermX name verbLoc
+  case maybeVerb of
     (Just verbOid, Just verb) -> callVerb' (verbOid, verb) this name args
+    (Nothing     , _)         -> raise E_INVIND
+    (_           , Nothing)   -> raise E_VERBNF
 
 callFromFunc :: StrT -> IntT -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
 callFromFunc func index (oid, name) args = do
-  (maybeOid, maybeVerb) <- findVerb verbPermX name oid
-  case (maybeOid, maybeVerb) of
+  maybeVerb <- findVerb verbPermX name oid
+  case maybeVerb of
     (Just verbOid, Just verb) -> liftM Just $ evalFromFunc func index $
                                  callVerb' (verbOid, verb) oid name args
-    (_           , _)         -> return Nothing
+    _                         -> return Nothing
 
 evalFromFunc :: StrT -> IntT -> MOO Value -> MOO Value
 evalFromFunc func index code = do
