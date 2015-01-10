@@ -1,5 +1,7 @@
 \#*#
 .#*
+.cabal-sandbox
+cabal.sandbox.config
 dist
 etamoo
 etamoo-*
