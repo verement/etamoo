@@ -186,7 +186,7 @@ bf_resume = Builtin "resume" 1 (Just 2)
 
   return zero
 
-bf_queue_info = Builtin "queue_info" 0 (Just 1) [TObj] TLst $ \args ->
+bf_queue_info = Builtin "queue_info" 0 (Just 1) [TObj] TAny $ \args ->
   let info = case args of
         []           -> objectList . S.toList .
                         foldr (S.insert . taskOwner) S.empty

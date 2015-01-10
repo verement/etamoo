@@ -174,15 +174,14 @@ instance (Sizeable k, Sizeable v) => Sizeable (HashMap k v) where
 instance Sizeable (TVar a) where
   storageBytes _ = storageBytes ()
 
-type IntT = Int32
-                          -- ^ MOO integer
+type IntT = Int32         -- ^ MOO integer
 type FltT = Double        -- ^ MOO floating-point number
 type StrT = MOOString     -- ^ MOO string
-type ObjT = Int           -- ^ MOO object number
+type ObjT = ObjId         -- ^ MOO object number
 type ErrT = Error         -- ^ MOO error
 type LstT = Vector Value  -- ^ MOO list
 
-type ObjId = ObjT         -- ^ MOO object number
+type ObjId = Int          -- ^ MOO object number
 type Id    = CI Text      -- ^ MOO identifier (string lite)
 
 -- | Convert an identifier to and from another type.
