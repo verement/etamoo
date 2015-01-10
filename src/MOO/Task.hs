@@ -190,7 +190,7 @@ initWorld = World {
   , listeners        = M.empty
   , connections      = M.empty
 
-  , nextConnectionId = -1
+  , nextConnectionId = -4
   }
 
 -- | A structure representing a queued or running task
