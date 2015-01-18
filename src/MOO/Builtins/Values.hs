@@ -276,7 +276,7 @@ bf_decode_binary = Builtin "decode_binary" 1 (Just 2)
   let [fully] = booleanDefaults optional [False]
       mkResult | fully     = fromListBy (Int . fromIntegral)
                | otherwise = fromList . groupPrinting ("" ++)
-  in maybe (raise E_INVARG) (return . mkResult) $ string2binary bin_string
+  in maybe (raise E_INVARG) (return . mkResult) $ string2bytes bin_string
 
   where groupPrinting :: (String -> String) -> [Word8] -> [Value]
         groupPrinting g (w:ws)

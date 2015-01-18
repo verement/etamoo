@@ -47,7 +47,7 @@ module MOO.Types (
   , toLiteral
   , error2text
 
-  , string2binary
+  , string2bytes
   , Word8
 
   -- * List Convenience Functions
@@ -391,8 +391,8 @@ error2text E_FLOAT   = "Floating-point arithmetic error"
 
 -- | Parse a MOO /binary string/ and return the corresponding byte values, or
 -- 'Nothing' if the string is improperly formatted.
-string2binary :: StrT -> Maybe [Word8]
-string2binary = translate . Str.toString
+string2bytes :: StrT -> Maybe [Word8]
+string2bytes = translate . Str.toString
   where translate ('~':x:y:rs) = do
           xv <- hexValue x
           yv <- hexValue y
