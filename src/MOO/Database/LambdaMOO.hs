@@ -709,7 +709,7 @@ tellObject objects (oid, Just obj) = do
   tell (singleton '#')
   tellLn (decimal oid)
 
-  tellLn (str2builder $ objectName obj)
+  tellLn (string2builder $ objectName obj)
   tellLn ""  -- old handles string
 
   let flags = flag objectIsPlayer   flag_user       .|.
@@ -740,7 +740,7 @@ tellObject objects (oid, Just obj) = do
   verbs <- liftSTM $ mapM (readTVar . snd) $ objectVerbs obj
   tellLn (decimal $ length verbs)
   forM_ verbs $ \verb -> do
-    tellLn (str2builder $ verbNames verb)
+    tellLn (string2builder $ verbNames verb)
     tellLn (decimal $ verbOwner verb)
 
     let flags = flag verbPermR vf_read  .|.
@@ -757,7 +757,7 @@ tellObject objects (oid, Just obj) = do
 
   definedProperties <- liftSTM $ definedProperties obj
   tellLn (decimal $ length definedProperties)
-  forM_ definedProperties $ tellLn . str2builder
+  forM_ definedProperties $ tellLn . string2builder
 
   tellLn (decimal $ HM.size $ objectProperties obj)
   tellProperties objects obj (Just oid)
@@ -807,7 +807,7 @@ tellValue :: Value -> DBWriter ()
 tellValue value = case value of
   Int x -> tellLn (decimal  type_int)   >> tellLn (decimal x)
   Flt x -> tellLn (decimal _type_float) >> tellLn (realFloat x)
-  Str x -> tellLn (decimal _type_str)   >> tellLn (str2builder x)
+  Str x -> tellLn (decimal _type_str)   >> tellLn (string2builder x)
   Obj x -> tellLn (decimal  type_obj)   >> tellLn (decimal x)
   Err x -> tellLn (decimal  type_err)   >> tellLn (decimal $ fromEnum x)
   Lst x -> tellLn (decimal _type_list)  >> tellLn (decimal $ V.length x) >>

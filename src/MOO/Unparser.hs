@@ -149,7 +149,7 @@ unparseExpr expr = case expr of
   Variable var -> return (fromId var)
 
   PropertyRef (Literal (Obj 0)) (Literal (Str name))
-    | isIdentifier name -> return $ "$" <> str2builder name
+    | isIdentifier name -> return $ "$" <> string2builder name
   PropertyRef obj name -> do
     obj' <- case obj of
       Literal Int{} -> paren obj  -- avoid digits followed by dot (-> float)
@@ -169,7 +169,7 @@ unparseExpr expr = case expr of
 
   VerbCall (Literal (Obj 0)) (Literal (Str name)) args
     | isIdentifier name -> do args' <- unparseArgs args
-                              return $ "$" <> str2builder name <>
+                              return $ "$" <> string2builder name <>
                                        "(" <> args' <> ")"
   VerbCall obj name args -> do
     obj' <- parenL expr obj
@@ -272,7 +272,7 @@ unparseScatter = liftM (mconcat . intersperse ", ") . mapM unparseScat
 
 unparseNameExpr :: Expr -> Unparser Builder
 unparseNameExpr (Literal (Str name))
-  | isIdentifier name = return (str2builder name)
+  | isIdentifier name = return (string2builder name)
 unparseNameExpr expr = paren expr
 
 paren :: Expr -> Unparser Builder
