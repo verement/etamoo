@@ -1,5 +1,5 @@
 
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP, OverloadedStrings #-}
 
 module MOO.Builtins ( builtinFunctions, callBuiltin, verifyBuiltins ) where
 
@@ -11,6 +11,10 @@ import Data.Maybe (fromMaybe)
 import Data.Time (formatTime, utcToLocalZonedTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import System.Locale (defaultTimeLocale)
+
+# ifdef __GLASGOW_HASKELL__
+import GHC.Stats (GCStats(..), getGCStats, getGCStatsEnabled)
+# endif
 
 import qualified Data.Map as M
 
@@ -202,7 +206,36 @@ bf_server_version = Builtin "server_version" 0 (Just 0) [] TStr $ \[] ->
   return (Str $ Str.fromText serverVersionText)
 
 bf_memory_usage = Builtin "memory_usage" 0 (Just 0) [] TLst $ \[] ->
+# ifdef __GLASGOW_HASKELL__
+  -- Server must be run with +RTS -T to enable statistics
+  do maybeStats <- requestIO $ do
+       enabled <- getGCStatsEnabled
+       if enabled then Just `liftM` getGCStats else return Nothing
+
+     return $ case maybeStats of
+       Just stats ->
+         let nused = currentBytesUsed stats
+             nfree = maxBytesUsed stats - nused
+             maxBlockSize = 2 ^ (floor $ logBase (2 :: Double) $
+                                 fromIntegral $ max nused nfree :: Int)
+         in fromListBy (fromListBy $ Int . fromIntegral) $
+            blocks maxBlockSize nused nfree
+       Nothing -> emptyList
+
+       where blocks :: (Integral a) => a -> a -> a -> [[a]]
+             blocks _         0     0     = []
+             blocks blockSize nused nfree =
+               let nusedBlocks = nused `div` blockSize
+                   nfreeBlocks = nfree `div` blockSize
+                   rest = blocks (blockSize `div` 2)
+                          (nused - nusedBlocks * blockSize)
+                          (nfree - nfreeBlocks * blockSize)
+               in case (nusedBlocks, nfreeBlocks) of
+                 (0, 0) -> rest
+                 _      -> [blockSize, nusedBlocks, nfreeBlocks] : rest
+# else
   return emptyList  -- ... nothing to see here
+# endif
 
 bf_db_disk_size = Builtin "db_disk_size" 0 (Just 0) [] TInt $ \[] ->
   notyet "db_disk_size"
