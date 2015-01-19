@@ -1,7 +1,6 @@
 -- -*- Haskell -*-
 
 module MOO.Task ( MOO
-                , World
                 , requestIO
                 , delayIO
                 , getWorld
@@ -27,7 +26,6 @@ import MOO.Types
 import {-# SOURCE #-} MOO.Verb
 
 data World
-
 data Environment
 data TaskDisposition
 data TaskState

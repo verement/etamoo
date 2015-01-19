@@ -1,17 +1,20 @@
 -- -*- Haskell -*-
 
-module MOO.Network ( Listener
-                   , Connection
-                   , PortNumber
-                   , notify
-                   ) where
+module MOO.Network (
+    Point(..)
+  , Listener(..)
+  ) where
 
-import Network (PortNumber)
+import Network.Socket (PortNumber)
 
-import {-# SOURCE #-} MOO.Task (MOO)
-import MOO.Types (ObjId, StrT)
+import MOO.Types (ObjId)
 
-data Listener
-data Connection
+newtype Point = TCP PortNumber
 
-notify :: ObjId -> StrT -> MOO ()
+data Listener = Listener {
+    listenerObject        :: ObjId
+  , listenerPoint         :: Point
+  , listenerPrintMessages :: Bool
+
+  , listenerCancel        :: IO ()
+  }

@@ -20,8 +20,8 @@ import qualified Data.Vector as V
 import MOO.AST
 import MOO.Builtins.Common
 import {-# SOURCE #-} MOO.Compiler
+import MOO.Connection
 import MOO.Database
-import MOO.Network
 import MOO.Object
 import MOO.Parser
 import MOO.Task

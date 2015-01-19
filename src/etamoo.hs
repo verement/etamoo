@@ -3,7 +3,7 @@
 
 module Main (main) where
 
-import Control.Concurrent.STM (STM, TVar, atomically, newTVarIO,
+import Control.Concurrent.STM (STM, TVar, atomically,
                                readTVarIO, readTVar, modifyTVar)
 import Control.Monad (liftM, filterM, unless)
 import Control.Monad.IO.Class (liftIO)
@@ -45,7 +45,7 @@ main = withSocketsDo $ do
     Right n   -> do
       putStrLn $ show n ++ " built-in functions verified"
       db <- replDatabase
-      worldTVar <- newTVarIO initWorld { database = db }
+      worldTVar <- newWorld db
       testFrame <- atomically $ mkTestFrame db
       state <- newState
 

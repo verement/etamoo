@@ -28,7 +28,7 @@ import qualified Data.IntSet as IS
 import qualified Data.Text as T
 import qualified Data.Vector as V
 
-import {-# SOURCE #-} MOO.Network
+import {-# SOURCE #-} MOO.Connection
 import MOO.Object
 import {-# SOURCE #-} MOO.Task
 import MOO.Types

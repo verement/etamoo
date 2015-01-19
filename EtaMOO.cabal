@@ -121,6 +121,7 @@ executable etamoo
                      , parsec
                      , random
                      , stm
+                     , stm-chans
                      , text
                      , time
                      , unix

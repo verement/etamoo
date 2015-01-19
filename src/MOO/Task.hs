@@ -10,7 +10,7 @@ module MOO.Task (
 
   -- * World Interface
   , World(..)
-  , initWorld
+  , newWorld
   , getWorld
   , getWorld'
   , putWorld
@@ -125,7 +125,7 @@ import Control.Concurrent (ThreadId, myThreadId, forkIO, threadDelay,
                            newEmptyMVar, putMVar, takeMVar)
 import Control.Concurrent.STM (STM, TVar, atomically, retry, throwSTM,
                                newEmptyTMVar, putTMVar, takeTMVar,
-                               readTVar, writeTVar, modifyTVar)
+                               newTVarIO, readTVar, writeTVar, modifyTVar)
 import Control.Exception (SomeException, catch)
 import Control.Monad (when, unless, join, liftM, void, (>=>))
 import Control.Monad.Cont (ContT, runContT, callCC)
@@ -141,6 +141,7 @@ import Data.Maybe (isNothing, fromMaybe, fromJust)
 import Data.Monoid (Monoid(mempty, mappend), (<>))
 import Data.Time (UTCTime, getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import System.IO (TextEncoding)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (nanosleep)
 import System.Random (Random, StdGen, newStdGen, mkStdGen, split,
@@ -153,6 +154,7 @@ import qualified Data.Text as T
 import MOO.Command
 import {-# SOURCE #-} MOO.Database
 import {-# SOURCE #-} MOO.Network
+import {-# SOURCE #-} MOO.Connection
 import MOO.Object
 import MOO.Types
 import MOO.Verb
@@ -172,26 +174,37 @@ liftSTM = lift . lift . lift
 
 -- | The known universe, as far as the MOO server is concerned
 data World = World {
-    database         :: Database                 -- ^ The database of objects
-  , tasks            :: Map TaskId Task          -- ^ Queued and running tasks
+    database           :: Database              -- ^ The database of objects
+  , tasks              :: Map TaskId Task       -- ^ Queued and running tasks
 
-  , listeners        :: Map PortNumber Listener  -- ^ Network listening points
-  , connections      :: Map ObjId Connection     -- ^ Network connections
+  , listeners          :: Map Point Listener    -- ^ Network listening points
+  , connections        :: Map ObjId Connection  -- ^ Network connections
 
-  , nextConnectionId :: ObjId
+  , nextConnectionId   :: ObjId
     -- ^ The (negative) object number to be assigned to the next inbound or
     -- outbound connection
+  , connectionEncoding :: TextEncoding
+    -- ^ The default 'TextEncoding' to use with network connections
   }
 
 initWorld = World {
-    database         = undefined
-  , tasks            = M.empty
+    database           = undefined
+  , tasks              = M.empty
 
-  , listeners        = M.empty
-  , connections      = M.empty
+  , listeners          = M.empty
+  , connections        = M.empty
 
-  , nextConnectionId = -4
+  , nextConnectionId   = firstConnectionId
+  , connectionEncoding = undefined
   }
+
+newWorld :: Database -> IO (TVar World)
+newWorld db = do
+  enc <- defaultConnectionEncoding
+  newTVarIO initWorld {
+      database           = db
+    , connectionEncoding = enc
+    }
 
 -- | A structure representing a queued or running task
 data Task = Task {
