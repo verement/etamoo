@@ -7,7 +7,6 @@ module MOO.Connection (
   , connectionHandler
 
   , firstConnectionId
-  , defaultConnectionEncoding
 
   , withConnections
   , withConnection
@@ -34,23 +33,24 @@ import Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueue, closeTBMQueue,
                                         readTBMQueue, writeTBMQueue,
                                         tryReadTBMQueue, tryWriteTBMQueue)
 
-import Control.Exception (try, bracket, finally)
-import Control.Monad ((<=<), join, unless, foldM)
-import Data.ByteString (ByteString, hGetSome, hPut)
+import Control.Exception (SomeException, try, bracket)
+import Control.Monad ((<=<), join, unless, foldM, forever)
+import Control.Monad.Trans (lift)
+import Data.ByteString (ByteString)
 import Data.Map (Map)
 import Data.Text (Text)
-import Data.Text.IO (hGetLine, hPutStrLn)
+import Data.Text.Encoding (Decoding(..), encodeUtf8, streamDecodeUtf8With)
+import Data.Text.Encoding.Error (lenientDecode)
 import Data.Time (UTCTime, getCurrentTime)
-import System.IO (Handle, TextEncoding, utf8,
-                  hFlush, hClose, hIsEOF,
-                  hSetEncoding, mkTextEncoding,
-                  hSetNewlineMode, NewlineMode(..), Newline(..),
-                  hSetBuffering, BufferMode(..))
-import System.IO.Error (isDoesNotExistError)
+import Pipes (Producer, Consumer, Pipe, await, yield, runEffect,
+              for, cat, (>->))
+import Pipes.Concurrent (Buffer(..), Output(..), spawn, spawn',
+                         fromInput, toOutput)
 
 import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import qualified Data.Vector as V
 
 import MOO.Task
@@ -61,8 +61,8 @@ import qualified MOO.String as Str
 data Connection = Connection {
     connectionPlayer           :: TVar ObjId
 
-  , connectionInput            :: TBMQueue InputMessage
-  , connectionOutput           :: TBMQueue OutputMessage
+  , connectionInput            :: TBMQueue ConnectionMessage
+  , connectionOutput           :: TBMQueue ConnectionMessage
 
   , connectionName             :: ConnectionName
   , connectionConnectedTime    :: TVar (Maybe UTCTime)
@@ -72,8 +72,7 @@ data Connection = Connection {
   , connectionOptions          :: TVar ConnectionOptions
   }
 
-data InputMessage  = InputLine  Text | InputBinary  ByteString
-data OutputMessage = OutputLine Text | OutputBinary ByteString | OutputFlush
+data ConnectionMessage = Line Text | Binary ByteString
 
 data ConnectionOptions = ConnectionOptions {
     optionBinaryMode        :: Bool
@@ -118,8 +117,7 @@ coClientEcho = Option "client-echo" get set
           let clientEcho = truthOf v
               telnetCommand = BS.pack [telnetIAC, telnetOption, telnetECHO]
               telnetOption  = if clientEcho then telnetWON'T else telnetWILL
-          mapM_ (liftSTM . enqueueOutput False conn)
-            [OutputBinary telnetCommand, OutputFlush]
+          liftSTM $ enqueueOutput False conn (Binary telnetCommand)
           return options { optionClientEcho = clientEcho }
 
           where telnetIAC   = 255
@@ -205,25 +203,22 @@ outOfBandQuotePrefix = "#$\""
 maxQueueLength :: Int
 maxQueueLength = 128
 
-binaryReadSize :: Int
-binaryReadSize = 1024
-
 type ConnectionName = STM String
-type ConnectionHandler = ConnectionName -> Handle -> IO ()
+type ConnectionHandler = ConnectionName -> (Producer ByteString IO (),
+                                            Consumer ByteString IO ()) -> IO ()
 
 connectionHandler :: TVar World -> ObjId -> Bool -> ConnectionHandler
-connectionHandler world' object printMessages connectionName handle = do
-  hSetBuffering handle LineBuffering  -- (BlockBuffering Nothing)
-  hSetNewlineMode handle NewlineMode { inputNL = CRLF, outputNL = CRLF }
-
-  encoding <- atomically $ connectionEncoding `fmap` readTVar world'
-  hSetEncoding handle encoding  -- XXX is there a better approach?
-
+connectionHandler world' object printMessages connectionName (input, output) =
   bracket newConnection deleteConnection $ \conn -> do
-    forkIO $ connectionRead  handle conn
-    forkIO $ connectionWrite handle conn
+    forkIO $ runConnection object printMessages conn
 
-    runConnection object printMessages conn
+    forkIO $ do
+      try (runEffect $ input >-> connectionRead conn) >>=
+        either (\err -> let _ = err :: SomeException in return ()) return
+      atomically $ closeTBMQueue (connectionOutput conn)
+
+    runEffect $ connectionWrite conn >-> output
+    atomically $ closeTBMQueue (connectionInput conn)
 
   where newConnection :: IO Connection
         newConnection = do
@@ -277,31 +272,84 @@ connectionHandler world' object printMessages connectionName handle = do
             world { connections = M.delete connectionId (connections world) }
 
 runConnection :: ObjId -> Bool -> Connection -> IO ()
-runConnection object printMessages conn = do
-  atomically read
-  return ()
+runConnection object printMessages conn = echoLines
 
-  where read  = readTBMQueue  (connectionInput  conn)
+  where echoLines = do
+          input <- atomically read
+          case input of
+            Just (Line line) -> do
+              atomically (write $ Line line)
+              echoLines
+            Just (Binary _) -> echoLines
+            Nothing -> return ()
+
+        read  = readTBMQueue  (connectionInput  conn)
         write = writeTBMQueue (connectionOutput conn)
 
 -- | Connection reading thread: deliver messages from the network to our input
 -- 'TBMQueue' until EOF, handling binary mode and the flush command, if any.
-connectionRead :: Handle -> Connection -> IO ()
-connectionRead h conn = connectionRead' `finally` closeQueues
-  where connectionRead' = do
-          eof <- hIsEOF h
-          unless eof $ do
-            options <- atomically $ readTVar (connectionOptions conn)
-            if optionBinaryMode options
-              then enqueue =<< InputBinary `fmap` hGetSome h binaryReadSize
-              else do line <- hGetLine h
-                      let flushCmd = optionFlushCommand options
-                      if not (T.null flushCmd) && line == flushCmd
-                        then flushQueue
-                        else enqueue (InputLine $ sanitize line)
-            connectionRead'
+connectionRead :: Connection -> Consumer ByteString IO ()
+connectionRead conn = do
+  (outputLines,    inputLines)    <- lift $ spawn Unbounded
+  (outputMessages, inputMessages) <- lift $ spawn Unbounded
 
-        enqueue :: InputMessage -> IO ()
+  lift $ forkIO $ runEffect $
+    fromInput inputLines >->
+    readUtf8 >-> readLines >-> sanitize >-> lineMessage >->
+    toOutput outputMessages
+
+  lift $ forkIO $ runEffect $ fromInput inputMessages >-> deliverMessages
+
+  forever $ do
+    bytes <- await
+    options <- lift $ atomically $ readTVar (connectionOptions conn)
+    lift $ atomically $
+      if optionBinaryMode options
+      then send outputMessages (Binary bytes)
+      else send outputLines bytes
+
+  where readUtf8 :: Monad m => Pipe ByteString Text m ()
+        readUtf8 = await >>= readUtf8' . streamDecodeUtf8With lenientDecode
+          where readUtf8' (Some text _ continue) = do
+                  unless (T.null text) $ yield text
+                  await >>= readUtf8' . continue
+
+        readLines :: Monad m => Pipe Text Text m ()
+        readLines = readLines' TL.empty
+          where readLines' prev = await >>= yieldLines prev >>= readLines'
+
+                yieldLines :: Monad m => TL.Text -> Text ->
+                              Pipe Text Text m TL.Text
+                yieldLines prev text =
+                  let concatenate = TL.append prev . TL.fromStrict
+                      (end, rest) = T.break (== '\n') text
+                      line  = TL.toStrict (concatenate end)
+                      line' = if not (T.null line) && T.last line == '\r'
+                              then T.init line else line
+                  in if T.null rest
+                     then return $ concatenate text
+                     else do
+                       yield line'
+                       yieldLines TL.empty (T.tail rest)
+
+        sanitize :: Monad m => Pipe Text Text m ()
+        sanitize = for cat (yield . T.filter validStrChar)
+
+        lineMessage :: Monad m => Pipe Text ConnectionMessage m ()
+        lineMessage = for cat (yield . Line)
+
+        deliverMessages :: Consumer ConnectionMessage IO ()
+        deliverMessages = forever $ do
+          message <- await
+          case message of
+            Line line -> do
+              options <- lift $ atomically $ readTVar (connectionOptions conn)
+              let flushCmd = optionFlushCommand options
+              lift $ if not (T.null flushCmd) && line == flushCmd
+                     then flushQueue else enqueue message
+            Binary _ -> lift $ enqueue message
+
+        enqueue :: ConnectionMessage -> IO ()
         enqueue = atomically . writeTBMQueue (connectionInput conn)
 
         flushQueue :: IO ()
@@ -312,32 +360,39 @@ connectionRead h conn = connectionRead' `finally` closeQueues
                     Just _  -> flushQueue'
                     Nothing -> return ()
 
-        sanitize :: Text -> Text
-        sanitize = T.filter validStrChar
-
-        closeQueues = atomically $ do
-          closeTBMQueue (connectionInput  conn)
-          closeTBMQueue (connectionOutput conn)
-
 -- | Connection writing thread: deliver messages from our output 'TBMQueue' to
 -- the network until the queue is closed, which is our signal to close the
 -- connection.
-connectionWrite :: Handle -> Connection -> IO ()
-connectionWrite h conn = connectionWrite'
-  where connectionWrite' = do
-          message <- atomically $ readTBMQueue (connectionOutput conn)
-          case message of
-            Just (OutputLine text)    -> hPutStrLn h text  >> connectionWrite'
-            Just (OutputBinary bytes) -> hPut      h bytes >> connectionWrite'
-            Just  OutputFlush         -> hFlush    h       >> connectionWrite'
-            Nothing                   -> hClose    h
+connectionWrite :: Connection -> Producer ByteString IO ()
+connectionWrite conn = do
+  (outputBinary, inputBinary, sealBinary) <- lift $ spawn' Unbounded
+  (outputLines,  inputLines,  sealLines)  <- lift $ spawn' Unbounded
 
-defaultConnectionEncoding :: IO TextEncoding
-defaultConnectionEncoding = do
-  result <- try $ mkTextEncoding "UTF-8//IGNORE"
-  case result of
-    Left err | isDoesNotExistError err || otherwise -> return utf8
-    Right enc -> return enc
+  lift $ forkIO $ do
+    runEffect $ fromInput inputLines >-> writeLines >-> writeUtf8 >->
+      toOutput outputBinary
+    atomically sealBinary
+
+  lift $ forkIO $ processQueue outputLines outputBinary sealLines
+
+  fromInput inputBinary
+
+  where writeLines :: Monad m => Pipe Text Text m ()
+        writeLines = forever $ await >>= yield >> yield "\r\n"
+
+        writeUtf8 :: Monad m => Pipe Text ByteString m ()
+        writeUtf8 = for cat (yield . encodeUtf8)
+
+        processQueue :: Output Text -> Output ByteString -> STM () -> IO ()
+        processQueue outputLines outputBinary sealLines = loop
+          where loop = do
+                  message <- atomically $ readTBMQueue (connectionOutput conn)
+                  case message of
+                    Just (Line text) ->
+                      atomically (send outputLines  text)  >> loop
+                    Just (Binary bytes) ->
+                      atomically (send outputBinary bytes) >> loop
+                    Nothing -> atomically sealLines
 
 -- | The first un-logged-in connection ID. Avoid conflicts with #-1
 -- ($nothing), #-2 ($ambiguous_match), and #-3 ($failed_match).
@@ -367,7 +422,7 @@ withMaybeConnection oid f = withConnections $ f . M.lookup oid
 withConnection :: ObjId -> (Connection -> MOO a) -> MOO a
 withConnection oid = withMaybeConnection oid . maybe (raise E_INVARG)
 
-enqueueOutput :: Bool -> Connection -> OutputMessage -> STM Bool
+enqueueOutput :: Bool -> Connection -> ConnectionMessage -> STM Bool
 enqueueOutput noFlush conn message = do
   let queue = connectionOutput conn
   result <- tryWriteTBMQueue queue message
@@ -385,8 +440,8 @@ notify' noFlush who what = do
   withMaybeConnection who . maybe (return True) $ \conn -> do
     options <- liftSTM $ readTVar (connectionOptions conn)
     message <- if optionBinaryMode options
-               then OutputBinary `fmap` binaryString what
-               else return (OutputLine $ Str.toText what)
+               then Binary `fmap` binaryString what
+               else return (Line $ Str.toText what)
     liftSTM $ enqueueOutput noFlush conn message
 
 -- | Send data to a connection, flushing if necessary.

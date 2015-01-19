@@ -7,9 +7,8 @@ module MOO.Network.TCP (
 import Control.Concurrent (forkIO, killThread)
 import Control.Concurrent.STM (STM, TMVar, newEmptyTMVarIO, atomically,
                                putTMVar, readTMVar)
-import Control.Exception (SomeException, mask, try, finally,
-                          bracket, bracketOnError)
-import Control.Monad (liftM)
+import Control.Exception (SomeException, mask, try, finally, bracketOnError)
+import Control.Monad (liftM, forever)
 import Data.Maybe (fromMaybe)
 import Network.Socket (PortNumber, Socket, SockAddr, SocketOption(..),
                        Family(AF_INET6), SocketType(Stream),
@@ -17,11 +16,14 @@ import Network.Socket (PortNumber, Socket, SockAddr, SocketOption(..),
                        HostName, ServiceName, maxListenQueue,
                        defaultHints, getAddrInfo, setSocketOption,
                        socket, bind, listen, accept, close,
-                       getNameInfo, socketPort, socketToHandle)
-import System.IO (IOMode(ReadWriteMode), hClose)
+                       getNameInfo, socketPort)
+import Pipes.Network.TCP (fromSocket, toSocket)
 
 import {-# SOURCE #-} MOO.Network (Point(..), Listener(..))
 import MOO.Connection (ConnectionHandler)
+
+maxBufferSize :: Int
+maxBufferSize = 1024
 
 serverAddrInfo :: PortNumber -> IO [AddrInfo]
 serverAddrInfo port =
@@ -56,12 +58,11 @@ createTCPListener listener handler = do
       }
 
 acceptConnections :: Socket -> ConnectionHandler -> IO ()
-acceptConnections sock handler = do
-  mask $ \restore -> do
+acceptConnections sock handler =
+  forever $ mask $ \restore -> do
     (conn, addr) <- accept sock
     forkIO $ restore (serveConnection conn addr handler) `finally`
       (try $ close conn :: IO (Either SomeException ()))
-  acceptConnections sock handler
 
 serveConnection :: Socket -> SockAddr -> ConnectionHandler -> IO ()
 serveConnection sock peerAddr connectionHandler = do
@@ -76,8 +77,10 @@ serveConnection sock peerAddr connectionHandler = do
         return $ "port " ++ show localPort ++ " from " ++
           peerHost ++ ", port " ++ addrPort peerName
 
-  bracket (socketToHandle sock ReadWriteMode) hClose $
-    connectionHandler connectionName
+      input  = fromSocket sock maxBufferSize
+      output = toSocket   sock
+
+  connectionHandler connectionName (input, output)
 
 data AddrName = AddrName {
     addrHostName :: TMVar (Maybe HostName)

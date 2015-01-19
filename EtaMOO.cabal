@@ -119,10 +119,13 @@ executable etamoo
                      , network
                      , old-locale
                      , parsec
+                     , pipes
+                     , pipes-concurrency
+                     , pipes-network
                      , random
                      , stm
                      , stm-chans
-                     , text
+                     , text >= 1.2
                      , time
                      , unix
                      , unordered-containers

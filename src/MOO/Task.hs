@@ -141,7 +141,6 @@ import Data.Maybe (isNothing, fromMaybe, fromJust)
 import Data.Monoid (Monoid(mempty, mappend), (<>))
 import Data.Time (UTCTime, getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import System.IO (TextEncoding)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (nanosleep)
 import System.Random (Random, StdGen, newStdGen, mkStdGen, split,
@@ -183,8 +182,6 @@ data World = World {
   , nextConnectionId   :: ObjId
     -- ^ The (negative) object number to be assigned to the next inbound or
     -- outbound connection
-  , connectionEncoding :: TextEncoding
-    -- ^ The default 'TextEncoding' to use with network connections
   }
 
 initWorld = World {
@@ -195,16 +192,10 @@ initWorld = World {
   , connections        = M.empty
 
   , nextConnectionId   = firstConnectionId
-  , connectionEncoding = undefined
   }
 
 newWorld :: Database -> IO (TVar World)
-newWorld db = do
-  enc <- defaultConnectionEncoding
-  newTVarIO initWorld {
-      database           = db
-    , connectionEncoding = enc
-    }
+newWorld db = newTVarIO initWorld { database = db }
 
 -- | A structure representing a queued or running task
 data Task = Task {
