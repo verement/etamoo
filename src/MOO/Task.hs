@@ -242,11 +242,10 @@ instance Ord Task where
 
 type TaskId = Int32
 
--- | Generate and return a (random) 'TaskId' not currently in use by any
--- existing task.
-newTaskId :: World -> StdGen -> STM TaskId
-newTaskId world = return . fromJust . find unused . randomRs (1, maxBound)
-  where unused taskId = M.notMember taskId (tasks world)
+-- | Generate a (random) 'TaskId' not currently in use by any existing task.
+newTaskId :: World -> StdGen -> TaskId
+newTaskId world = fromJust . find unused . randomRs (1, maxBound)
+  where unused = (`M.notMember` tasks world)
 
 -- | Create a pending 'Task' for the given computation on behalf of the given
 -- player. A new 'TaskId' is reserved for the task and the task is added to
@@ -258,9 +257,9 @@ newTask world' player comp = do
 
   atomically $ do
     world <- readTVar world'
-    taskId <- newTaskId world gen
 
-    let task = initTask {
+    let taskId = newTaskId world gen
+        task = initTask {
             taskId          = taskId
 
           , taskWorld       = world'

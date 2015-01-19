@@ -129,7 +129,7 @@ compileStatements (statement:rest) yield = case statement of
 
       world <- getWorld
       gen <- newRandomGen
-      taskId <- liftSTM $ newTaskId world gen
+      let taskId = newTaskId world gen
       maybe return storeVariable var (Int $ fromIntegral taskId)
 
       forkTask taskId usecs (compileStatements body return)
