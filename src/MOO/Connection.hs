@@ -10,6 +10,7 @@ module MOO.Connection (
 
   , withConnections
   , withConnection
+  , withMaybeConnection
 
   , connectionName
   , connectionConnectedTime
@@ -20,6 +21,7 @@ module MOO.Connection (
   , notify
 
   , forceInput
+  , flushInput
   , bootPlayer
 
   , setConnectionOption
@@ -33,14 +35,15 @@ import Control.Concurrent.STM (STM, TVar,
 import Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueue, closeTBMQueue,
                                         readTBMQueue, writeTBMQueue,
                                         tryReadTBMQueue, tryWriteTBMQueue,
-                                        unGetTBMQueue)
+                                        unGetTBMQueue, isEmptyTBMQueue)
 
 import Control.Exception (SomeException, try, bracket)
-import Control.Monad ((<=<), join, unless, foldM, forever)
+import Control.Monad ((<=<), join, when, unless, foldM, forever, void)
 import Control.Monad.Trans (lift)
 import Data.ByteString (ByteString)
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
+import Data.Monoid ((<>))
 import Data.Text (Text)
 import Data.Text.Encoding (Decoding(..), encodeUtf8, streamDecodeUtf8With)
 import Data.Text.Encoding.Error (lenientDecode)
@@ -360,12 +363,7 @@ connectionRead conn = do
         enqueue = atomically . writeTBMQueue (connectionInput conn)
 
         flushQueue :: IO ()
-        flushQueue = atomically flushQueue'
-          where flushQueue' = do
-                  item <- join `fmap` tryReadTBMQueue (connectionInput conn)
-                  case item of
-                    Just _  -> flushQueue'
-                    Nothing -> return ()
+        flushQueue = atomically $ flushInput True conn
 
 -- | Connection writing thread: deliver messages from our output 'TBMQueue' to
 -- the network until the queue is closed, which is our signal to close the
@@ -465,6 +463,29 @@ forceInput atFront oid line =
       if atFront then unGetTBMQueue queue message >> return True
       else fromMaybe True `fmap` tryWriteTBMQueue queue message
     unless success $ raise E_QUOTA
+
+-- | Flush a connection's input queue, optionally showing what was flushed.
+flushInput :: Bool -> Connection -> STM ()
+flushInput showMessages conn = do
+  let queue  = connectionInput conn
+      notify = when showMessages . void . enqueueOutput False conn . Line
+  empty <- isEmptyTBMQueue queue
+  if empty then notify ">> No pending input to flush..."
+    else do notify ">> Flushing the following pending input:"
+            flushQueue queue notify
+            notify ">> (Done flushing)"
+
+    where flushQueue queue notify = loop
+            where loop = do
+                    item <- join `fmap` tryReadTBMQueue queue
+                    case item of
+                      Just (Line line) -> do
+                        notify $ ">>     " <> line
+                        loop
+                      Just (Binary _)  -> do
+                        notify   ">>   * [binary data]"
+                        loop
+                      Nothing -> return ()
 
 -- | Close a connection.
 bootPlayer :: ObjId -> MOO ()

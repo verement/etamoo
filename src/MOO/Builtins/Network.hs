@@ -89,8 +89,13 @@ bf_force_input = Builtin "force_input" 2 (Just 3) [TObj, TStr, TAny]
   return zero
 
 bf_flush_input = Builtin "flush_input" 1 (Just 2)
-                 [TObj, TAny] TAny $ \(Obj conn : optional) ->
-  notyet "flush_input"
+                 [TObj, TAny] TAny $ \(Obj conn : optional) -> do
+  let [show_messages] = booleanDefaults optional [False]
+
+  checkPermission conn
+  withMaybeConnection conn $ maybe (return ()) $
+    liftSTM . flushInput show_messages
+  return zero
 
 bf_output_delimiters = Builtin "output_delimiters" 1 (Just 1)
                        [TObj] TLst $ \[Obj player] -> do
