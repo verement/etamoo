@@ -302,6 +302,10 @@ connectionRead conn = do
 
   forever $ do
     bytes <- await
+
+    lift $ getCurrentTime >>=
+      atomically . writeTVar (connectionActivityTime conn)
+
     options <- lift $ atomically $ readTVar (connectionOptions conn)
     lift $ atomically $
       if optionBinaryMode options
