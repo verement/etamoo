@@ -74,8 +74,16 @@ bf_notify = Builtin "notify" 2 (Just 3)
   truthValue `liftM` notify' no_flush conn string
 
 bf_buffered_output_length = Builtin "buffered_output_length" 0 (Just 1)
-                            [TObj] TInt $ \optional ->
-  notyet "buffered_output_length"
+                            [TObj] TInt $ \optional -> do
+  let (conn : _) = maybeDefaults optional
+
+  len <- case conn of
+    Just (Obj oid) -> do
+      checkPermission oid
+      withConnection oid $ liftSTM . bufferedOutputLength . Just
+    Nothing -> liftSTM $ bufferedOutputLength Nothing
+
+  return (Int $ fromIntegral len)
 
 bf_read = Builtin "read" 0 (Just 2) [TObj, TAny] TAny $ \optional ->
   notyet "read"

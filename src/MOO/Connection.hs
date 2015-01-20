@@ -20,6 +20,7 @@ module MOO.Connection (
   , notify'
   , notify
 
+  , bufferedOutputLength
   , forceInput
   , flushInput
   , bootPlayer
@@ -35,8 +36,8 @@ import Control.Concurrent.STM (STM, TVar,
 import Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueue, closeTBMQueue,
                                         readTBMQueue, writeTBMQueue,
                                         tryReadTBMQueue, tryWriteTBMQueue,
-                                        unGetTBMQueue, isEmptyTBMQueue)
-
+                                        unGetTBMQueue, isEmptyTBMQueue,
+                                        freeSlotsTBMQueue)
 import Control.Exception (SomeException, try, bracket)
 import Control.Monad ((<=<), join, when, unless, foldM, forever, void)
 import Control.Monad.Trans (lift)
@@ -452,6 +453,14 @@ notify' noFlush who what = do
 -- | Send data to a connection, flushing if necessary.
 notify :: ObjId -> StrT -> MOO Bool
 notify = notify' False
+
+-- | Return the number of items currently buffered for output to a connection,
+-- or the maximum number of items that will be buffered up for output on any
+-- connection.
+bufferedOutputLength :: Maybe Connection -> STM Int
+bufferedOutputLength Nothing     = return maxQueueLength
+bufferedOutputLength (Just conn) =
+  (maxQueueLength -) `fmap` freeSlotsTBMQueue (connectionOutput conn)
 
 -- | Force a line of input for a connection.
 forceInput :: Bool -> ObjId -> StrT -> MOO ()
