@@ -19,6 +19,7 @@ module MOO.Connection (
   , notify'
   , notify
 
+  , forceInput
   , bootPlayer
 
   , setConnectionOption
@@ -31,13 +32,15 @@ import Control.Concurrent.STM (STM, TVar,
                                readTVar, writeTVar, modifyTVar)
 import Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueue, closeTBMQueue,
                                         readTBMQueue, writeTBMQueue,
-                                        tryReadTBMQueue, tryWriteTBMQueue)
+                                        tryReadTBMQueue, tryWriteTBMQueue,
+                                        unGetTBMQueue)
 
 import Control.Exception (SomeException, try, bracket)
 import Control.Monad ((<=<), join, unless, foldM, forever)
 import Control.Monad.Trans (lift)
 import Data.ByteString (ByteString)
 import Data.Map (Map)
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text.Encoding (Decoding(..), encodeUtf8, streamDecodeUtf8With)
 import Data.Text.Encoding.Error (lenientDecode)
@@ -451,6 +454,17 @@ notify' noFlush who what = do
 -- | Send data to a connection, flushing if necessary.
 notify :: ObjId -> StrT -> MOO Bool
 notify = notify' False
+
+-- | Force a line of input for a connection.
+forceInput :: Bool -> ObjId -> StrT -> MOO ()
+forceInput atFront oid line =
+  withConnection oid $ \conn -> do
+    let queue   = connectionInput conn
+        message = Line (Str.toText line)
+    success <- liftSTM $
+      if atFront then unGetTBMQueue queue message >> return True
+      else fromMaybe True `fmap` tryWriteTBMQueue queue message
+    unless success $ raise E_QUOTA
 
 -- | Close a connection.
 bootPlayer :: ObjId -> MOO ()

@@ -80,9 +80,13 @@ bf_buffered_output_length = Builtin "buffered_output_length" 0 (Just 1)
 bf_read = Builtin "read" 0 (Just 2) [TObj, TAny] TAny $ \optional ->
   notyet "read"
 
-bf_force_input = Builtin "force_input" 2 (Just 3)
-                 [TObj, TStr, TAny] TAny $ \(Obj conn : Str line : optional) ->
-  notyet "force_input"
+bf_force_input = Builtin "force_input" 2 (Just 3) [TObj, TStr, TAny]
+                 TAny $ \(Obj conn : Str line : optional) -> do
+  let [at_front] = booleanDefaults optional [False]
+
+  checkPermission conn
+  forceInput at_front conn line
+  return zero
 
 bf_flush_input = Builtin "flush_input" 1 (Just 2)
                  [TObj, TAny] TAny $ \(Obj conn : optional) ->
