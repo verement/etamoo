@@ -146,7 +146,6 @@ import System.Posix (nanosleep)
 import System.Random (Random, StdGen, newStdGen, mkStdGen, split,
                       randomR, randomRs)
 
-import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import qualified Data.Text as T
 
@@ -1314,7 +1313,7 @@ checkRecurrence relation subject = checkRecurrence'
 -- | Translate a MOO /binary string/ into a Haskell 'ByteString', raising
 -- 'E_INVARG' if the MOO string is improperly formatted.
 binaryString :: StrT -> MOO ByteString
-binaryString = maybe (raise E_INVARG) (return . BS.pack) . string2bytes
+binaryString = maybe (raise E_INVARG) return . Str.toBinary
 
 -- | Generate and return a pseudorandom number in the given range, modifying
 -- the local generator state.

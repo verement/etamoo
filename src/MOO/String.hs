@@ -5,9 +5,11 @@ module MOO.String (
 
   -- * Creation and elimination
   , fromText
+  , fromBinary
+  , fromString
   , toText
   , toCaseFold
-  , fromString
+  , toBinary
   , toString
   , toRegexp
   , singleton
@@ -44,22 +46,28 @@ module MOO.String (
   , unwords
 
   -- * Predicates
+  , validChar
   , isPrefixOf
 
   -- * Indexing
   , index
   ) where
 
+import Data.ByteString (ByteString)
+import Data.Char (isAscii, isPrint, isHexDigit, digitToInt, intToDigit)
 import Data.Function (on)
 import Data.Hashable (Hashable(..))
 import Data.Monoid (Monoid(..))
 import Data.String (IsString(..))
 import Data.Text (Text)
+import Data.Word (Word8)
 import Foreign.Storable (sizeOf)
 import Prelude hiding (tail, null, length, concat, concatMap, take, drop,
                        splitAt, break, words, unwords)
 
+import qualified Data.ByteString as BS
 import qualified Data.Text as T
+import qualified Prelude
 
 import MOO.Builtins.Match (Regexp, newRegexp)
 
@@ -68,6 +76,7 @@ type CompiledRegexp = Either (String, Int) Regexp
 data MOOString = MOOString {
     toText         :: Text
   , toCaseFold     :: Text
+  , toBinary       :: Maybe ByteString
   , length         :: Int
   , regexp         :: CompiledRegexp
   , regexpCaseless :: CompiledRegexp
@@ -97,10 +106,14 @@ fromText :: Text -> MOOString
 fromText text = MOOString {
     toText         = text
   , toCaseFold     = caseFold text
+  , toBinary       = decodeBinary text
   , length         = T.length text
   , regexp         = newRegexp text True
   , regexpCaseless = newRegexp text False
   }
+
+fromBinary :: ByteString -> MOOString
+fromBinary bytes = (fromText $ encodeBinary bytes) { toBinary = Just bytes }
 
 toString :: MOOString -> String
 toString = T.unpack . toText
@@ -117,6 +130,45 @@ caseFold text
   | text == folded = text
   | otherwise      = folded
   where folded = T.toCaseFold text
+
+-- | Encode a MOO /binary string/.
+encodeBinary :: ByteString -> Text
+encodeBinary = T.pack . Prelude.concatMap encode . BS.unpack
+  where encode :: Word8 -> String
+        encode b
+          | isAscii c && isPrint c && c /= '~' = [c]
+          | otherwise                          = ['~', hex q, hex r]
+          where n      = fromIntegral b
+                c      = toEnum n
+                (q, r) = n `divMod` 16
+                hex    = intToDigit
+
+-- | Decode a MOO /binary string/ or return 'Nothing' if the string is
+-- improperly formatted.
+decodeBinary :: Text -> Maybe ByteString
+decodeBinary = fmap BS.pack . decode . T.unpack
+  where decode :: String -> Maybe [Word8]
+        decode ('~':q:r:rest) = do
+          q' <- fromHex q
+          r' <- fromHex r
+          let b = 16 * q' + r'
+          (b :) `fmap` decode rest
+        decode ('~':_) = Nothing
+        decode (c:rest)
+          | isAscii c && isPrint c = (b :) `fmap` decode rest
+          | otherwise              = Nothing
+          where b = fromIntegral (fromEnum c)
+        decode [] = return []
+
+        fromHex :: Char -> Maybe Word8
+        fromHex c
+          | isHexDigit c = Just b
+          | otherwise    = Nothing
+          where b = fromIntegral (digitToInt c)
+
+-- | May the given character appear in a MOO string?
+validChar :: Char -> Bool
+validChar c = isAscii c && (isPrint c || c == '\t')
 
 singleton :: Char -> MOOString
 singleton = fromText . T.singleton

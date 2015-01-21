@@ -3,15 +3,18 @@
 
 module MOO.Builtins.Values ( builtins ) where
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (mplus, unless, liftM, (>=>))
 import Data.ByteString (ByteString)
-import Data.Char (intToDigit, isDigit)
+import Data.Char (isDigit)
 import Data.Digest.Pure.MD5 (MD5Digest)
 import Data.Maybe (fromJust)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
+import Data.Word (Word8)
 import Text.Printf (printf)
 
+import qualified Data.ByteString as BS
 import qualified Data.Digest.Pure.MD5 as MD5
 import qualified Data.Vector as V
 import qualified Data.Text as T
@@ -276,14 +279,14 @@ bf_decode_binary = Builtin "decode_binary" 1 (Just 2)
   let [fully] = booleanDefaults optional [False]
       mkResult | fully     = fromListBy (Int . fromIntegral)
                | otherwise = fromList . groupPrinting ("" ++)
-  in maybe (raise E_INVARG) (return . mkResult) $ string2bytes bin_string
+  in (mkResult . BS.unpack) `liftM` binaryString bin_string
 
   where groupPrinting :: (String -> String) -> [Word8] -> [Value]
         groupPrinting g (w:ws)
-          | validStrChar c = groupPrinting (g [c] ++) ws
-          | null group     = Int (fromIntegral w) : groupPrinting g ws
-          | otherwise      = Str (Str.fromString group) : Int (fromIntegral w) :
-                             groupPrinting ("" ++) ws
+          | Str.validChar c = groupPrinting (g [c] ++) ws
+          | null group      = Int (fromIntegral w) : groupPrinting g ws
+          | otherwise       = Str (Str.fromString group) :
+                              Int (fromIntegral w) : groupPrinting ("" ++) ws
           where c = toEnum (fromIntegral w)
                 group = g ""
         groupPrinting g []
@@ -292,30 +295,27 @@ bf_decode_binary = Builtin "decode_binary" 1 (Just 2)
           where group = g ""
 
 bf_encode_binary = Builtin "encode_binary" 0 Nothing [] TStr $
-                   liftM (Str . Str.fromString) . encodeBinary
+                   liftM (Str . Str.fromBinary) . encodeBinary
 
-encodeBinary :: [Value] -> MOO String
-encodeBinary (Int n : args)
-  | n >= 0 && n <= 255 = prepend `liftM` encodeBinary args
-  | otherwise          = raise E_INVARG
-  where n'     = fromIntegral n
-        c      = toEnum n'
-        (q, r) = n' `divMod` 16
-        prepend | validStrChar c &&
-                  c /= '~' && c /= '\t' = (c :)
-                | otherwise             = \rest -> '~' : hex q : hex r : rest
-        hex = intToDigit  -- N.B. not uppercase
-encodeBinary (Str str : args) = (encodeStr (Str.toString str) ++) `liftM`
-                                encodeBinary args
-  where encodeStr ('~' :cs) = "~7e" ++ encodeStr cs
-        encodeStr ('\t':cs) = "~09" ++ encodeStr cs
-        encodeStr (c   :cs) = c     :  encodeStr cs
-        encodeStr ""        = ""
-encodeBinary (Lst list : args) = do
-  listEncoding <- encodeBinary (V.toList list)
-  (listEncoding ++) `liftM` encodeBinary args
-encodeBinary (_:_) = raise E_INVARG
-encodeBinary []    = return ""
+encodeBinary :: [Value] -> MOO ByteString
+encodeBinary = maybe (raise E_INVARG) (return . BS.pack) . encode
+  where encode :: [Value] -> Maybe [Word8]
+        encode (Int n : rest)
+          | n >= 0 && n <= 255 = (fromIntegral n :)           <$> encode rest
+          | otherwise          = Nothing
+        encode (Str s : rest)  = (++) <$> encodeStr s         <*> encode rest
+        encode (Lst v : rest)  = (++) <$> encode (V.toList v) <*> encode rest
+        encode (_     : _   )  = Nothing
+        encode []              = Just []
+
+        encodeStr :: StrT -> Maybe [Word8]
+        encodeStr = mapM encodeChar . Str.toString
+
+        encodeChar :: Char -> Maybe Word8
+        encodeChar c
+          | n >= 0 && n <= 255 = Just (fromIntegral n)
+          | otherwise          = Nothing
+          where n = fromEnum c
 
 matchBuiltin :: Id -> (Regexp -> Text -> MatchResult) -> Builtin
 matchBuiltin name matchFunc = Builtin name 2 (Just 3) [TStr, TStr, TAny]

@@ -344,7 +344,7 @@ connectionRead conn = do
                        yieldLines TL.empty (T.tail rest)
 
         sanitize :: Monad m => Pipe Text Text m ()
-        sanitize = for cat (yield . T.filter validStrChar)
+        sanitize = for cat (yield . T.filter Str.validChar)
 
         lineMessage :: Monad m => Pipe Text ConnectionMessage m ()
         lineMessage = for cat (yield . Line)

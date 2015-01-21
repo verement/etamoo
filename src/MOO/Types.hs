@@ -47,9 +47,6 @@ module MOO.Types (
   , toLiteral
   , error2text
 
-  , string2bytes
-  , Word8
-
   -- * List Convenience Functions
   , fromList
   , fromListBy
@@ -61,7 +58,6 @@ module MOO.Types (
   , listDelete
 
   -- * Miscellaneous
-  , validStrChar
   , endOfTime
 
   -- * Estimating Haskell Storage Sizes
@@ -73,7 +69,6 @@ import Control.Concurrent (ThreadId)
 import Control.Concurrent.STM (TVar)
 import Control.Monad (liftM)
 import Data.CaseInsensitive (CI)
-import Data.Char (isAscii, isPrint, isDigit)
 import Data.HashMap.Strict (HashMap)
 import Data.Int (Int32, Int64)
 import Data.IntSet (IntSet)
@@ -83,7 +78,6 @@ import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Vector (Vector)
-import Data.Word (Word8)
 import Foreign.Storable (sizeOf)
 import System.Random (StdGen)
 
@@ -388,34 +382,6 @@ error2text E_NACC    = "Move refused by destination"
 error2text E_INVARG  = "Invalid argument"
 error2text E_QUOTA   = "Resource limit exceeded"
 error2text E_FLOAT   = "Floating-point arithmetic error"
-
--- | Parse a MOO /binary string/ and return the corresponding byte values, or
--- 'Nothing' if the string is improperly formatted.
-string2bytes :: StrT -> Maybe [Word8]
-string2bytes = translate . Str.toString
-  where translate ('~':x:y:rs) = do
-          xv <- hexValue x
-          yv <- hexValue y
-          let b = 16 * xv + yv
-          bs <- translate rs
-          return (b:bs)
-        translate ('~':_) = Nothing
-        translate (c:cs) = do  -- XXX Unicode
-          let b = fromIntegral $ fromEnum c
-          bs <- translate cs
-          return (b:bs)
-        translate [] = return []
-
-        hexValue x
-          | isDigit x            = Just $      distance '0' x
-          | x >= 'a' && x <= 'f' = Just $ 10 + distance 'a' x
-          | x >= 'A' && x <= 'F' = Just $ 10 + distance 'A' x
-          | otherwise            = Nothing
-          where distance c0 c1 = fromIntegral $ fromEnum c1 - fromEnum c0
-
--- | May the given character appear in a valid MOO string?
-validStrChar :: Char -> Bool
-validStrChar c = isAscii c && (isPrint c || c == '\t')
 
 -- | Turn a Haskell list into a MOO list.
 fromList :: [Value] -> Value
