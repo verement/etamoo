@@ -188,7 +188,7 @@ data World = World {
     -- outbound connection
 
   , outboundNetwork    :: Bool
-    -- ^ Is open_network_connection() enabled?
+    -- ^ Is @open_network_connection()@ enabled?
   , bindAddress        :: Maybe HostName
     -- ^ Interface address to bind to for incoming connections
 

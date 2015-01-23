@@ -286,9 +286,18 @@ definedVerbs obj = do
   verbs <- mapM (readTVar . snd) $ objectVerbs obj
   return $ map verbNames verbs
 
--- | Special object numbers
-systemObject, nothing, ambiguousMatch, failedMatch :: ObjId
-systemObject   =  0
-nothing        = -1
+-- | The system object (@#0@)
+systemObject :: ObjId
+systemObject = 0
+
+-- | @$nothing@ (@#-1@)
+nothing :: ObjId
+nothing = -1
+
+-- | @$ambiguous_match@ (@#-2@)
+ambiguousMatch :: ObjId
 ambiguousMatch = -2
-failedMatch    = -3
+
+-- | @$failed_match@ (@#-3@)
+failedMatch :: ObjId
+failedMatch = -3
