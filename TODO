@@ -1,0 +1,75 @@
+-*- Outline -*-
+
+* § 3 The Built-in Command Parser
+** hold-input connection option
+** .program built-in command
+** L.do_command() suspending?
+   - re-examine all possible results
+* § 4 The MOO Programming Language
+** § 4.4 Built-in Functions
+*** § 4.4.4 Operations on Network Connections
+**** read()
+**** open_network_connection()
+**** hold-input
+*** § 4.4.7 Administrative Operations
+**** dump_database()
+**** server_log()
+**** renumber()
+*** § 4.4.8 Server Statistics and Miscellaneous Information
+**** db_disk_size()
+**** verb_cache_stats()
+**** log_cache_stats()
+* § 5 Server Commands and Database Assumptions
+** § 5.1 Command Lines That Receive Special Treatment
+*** § 5.1.5 The .program Command
+**** .program
+** § 5.2 Server Assumptions About the Database
+*** § 5.2.2 Server Messages Set in the Databas
+**** redirect_from_msg
+**** server_full_msg
+**** timeout_msg
+*** § 5.2.3 Checkpointing the Database
+**** $dump_interval
+**** $checkpoint_started()
+**** $checkpoint_finished()
+*** § 5.2.6 Player Input Handlers
+**** $do_command exceptions
+*** § 5.2.7 The First Tasks Run By the Server
+**** $dump_interval
+**** $user_disconnected()
+*** § 5.2.8 Controlling the Execution of Tasks
+**** $server_options.{fg,bg}_{seconds,ticks}
+**** $server_options.max_stack_depth
+**** $server_options.queued_task_limit
+*** § 5.2.11 Restricting Access to Built-in Properties and Functions
+**** $server_options.protect_/prop/
+     - IGNORE_PROP_PROTECTED
+**** $server_options.protect_/func/
+     - $bf_/func/()
+*** § 5.2.14 Temporarily Enabling Obsolete Server Features
+**** $server_options.support_numeric_verbname_strings
+* Other
+** Gather constants into a single location?
+   - oob prefix, default port, etc.
+** Emergency Wizard Mode
+** Fix 'off/off of' preposition problem
+** Database dumps
+** L.server_options.connect_timeout
+** $user_disconnected() on db users
+** MOO string and list size limits?
+** Logging support
+** Finish built-in function implementations
+** Top-level Haskell exception handling
+** Read and write queued tasks and active connections
+** Intern strings on parsing and database load
+** Rewrite database reading using Attoparsec
+** Rewrite parser using Happy
+** Rewrite regexp translator using Writer monad
+** Optimize MOO AST for compilation
+** JIT compilation to LLVM?
+** Use acid-state instead of STM?
+** Use forkIO workaround to solve aborted STM problem
+** Task time limits?
+** queue_info() includes owner of current task?
+** recycle() object which is a target of a listening point
+** PREFIX/SUFFIX on empty input line, uncaught exception

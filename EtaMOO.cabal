@@ -1,6 +1,6 @@
 
 name:                EtaMOO
-version:             0.1.1.0
+version:             0.2.0.0
 
 synopsis:            A new implementation of the LambdaMOO server
 
@@ -16,7 +16,7 @@ description:
   Programmer's Manual, and should be compatible with most LambdaMOO databases
   as of about version 1.8.3 of the LambdaMOO server code.
   .
-  /N.B./ This is (currently) incomplete software. It is not yet usable,
+  /N.B./ This is (currently) incomplete software. It is not yet fully usable,
   although with further development it is hoped that it soon will be.
 
 license:             BSD3

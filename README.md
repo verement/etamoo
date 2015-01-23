@@ -3,19 +3,13 @@ Important!
 ==========
 
 **This is experimental and (currently) incomplete software. It is not yet
-usable, although with further development it is hoped that it soon will be.**
+fully usable, although with further development it is hoped that it soon will
+be.**
 
-_At present, all the code will do is (optionally) load a database file and
-present a REPL interface for running commands and evaluating MOO code from the
-console as if you had connected as a wizard. While most MOO code will run
-correctly, there are still some built-in functions that are not yet
-implemented. Also, notably, there is almost no network functionality, and no
-way to save any changes made to the database. Finally, there has been no
-effort to optimize any performance bottlenecks, of which loading a database is
-at least one._
-
-_Once the code is in at least a minimally useful state, this message will be
-updated or removed._
+_At present, the code will load a database and listen for network
+connections. You can connect using any `telnet` client and interact with the
+MOO environment, however no changes to the database will be saved, and a few
+other features have also yet to be implemented._
 
 About
 =====
@@ -37,13 +31,10 @@ EtaMOO differs from LambdaMOO in a few significant ways:
     also used for network connection management, so for example name lookups
     do not block the entire server.
 
-  * In some cases, MOO values may be computed in a "lazy" manner, meaning the
-    evaluation could be skipped if MOO code never fully inspects the result.
-    This could be beneficial when large list structures are returned from
-    built-in functions, for example.
+  * EtaMOO supports 64-bit MOO integers via compile-time build option.
 
-  * It is anticipated that EtaMOO will easily support 64-bit MOO integers
-    and/or Unicode MOO strings via independent build options.
+  * EtaMOO is Unicode-aware, and will eventually include support for Unicode
+    MOO strings via compile-time build option.
 
   * EtaMOO supports IPv6.
 
