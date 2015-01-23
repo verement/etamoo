@@ -203,7 +203,7 @@ bf_reset_max_object = Builtin "reset_max_object" 0 (Just 0) [] TAny $ \[] -> do
 -- § 4.4.8 Server Statistics and Miscellaneous Information
 
 bf_server_version = Builtin "server_version" 0 (Just 0) [] TStr $ \[] ->
-  return (Str $ Str.fromText serverVersionText)
+  return (Str $ Str.fromText serverVersion)
 
 bf_memory_usage = Builtin "memory_usage" 0 (Just 0) [] TLst $ \[] ->
 # ifdef __GLASGOW_HASKELL__

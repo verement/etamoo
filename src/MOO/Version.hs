@@ -1,18 +1,12 @@
 
-module MOO.Version ( serverVersion
-                   , serverVersionText
-                   ) where
+module MOO.Version ( serverVersion ) where
 
 import Data.Text (Text, pack)
-import Data.Version (Version, showVersion)
+import Data.Version (showVersion)
 
 import Paths_EtaMOO (version)
 
--- | The current version of the server code, as a 'Version' value
-serverVersion :: Version
-serverVersion = version
-
 -- | The current version of the server code, as a displayable 'Text' value
 -- (for use by the @server_version()@ built-in function)
-serverVersionText :: Text
-serverVersionText = pack (showVersion serverVersion)
+serverVersion :: Text
+serverVersion = pack $ "EtaMOO/" ++ showVersion version
