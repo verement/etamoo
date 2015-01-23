@@ -36,7 +36,7 @@ tested-with:         GHC == 7.6.3
 homepage:            http://verement.github.io/etamoo
 bug-reports:         https://github.com/verement/etamoo/issues
 
-extra-source-files:  README.md configure Makefile
+extra-source-files:  README.md
                      src/cbits/crypt.h
                      src/cbits/match.h
 
@@ -104,9 +104,9 @@ executable etamoo
                        OverloadedStrings
                        TypeSynonymInstances
 
+  extra-libraries:     pcre
   if !os(darwin)
     extra-libraries:   crypt
-  extra-libraries:     pcre
 
   if flag(64bit)
     cpp-options:       -DMOO_64BIT_INTEGER
