@@ -17,33 +17,39 @@ module MOO.Connection (
   , connectionActivityTime
   , connectionOutputDelimiters
 
-  , notify'
+  , sendToConnection
+  , closeConnection
+
   , notify
+  , notify'
 
   , bufferedOutputLength
   , forceInput
   , flushInput
+
   , bootPlayer
+  , bootPlayer'
 
   , setConnectionOption
   , getConnectionOptions
   ) where
 
 import Control.Concurrent (forkIO)
-import Control.Concurrent.STM (STM, TVar,
-                               atomically, newTVar,
-                               readTVar, writeTVar, modifyTVar)
+import Control.Concurrent.STM (STM, TVar, TMVar, atomically, newTVar,
+                               newEmptyTMVar, tryPutTMVar, takeTMVar,
+                               readTVar, writeTVar, modifyTVar, swapTVar,
+                               readTVarIO)
 import Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueue, closeTBMQueue,
                                         readTBMQueue, writeTBMQueue,
                                         tryReadTBMQueue, tryWriteTBMQueue,
                                         unGetTBMQueue, isEmptyTBMQueue,
                                         freeSlotsTBMQueue)
 import Control.Exception (SomeException, try, bracket)
-import Control.Monad ((<=<), join, when, unless, foldM, forever, void)
+import Control.Monad ((<=<), join, when, unless, foldM, forever, void, liftM)
 import Control.Monad.Trans (lift)
 import Data.ByteString (ByteString)
 import Data.Map (Map)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isNothing, fromJust)
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import Data.Text.Encoding (Decoding(..), encodeUtf8, streamDecodeUtf8With)
@@ -60,13 +66,17 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Vector as V
 
+import MOO.Command
+import MOO.Database
+import MOO.Object
 import MOO.Task
 import MOO.Types
 
 import qualified MOO.String as Str
 
 data Connection = Connection {
-    connectionPlayer           :: TVar ObjId
+    connectionObject           :: ObjId
+  , connectionPlayer           :: TVar ObjId
 
   , connectionInput            :: TBMQueue ConnectionMessage
   , connectionOutput           :: TBMQueue ConnectionMessage
@@ -77,6 +87,9 @@ data Connection = Connection {
 
   , connectionOutputDelimiters :: TVar (Text, Text)
   , connectionOptions          :: TVar ConnectionOptions
+
+  , connectionReader           :: TMVar Wake
+  , connectionDisconnect       :: TMVar Disconnect
   }
 
 data ConnectionMessage = Line Text | Binary ByteString
@@ -188,7 +201,9 @@ icSUFFIX = Intrinsic "SUFFIX" $ \conn suffix ->
 icOUTPUTPREFIX = icPREFIX { intrinsicCommand = "OUTPUTPREFIX" }
 icOUTPUTSUFFIX = icSUFFIX { intrinsicCommand = "OUTPUTSUFFIX" }
 
-icProgram = Intrinsic ".program" $ \conn argstr -> return ()  -- XXX
+icProgram = Intrinsic ".program" $ \conn argstr ->
+  -- XXX verify programmer
+  atomically $ sendToConnection conn ".program: Not yet implemented"  -- XXX
 
 allIntrinsicCommands :: Map Text IntrinsicCommand
 allIntrinsicCommands = M.fromList $ map assoc intrinsicCommands
@@ -208,24 +223,30 @@ outOfBandQuotePrefix :: Text
 outOfBandQuotePrefix = "#$\""
 
 maxQueueLength :: Int
-maxQueueLength = 128
+maxQueueLength = 512
 
 type ConnectionName = STM String
 type ConnectionHandler = ConnectionName -> (Producer ByteString IO (),
                                             Consumer ByteString IO ()) -> IO ()
 
+data Disconnect = Disconnected | ClientDisconnected
+
 connectionHandler :: TVar World -> ObjId -> Bool -> ConnectionHandler
 connectionHandler world' object printMessages connectionName (input, output) =
   bracket newConnection deleteConnection $ \conn -> do
-    forkIO $ runConnection object printMessages conn
+    forkIO $ runConnection world' printMessages conn
 
     forkIO $ do
       try (runEffect $ input >-> connectionRead conn) >>=
         either (\err -> let _ = err :: SomeException in return ()) return
-      atomically $ closeTBMQueue (connectionOutput conn)
+      atomically $ do
+        tryPutTMVar (connectionDisconnect conn) ClientDisconnected
+        closeTBMQueue (connectionOutput conn)
 
     runEffect $ connectionWrite conn >-> output
-    atomically $ closeTBMQueue (connectionInput conn)
+    atomically $ do
+      tryPutTMVar (connectionDisconnect conn) Disconnected
+      closeTBMQueue (connectionInput conn)
 
   where newConnection :: IO Connection
         newConnection = do
@@ -236,19 +257,25 @@ connectionHandler world' object printMessages connectionName (input, output) =
 
             let connectionId = nextConnectionId world
 
-            playerVar   <- newTVar connectionId
+            playerVar     <- newTVar connectionId
 
-            inputQueue  <- newTBMQueue maxQueueLength
-            outputQueue <- newTBMQueue maxQueueLength
+            inputQueue    <- newTBMQueue maxQueueLength
+            outputQueue   <- newTBMQueue maxQueueLength
 
-            cTimeVar    <- newTVar Nothing
-            aTimeVar    <- newTVar now
+            cTimeVar      <- newTVar Nothing
+            aTimeVar      <- newTVar now
 
-            delimsVar   <- newTVar ("", "")
-            optionsVar  <- newTVar initConnectionOptions
+            delimsVar     <- newTVar (T.empty, T.empty)
+            optionsVar    <- newTVar initConnectionOptions {
+              optionFlushCommand = defaultFlushCommand $
+                                   serverOptions (database world) }
+
+            readerVar     <- newEmptyTMVar
+            disconnectVar <- newEmptyTMVar
 
             let connection = Connection {
-                    connectionPlayer           = playerVar
+                    connectionObject           = object
+                  , connectionPlayer           = playerVar
 
                   , connectionInput            = inputQueue
                   , connectionOutput           = outputQueue
@@ -260,6 +287,8 @@ connectionHandler world' object printMessages connectionName (input, output) =
                   , connectionOutputDelimiters = delimsVar
                   , connectionOptions          = optionsVar
 
+                  , connectionReader           = readerVar
+                  , connectionDisconnect       = disconnectVar
                   }
                 nextId = succConnectionId
                          (`M.member` connections world) connectionId
@@ -270,28 +299,159 @@ connectionHandler world' object printMessages connectionName (input, output) =
               , nextConnectionId = nextId
               }
 
+            writeTBMQueue inputQueue (Line T.empty)
+
             return connection
 
         deleteConnection :: Connection -> IO ()
-        deleteConnection connection = atomically $ do
-          connectionId <- readTVar (connectionPlayer connection)
-          modifyTVar world' $ \world ->
-            world { connections = M.delete connectionId (connections world) }
+        deleteConnection conn = do
+          atomically $ do
+            connectionId <- readTVar (connectionPlayer conn)
+            modifyTVar world' $ \world ->
+              world { connections = M.delete connectionId (connections world) }
 
-runConnection :: ObjId -> Bool -> Connection -> IO ()
-runConnection object printMessages conn = echoLines
+          how <- atomically $ takeTMVar (connectionDisconnect conn)
+          player <- readTVarIO (connectionPlayer conn)
+          let systemVerb = case how of
+                Disconnected       -> "user_disconnected"
+                ClientDisconnected -> "user_client_disconnected"
+              comp = fromMaybe zero `liftM`
+                     callSystemVerb' object systemVerb [Obj player] Str.empty
+          void $ runTask =<< newTask world' player comp
 
-  where echoLines = do
-          input <- atomically read
+runConnection :: TVar World -> Bool -> Connection -> IO ()
+runConnection world' printMessages conn = loop
+  where loop = do
+          input <- atomically $ readTBMQueue (connectionInput conn)
+
+          options <- readTVarIO (connectionOptions conn)
+          let processLine'
+                | optionDisableOOB options = processLine options
+                | otherwise                = processLineWithOOB options
           case input of
-            Just (Line line) -> do
-              atomically (write $ Line line)
-              echoLines
-            Just (Binary _) -> echoLines
-            Nothing -> return ()
+            Just (Line line)    -> processLine'  line  >> loop
+            Just (Binary bytes) -> processBinary bytes >> loop
+            Nothing             -> return ()
 
-        read  = readTBMQueue  (connectionInput  conn)
-        write = writeTBMQueue (connectionOutput conn)
+        processLineWithOOB :: ConnectionOptions -> Text -> IO ()
+        processLineWithOOB options line
+          | outOfBandQuotePrefix `T.isPrefixOf` line = processLine options line'
+          | outOfBandPrefix      `T.isPrefixOf` line = processOOB  line
+          | otherwise                                = processLine options line
+          where line' = T.drop (T.length outOfBandQuotePrefix) line
+
+        processOOB :: Text -> IO ()
+        processOOB line =
+          void $ runServerVerb' "do_out_of_band_command" (cmdWords line) line
+
+        processLine :: ConnectionOptions -> Text -> IO ()
+        processLine options line = do
+          player <- readTVarIO (connectionPlayer conn)
+          if player < 0 then processUnLoggedIn line
+            else do
+            let cmd = parseCommand line
+            case M.lookup (Str.toText $ commandVerb cmd)
+                 (optionIntrinsicCommands options) of
+              Just Intrinsic { intrinsicFunction = runIntrinsic } ->
+                runIntrinsic conn (Str.toText $ commandArgStr cmd)
+              Nothing -> do
+                (prefix, suffix) <- readTVarIO (connectionOutputDelimiters conn)
+                let maybeSend delim = unless (T.null delim) $
+                                      sendToConnection conn delim
+                void $ runServerTask $ do
+                  liftSTM $ maybeSend prefix
+                  delayIO $ atomically $ maybeSend suffix
+                  -- XXX it would be better to send the suffix as part of the
+                  -- atomic command, but we don't currently have a way of
+                  -- ensuring anything is run after an uncaught exception
+                  result <- callSystemVerb "do_command" (cmdWords line) line
+                  case result of
+                    Just value | truthOf value -> return zero
+                    _                          -> runCommand cmd
+
+        processBinary :: ByteString -> IO ()
+        processBinary bytes = return ()
+
+        processUnLoggedIn :: Text -> IO ()
+        processUnLoggedIn line = do
+          result <- runServerTask $ do
+            maxObject <- maxObject `liftM` getDatabase
+            player <- fromMaybe zero `liftM`
+                      callSystemVerb "do_login_command" (cmdWords line) line
+            return $ fromList [Obj maxObject, player]
+          case result of
+            Just (Lst v) -> case V.toList v of
+              [Obj maxObject, Obj player] -> connectPlayer player maxObject
+              _                           -> return ()
+            _            -> return ()
+
+        connectPlayer :: ObjId -> ObjId -> IO ()
+        connectPlayer player maxObject = do
+          now <- getCurrentTime
+
+          maybeOldConn <- atomically $ do
+            writeTVar (connectionConnectedTime conn) (Just now)
+
+            oldPlayer <- swapTVar (connectionPlayer conn) player
+
+            world <- readTVar world'
+            let maybeOldConn = M.lookup player (connections world)
+            case maybeOldConn of
+              Just oldConn -> do
+                writeTVar (connectionPlayer oldConn) oldPlayer
+
+                let oldObject = connectionObject oldConn
+                    newObject = connectionObject conn
+                when (oldObject /= newObject) $ void $
+                  tryPutTMVar (connectionDisconnect oldConn) ClientDisconnected
+                -- print' oldConn redirectFromMsg
+                closeConnection oldConn
+              Nothing      -> return ()
+
+            writeTVar world' world {
+              connections = M.insert player conn $
+                            M.delete oldPlayer (connections world) }
+            return maybeOldConn
+
+          let (systemVerb, msg)
+                | player > maxObject     = ("user_created",     createMsg)
+                | isNothing maybeOldConn ||
+                  connectionObject (fromJust maybeOldConn) /=
+                  connectionObject conn  = ("user_connected",   connectMsg)
+                | otherwise              = ("user_reconnected", redirectToMsg)
+          print msg
+          runServerVerb systemVerb [Obj player]
+
+        callSystemVerb :: StrT -> [Value] -> Text -> MOO (Maybe Value)
+        callSystemVerb vname args argstr =
+          callSystemVerb' object vname args (Str.fromText argstr)
+          where object = connectionObject conn
+
+        runServerVerb :: StrT -> [Value] -> IO ()
+        runServerVerb vname args = void $ runServerVerb' vname args T.empty
+
+        runServerVerb' :: StrT -> [Value] -> Text -> IO (Maybe Value)
+        runServerVerb' vname args argstr = runServerTask $
+          fromMaybe zero `liftM`
+            callSystemVerb' object vname args (Str.fromText argstr)
+          where object = connectionObject conn
+
+        runServerTask :: MOO Value -> IO (Maybe Value)
+        runServerTask comp = do
+          player <- readTVarIO (connectionPlayer conn)
+          runTask =<< newTask world' player comp
+
+        print' :: Connection -> (ObjId -> MOO [Text]) -> IO ()
+        print' conn msg
+          | printMessages = void $ runServerTask $
+                            printMessage conn msg >> return zero
+          | otherwise = return ()
+
+        print :: (ObjId -> MOO [Text]) -> IO ()
+        print = print' conn
+
+        cmdWords :: Text -> [Value]
+        cmdWords = map Str . parseWords
 
 -- | Connection reading thread: deliver messages from the network to our input
 -- 'TBMQueue' until EOF, handling binary mode and the flush command, if any.
@@ -313,7 +473,7 @@ connectionRead conn = do
     lift $ getCurrentTime >>=
       atomically . writeTVar (connectionActivityTime conn)
 
-    options <- lift $ atomically $ readTVar (connectionOptions conn)
+    options <- lift $ readTVarIO (connectionOptions conn)
     lift $ atomically $
       if optionBinaryMode options
       then send outputMessages (Binary bytes)
@@ -354,7 +514,7 @@ connectionRead conn = do
           message <- await
           case message of
             Line line -> do
-              options <- lift $ atomically $ readTVar (connectionOptions conn)
+              options <- lift $ readTVarIO (connectionOptions conn)
               let flushCmd = optionFlushCommand options
               lift $ if not (T.null flushCmd) && line == flushCmd
                      then flushQueue else enqueue message
@@ -438,21 +598,29 @@ enqueueOutput noFlush conn message = do
                           enqueueOutput noFlush conn message
     _          -> return True
 
+sendToConnection :: Connection -> Text -> STM ()
+sendToConnection conn line = void $ enqueueOutput False conn (Line line)
+
+printMessage :: Connection -> (ObjId -> MOO [Text]) -> MOO ()
+printMessage conn msg = serverMessage conn msg >>= liftSTM
+
+serverMessage :: Connection -> (ObjId -> MOO [Text]) -> MOO (STM ())
+serverMessage conn msg =
+  mapM_ (sendToConnection conn) `liftM` msg (connectionObject conn)
+
+-- | Send data to a connection, flushing if necessary.
+notify :: ObjId -> StrT -> MOO Bool
+notify = notify' False
+
 -- | Send data to a connection, optionally without flushing.
 notify' :: Bool -> ObjId -> StrT -> MOO Bool
-notify' noFlush who what = do
-  delayIO (putStrLn $ Str.toString what)  -- XXX
-
+notify' noFlush who what =
   withMaybeConnection who . maybe (return True) $ \conn -> do
     options <- liftSTM $ readTVar (connectionOptions conn)
     message <- if optionBinaryMode options
                then Binary `fmap` binaryString what
                else return (Line $ Str.toText what)
     liftSTM $ enqueueOutput noFlush conn message
-
--- | Send data to a connection, flushing if necessary.
-notify :: ObjId -> StrT -> MOO Bool
-notify = notify' False
 
 -- | Return the number of items currently buffered for output to a connection,
 -- or the maximum number of items that will be buffered up for output on any
@@ -496,14 +664,24 @@ flushInput showMessages conn = do
                         loop
                       Nothing -> return ()
 
--- | Close a connection.
+-- | Initiate the closing of a connection by closing its output queue.
+closeConnection :: Connection -> STM ()
+closeConnection = closeTBMQueue . connectionOutput
+
+-- | Close the connection associated with an object.
 bootPlayer :: ObjId -> MOO ()
-bootPlayer oid = withMaybeConnection oid . maybe (return ()) $ \conn -> do
-  liftSTM $ closeTBMQueue (connectionOutput conn)
-  modifyWorld $ \world -> world { connections =
-                                     M.delete oid (connections world) }
-  -- XXX callSystemVerb "user_disconnected" [Obj oid]
-  return ()
+bootPlayer = bootPlayer' False
+
+-- | Close the connection associated with an object, with message varying on
+-- whether the object is being recycled.
+bootPlayer' :: Bool -> ObjId -> MOO ()
+bootPlayer' recycled oid =
+  withMaybeConnection oid . maybe (return ()) $ \conn -> do
+    printMessage conn $ if recycled then recycleMsg else bootMsg
+    liftSTM $ closeConnection conn
+    modifyWorld $ \world -> world { connections =
+                                       M.delete oid (connections world) }
+    return ()
 
 withConnectionOptions :: ObjId -> (ConnectionOptions -> MOO a) -> MOO a
 withConnectionOptions oid f =
@@ -531,3 +709,21 @@ getConnectionOptions oid =
   withConnectionOptions oid $ \options ->
     let optionValue option = optionGet option options
     in return $ M.map optionValue allConnectionOptions
+
+msgFor :: Id -> [Text] -> ObjId -> MOO [Text]
+msgFor msg def oid
+  | oid == systemObject = systemMessage
+  | otherwise           = getServerMessage oid msg systemMessage
+  where systemMessage = getServerMessage systemObject msg (return def)
+
+bootMsg         = msgFor "boot_msg"    ["*** Disconnected ***"]
+connectMsg      = msgFor "connect_msg" ["*** Connected ***"]
+createMsg       = msgFor "create_msg"  ["*** Created ***"]
+recycleMsg      = msgFor "recycle_msg" ["*** Recycled ***"]
+redirectFromMsg = msgFor "redirect_from_msg"
+                  ["*** Redirecting connection to new port ***"]
+redirectToMsg   = msgFor "redirect_to_msg"
+                  ["*** Redirecting old connection to this port ***"]
+serverFullMsg   = msgFor "server_full_msg"
+  [ "*** Sorry, but the server cannot accept any more connections right now."
+  , "*** Please try again later." ]

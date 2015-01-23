@@ -1,24 +1,26 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Database ( Database
-                    , ServerOptions(..)
-                    , serverOptions
-                    , initDatabase
-                    , dbObjectRef
-                    , dbObject
-                    , maxObject
-                    , resetMaxObject
-                    , setObjects
-                    , addObject
-                    , deleteObject
-                    , modifyObject
-                    , allPlayers
-                    , setPlayer
-                    , getServerOption
-                    , getServerOption'
-                    , loadServerOptions
-                    ) where
+module MOO.Database (
+    Database
+  , ServerOptions(..)
+  , serverOptions
+  , initDatabase
+  , dbObjectRef
+  , dbObject
+  , maxObject
+  , resetMaxObject
+  , setObjects
+  , addObject
+  , deleteObject
+  , modifyObject
+  , allPlayers
+  , setPlayer
+  , getServerOption
+  , getServerOption'
+  , loadServerOptions
+  , getServerMessage
+  ) where
 
 import Control.Concurrent.STM (STM, TVar, newTVarIO, newTVar,
                                readTVar, writeTVar)
@@ -27,6 +29,7 @@ import Data.Monoid ((<>))
 import Data.Vector (Vector)
 import Data.IntSet (IntSet)
 import Data.Set (Set)
+import Data.Text (Text)
 
 import qualified Data.IntSet as IS
 import qualified Data.Map as M
@@ -37,6 +40,8 @@ import {-# SOURCE #-} MOO.Builtins (builtinFunctions)
 import MOO.Object
 import MOO.Task
 import MOO.Types
+
+import qualified MOO.String as Str
 
 data Database = Database {
     objects       :: Vector (TVar (Maybe Object))
@@ -120,7 +125,7 @@ data ServerOptions = Options {
     -- ^ The maximum number of seconds to allow an un-logged-in in-bound
     -- connection to remain open
 
-  , defaultFlushCommand :: StrT
+  , defaultFlushCommand :: Text
     -- ^ The initial setting of each new connection’s flush command
 
   , fgSeconds :: IntT
@@ -153,18 +158,18 @@ data ServerOptions = Options {
     -- ^ Enables use of an obsolete verb-naming mechanism
 }
 
+getServerOption :: Id -> MOO (Maybe Value)
+getServerOption = getServerOption' systemObject
+
+getServerOption' :: ObjId -> Id -> MOO (Maybe Value)
+getServerOption' oid option = getServerOptions oid >>= ($ option)
+
 getServerOptions :: ObjId -> MOO (Id -> MOO (Maybe Value))
 getServerOptions oid = do
   serverOptions <- readProperty oid "server_options"
   return $ case serverOptions of
     Just (Obj oid) -> readProperty oid . fromId
     _              -> const (return Nothing)
-
-getServerOption :: Id -> MOO (Maybe Value)
-getServerOption = getServerOption' systemObject
-
-getServerOption' :: ObjId -> Id -> MOO (Maybe Value)
-getServerOption' oid option = getServerOptions oid >>= ($ option)
 
 getProtected :: (Id -> MOO (Maybe Value)) -> [Id] -> MOO (Set Id)
 getProtected getOption ids = do
@@ -226,8 +231,9 @@ loadServerOptions = do
              _                           -> 5
 
         , defaultFlushCommand = case defaultFlushCommand of
-             Just (Str cmd) -> cmd
-             _              -> ".flush"
+             Just (Str cmd) -> Str.toText cmd
+             Just _         -> ""
+             Nothing        -> ".flush"
 
         , supportNumericVerbnameStrings = case supportNumericVerbnameStrings of
              Just v -> truthOf v
@@ -239,3 +245,17 @@ loadServerOptions = do
 
   db <- getDatabase
   putDatabase db { serverOptions = options }
+
+getServerMessage :: ObjId -> Id -> MOO [Text] -> MOO [Text]
+getServerMessage oid msg def = do
+  maybeValue <- getServerOption' oid msg
+  case maybeValue of
+    Just (Str s) -> return [Str.toText s]
+    Just (Lst v) -> maybe (return []) return $ strings (V.toList v)
+    Just _       -> return []
+    Nothing      -> def
+  where strings :: [Value] -> Maybe [Text]
+        strings (v:vs) = case v of
+          Str s -> (Str.toText s :) `fmap` strings vs
+          _     -> Nothing
+        strings [] = Just []

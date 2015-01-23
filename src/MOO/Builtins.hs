@@ -92,7 +92,8 @@ verifyBuiltins = foldM accum 0 $ M.elems builtinFunctions
           | maybe False (< min) max           = invalid "arg max < min"
           | length types /= fromMaybe min max = invalid "incorrect # types"
           | testArgs func min max types       = ok
-          where invalid msg = Left $ fromId name ++ ": " ++ msg
+          where invalid msg = Left $ "problem with built-in function " ++
+                              fromId name ++ ": " ++ msg
                 ok = Right 1
 
         testArgs :: ([Value] -> MOO Value) -> Int -> Maybe Int -> [Type] -> Bool
@@ -179,9 +180,16 @@ ctime time = do
 bf_dump_database = Builtin "dump_database" 0 (Just 0) [] TAny $ \[] ->
   notyet "dump_database"
 
-bf_shutdown = Builtin "shutdown" 0 (Just 1) [TStr] TAny $ \optional ->
+bf_shutdown = Builtin "shutdown" 0 (Just 1) [TStr] TAny $ \optional -> do
   let (message : _) = maybeDefaults optional
-  in notyet "shutdown"
+
+  checkWizard
+
+  name <- getObjectName =<< frame permissions
+  let msg = "shutdown() called by " `Str.append` name
+
+  shutdown $ maybe msg (\(Str reason) -> Str.concat [msg, ": ", reason]) message
+  return zero
 
 bf_load_server_options = Builtin "load_server_options" 0 (Just 0)
                          [] TAny $ \[] ->

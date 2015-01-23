@@ -1,6 +1,7 @@
 -- -*- Haskell -*-
 
 module MOO.Task ( MOO
+                , World
                 , requestIO
                 , delayIO
                 , getWorld

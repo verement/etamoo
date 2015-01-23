@@ -3,13 +3,18 @@
 module MOO.Network (
     Point(..)
   , Listener(..)
+  , HostName
+  , createListener
+  , unlisten
   ) where
 
-import Network.Socket (PortNumber)
+import Control.Concurrent.STM (TVar)
+import Network.Socket (HostName, PortNumber)
 
+import {-# SOURCE #-} MOO.Task
 import MOO.Types (ObjId)
 
-newtype Point = TCP PortNumber
+data Point = Console (TVar World) | TCP (Maybe HostName) PortNumber
 
 data Listener = Listener {
     listenerObject        :: ObjId
@@ -18,3 +23,6 @@ data Listener = Listener {
 
   , listenerCancel        :: IO ()
   }
+
+createListener :: TVar World -> ObjId -> Point -> Bool -> IO Listener
+unlisten :: Point -> MOO ()

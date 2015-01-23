@@ -4,27 +4,37 @@
 module MOO.Network (
     Point(..)
   , Listener(..)
+  , HostName
+  , PortNumber
   , value2point
   , point2value
+  , createListener
   , listen
   , unlisten
   ) where
 
-import Control.Concurrent.STM (TVar)
+import Control.Concurrent.STM (TVar, atomically, modifyTVar)
 import Control.Exception (try)
 import Control.Monad (when)
 import System.IO.Error (isPermissionError)
 
 import MOO.Connection (connectionHandler)
-import MOO.Network.TCP (PortNumber, createTCPListener)
+import MOO.Network.Console (createConsoleListener)
+import MOO.Network.TCP (HostName, PortNumber, createTCPListener)
 import MOO.Object
 import {-# SOURCE #-} MOO.Task
 import MOO.Types
 
 import qualified Data.Map as M
 
-newtype Point = TCP PortNumber
-              deriving (Eq, Ord)
+data Point = Console (TVar World) | TCP (Maybe HostName) PortNumber
+           deriving (Eq)
+
+instance Ord Point where
+  TCP _ port1 `compare` TCP _ port2 = port1 `compare` port2
+  TCP{}       `compare` _           = GT
+  Console{}   `compare` Console{}   = EQ
+  Console{}   `compare` _           = LT
 
 data Listener = Listener {
     listenerObject        :: ObjId
@@ -36,20 +46,24 @@ data Listener = Listener {
 
 initListener = Listener {
     listenerObject        = systemObject
-  , listenerPoint         = TCP 0
+  , listenerPoint         = TCP Nothing 0
   , listenerPrintMessages = True
 
   , listenerCancel        = return ()
   }
 
 value2point :: Value -> MOO Point
-value2point value = case value of
-  Int port      -> return $ TCP (fromIntegral port)
-  _             -> raise E_TYPE
+value2point value = do
+  world <- getWorld
+  case value of
+    Int port      -> return $ TCP (bindAddress world) (fromIntegral port)
+    Str "Console" -> Console `fmap` getWorld'
+    _             -> raise E_TYPE
 
 point2value :: Point -> Value
 point2value point = case point of
-  TCP port -> Int (fromIntegral port)
+  TCP _ port  -> Int (fromIntegral port)
+  Console{}   -> Str "Console"
 
 createListener :: TVar World -> ObjId -> Point -> Bool -> IO Listener
 createListener world' object point printMessages = do
@@ -60,8 +74,15 @@ createListener world' object point printMessages = do
         }
       handler = connectionHandler world' object printMessages
 
-  case point of
-    TCP{} -> createTCPListener listener handler
+  listener <- case point of
+    TCP{}     -> createTCPListener     listener handler
+    Console{} -> createConsoleListener listener handler
+
+  let canon = listenerPoint listener
+  atomically $ modifyTVar world' $ \world -> world {
+    listeners = M.insert canon listener (listeners world) }
+
+  return listener
 
 listen :: ObjId -> Point -> Bool -> MOO Point
 listen object point printMessages = do
@@ -73,10 +94,7 @@ listen object point printMessages = do
   case result of
     Left err | isPermissionError err -> raise E_PERM
              | otherwise             -> raise E_QUOTA
-    Right listener -> do
-      let canon = listenerPoint listener
-      putWorld world { listeners = M.insert canon listener (listeners world) }
-      return canon
+    Right listener                   -> return (listenerPoint listener)
 
 unlisten :: Point -> MOO ()
 unlisten point = do
@@ -84,5 +102,5 @@ unlisten point = do
   case point `M.lookup` listeners world of
     Just Listener { listenerCancel = cancelListener } -> do
       putWorld world { listeners = M.delete point (listeners world) }
-      requestIO cancelListener
+      delayIO cancelListener
     Nothing -> raise E_INVARG

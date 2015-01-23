@@ -4,7 +4,7 @@
 module MOO.Builtins.Network ( builtins ) where
 
 import Control.Concurrent.STM (readTVar)
-import Control.Monad (liftM, (<=<))
+import Control.Monad (liftM, unless, (<=<))
 import Control.Monad.State (gets)
 import Data.Time (UTCTime, diffUTCTime)
 
@@ -146,7 +146,12 @@ bf_open_network_connection = Builtin "open_network_connection" 2 (Just 3)
                              TObj $ \(Str host : Int port : optional) -> do
   let [Obj listener] = defaults optional [Obj systemObject]
 
+  checkWizard
+  world <- getWorld
+  unless (outboundNetwork world) $ raise E_PERM
+
   notyet "open_network_connection"
+
 {-
   checkWizard
   connId <- openNetworkConnection

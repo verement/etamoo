@@ -1,6 +1,7 @@
 
 module MOO.Network.TCP (
-    PortNumber
+    HostName
+  , PortNumber
   , createTCPListener
   ) where
 
@@ -19,26 +20,26 @@ import Network.Socket (PortNumber, Socket, SockAddr, SocketOption(..),
                        getNameInfo, socketPort)
 import Pipes.Network.TCP (fromSocket, toSocket)
 
-import {-# SOURCE #-} MOO.Network (Point(..), Listener(..))
 import MOO.Connection (ConnectionHandler)
+import {-# SOURCE #-} MOO.Network (Point(..), Listener(..))
 
 maxBufferSize :: Int
 maxBufferSize = 1024
 
-serverAddrInfo :: PortNumber -> IO [AddrInfo]
-serverAddrInfo port =
+serverAddrInfo :: Maybe HostName -> PortNumber -> IO [AddrInfo]
+serverAddrInfo host port =
   let hints = defaultHints {
           addrFlags      = [AI_PASSIVE, AI_NUMERICSERV,
                             AI_ADDRCONFIG, AI_V4MAPPED]
         , addrFamily     = AF_INET6
         , addrSocketType = Stream
         }
-  in getAddrInfo (Just hints) Nothing (Just $ show port)
+  in getAddrInfo (Just hints) host (Just $ show port)
 
 createTCPListener :: Listener -> ConnectionHandler -> IO Listener
 createTCPListener listener handler = do
-  let TCP port = listenerPoint listener
-  (ai:_) <- serverAddrInfo port
+  let TCP host port = listenerPoint listener
+  (ai:_) <- serverAddrInfo host port
 
   let mkSocket = socket (addrFamily ai) (addrSocketType ai) (addrProtocol ai)
 
@@ -53,7 +54,7 @@ createTCPListener listener handler = do
     acceptThread <- forkIO $ acceptConnections sock handler
 
     return $ listener {
-        listenerPoint  = TCP boundPort
+        listenerPoint  = TCP host boundPort
       , listenerCancel = killThread acceptThread >> close sock
       }
 

@@ -50,6 +50,7 @@ module MOO.Task (
   -- * Object Interface
   , getPlayer
   , getObject
+  , getObjectName
   , getProperty
   , modifyProperty
   , modifyVerb
@@ -60,6 +61,8 @@ module MOO.Task (
   -- * Verb Execution Interface
   , getVerb
   , findVerb
+  , callSystemVerb
+  , callSystemVerb'
   , callCommandVerb
   , callVerb
   , callFromFunc
@@ -117,12 +120,13 @@ module MOO.Task (
   , newRandomGen
   , delay
 
+  , shutdown
   , notyet
   ) where
 
 import Control.Arrow ((&&&))
-import Control.Concurrent (ThreadId, myThreadId, forkIO, threadDelay,
-                           newEmptyMVar, putMVar, takeMVar)
+import Control.Concurrent (MVar, ThreadId, myThreadId, forkIO, threadDelay,
+                           newEmptyMVar, putMVar, tryPutMVar, takeMVar)
 import Control.Concurrent.STM (STM, TVar, atomically, retry, throwSTM,
                                newEmptyTMVar, putTMVar, takeTMVar,
                                newTVarIO, readTVar, writeTVar, modifyTVar)
@@ -139,6 +143,7 @@ import Data.List (find)
 import Data.Map (Map)
 import Data.Maybe (isNothing, fromMaybe, fromJust)
 import Data.Monoid (Monoid(mempty, mappend), (<>))
+import Data.Text (Text)
 import Data.Time (UTCTime, getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import System.IO.Unsafe (unsafePerformIO)
@@ -181,20 +186,44 @@ data World = World {
   , nextConnectionId   :: ObjId
     -- ^ The (negative) object number to be assigned to the next inbound or
     -- outbound connection
+
+  , outboundNetwork    :: Bool
+    -- ^ Is open_network_connection() enabled?
+  , bindAddress        :: Maybe HostName
+    -- ^ Interface address to bind to for incoming connections
+
+  , shutdownMessage    :: MVar Text
+    -- ^ Shutdown signal
   }
 
 initWorld = World {
-    database           = undefined
-  , tasks              = M.empty
+    database         = undefined
+  , tasks            = M.empty
 
-  , listeners          = M.empty
-  , connections        = M.empty
+  , listeners        = M.empty
+  , connections      = M.empty
 
-  , nextConnectionId   = firstConnectionId
+  , nextConnectionId = firstConnectionId
+
+  , outboundNetwork  = False
+  , bindAddress      = Nothing
+
+  , shutdownMessage  = undefined
   }
 
-newWorld :: Database -> IO (TVar World)
-newWorld db = newTVarIO initWorld { database = db }
+newWorld :: Database -> Bool -> IO (TVar World)
+newWorld db outboundNetworkEnabled = do
+  shutdownVar <- newEmptyMVar
+
+  world' <- newTVarIO initWorld {
+      database        = db
+    , outboundNetwork = outboundNetworkEnabled
+    , shutdownMessage = shutdownVar
+    }
+
+  runTask =<< newTask world' nothing (loadServerOptions >> return zero)
+
+  return world'
 
 -- | A structure representing a queued or running task
 data Task = Task {
@@ -451,8 +480,13 @@ runTask task = do
                       putResult Nothing
                     Suicide -> putResult Nothing
 
-                  where informPlayer :: [StrT] -> IO ()
-                        informPlayer = mapM_ (putStrLn . Str.toString)  -- XXX
+        informPlayer :: [StrT] -> IO ()
+        informPlayer lines = atomically $ do
+          world <- readTVar (taskWorld task)
+          let maybeConnection = M.lookup (taskPlayer task) (connections world)
+          case maybeConnection of
+            Just conn -> mapM_ (sendToConnection conn . Str.toText) lines
+            Nothing   -> return ()  -- XXX write to server log?
 
 -- | Create and queue a task to run the given computation after the given
 -- microsecond delay. 'E_INVARG' may be raised if the delay is out of
@@ -659,6 +693,14 @@ getPlayer = asks (taskPlayer . task)
 getObject :: ObjId -> MOO (Maybe Object)
 getObject oid = liftSTM . dbObject oid =<< getDatabase
 
+getObjectName :: ObjId -> MOO StrT
+getObjectName oid = do
+  obj <- getObject oid
+  let objNum = Str.fromText (toText $ Obj oid)
+
+  return $ maybe objNum (\obj -> Str.concat [objectName obj,
+                                             " (", objNum, ")"]) obj
+
 getProperty :: Object -> StrT -> MOO Property
 getProperty obj name = do
   maybeProp <- liftSTM $ lookupProperty obj name
@@ -699,22 +741,26 @@ findVerb acceptable name = findVerb'
         searchVerbs [] = return Nothing
 
 callSystemVerb :: StrT -> [Value] -> MOO (Maybe Value)
-callSystemVerb name args = do
+callSystemVerb name args = callSystemVerb' systemObject name args Str.empty
+
+callSystemVerb' :: ObjId -> StrT -> [Value] -> StrT -> MOO (Maybe Value)
+callSystemVerb' object name args argstr = do
   player <- asks (taskPlayer . task)
-  maybeVerb <- findVerb verbPermX name systemObject
+  maybeVerb <- findVerb verbPermX name object
   case maybeVerb of
     (Just verbOid, Just verb) -> do
       let vars = mkVariables [
               ("player", Obj player)
-            , ("this"  , Obj systemObject)
+            , ("this"  , Obj object)
             , ("verb"  , Str name)
             , ("args"  , fromList args)
+            , ("argstr", Str argstr)
             ]
       Just `liftM` runVerb verb initFrame {
           variables     = vars
         , verbName      = name
         , verbLocation  = verbOid
-        , initialThis   = systemObject
+        , initialThis   = object
         , initialPlayer = player
         }
     _ -> return Nothing
@@ -1357,3 +1403,10 @@ formatTraceback except@Exception { exceptionCallStack = Stack frames } =
           when (line > 0) $ tell $ ", line " <> T.pack (show line)
         describeVerb Frame { builtinFunc = True, verbName = name } =
           tell $ "built-in function " <> Str.toText name <> "()"
+
+-- | Begin the server shutdown process.
+shutdown :: StrT -> MOO ()
+shutdown message = do
+  world <- getWorld
+  mapM_ unlisten (M.keys $ listeners world)
+  delayIO $ void $ tryPutMVar (shutdownMessage world) (Str.toText message)

@@ -251,7 +251,7 @@ bf_recycle = Builtin "recycle" 1 (Just 1) [TObj] TAny $ \[Obj object] -> do
   reparentChildren object (objectParent obj)
   reparent object Nothing
 
-  setPlayerFlag object False
+  setPlayerFlag True object False
   getDatabase >>= liftSTM . deleteObject object
 
   modifyQuota owner $ return . (+ 1)
@@ -722,20 +722,20 @@ bf_players = Builtin "players" 0 (Just 0) [] TLst $ \[] ->
 bf_is_player = Builtin "is_player" 1 (Just 1) [TObj] TInt $ \[Obj object] ->
   (truthValue . objectIsPlayer) `liftM` checkValid object
 
-setPlayerFlag :: ObjId -> Bool -> MOO ()
-setPlayerFlag object isPlayer = do
+setPlayerFlag :: Bool -> ObjId -> Bool -> MOO ()
+setPlayerFlag recycled object isPlayer = do
   db <- getDatabase
   liftSTM $ modifyObject object db $ \obj ->
     return obj { objectIsPlayer = isPlayer }
   putDatabase $ setPlayer isPlayer object db
 
-  unless isPlayer $ bootPlayer object
+  unless isPlayer $ bootPlayer' recycled object
 
 bf_set_player_flag = Builtin "set_player_flag" 2 (Just 2)
                      [TObj, TAny] TAny $ \[Obj object, value] -> do
   checkValid object
   checkWizard
 
-  setPlayerFlag object (truthOf value)
+  setPlayerFlag False object (truthOf value)
 
   return zero

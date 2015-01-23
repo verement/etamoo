@@ -6,6 +6,7 @@ module MOO.Database ( Database
                     , getServerOption'
                     , dbObject
                     , modifyObject
+                    , loadServerOptions
                     ) where
 
 import Control.Concurrent.STM (STM)
@@ -24,3 +25,5 @@ getServerOption' :: ObjId -> Id -> MOO (Maybe Value)
 
 dbObject :: ObjId -> Database -> STM (Maybe Object)
 modifyObject :: ObjId -> Database -> (Object -> STM Object) -> STM ()
+
+loadServerOptions :: MOO ()

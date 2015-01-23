@@ -56,6 +56,10 @@ flag 64bit
   description: Enable 64-bit MOO integers
   default:     False
 
+flag outbound-network
+  description: Enable open_network_connection() by default
+  default:     False
+
 executable etamoo
   hs-source-dirs:      src
   main-is:             etamoo.hs
@@ -71,11 +75,15 @@ executable etamoo
                        MOO.Builtins.Values
                        MOO.Command
                        MOO.Compiler
+                       MOO.Connection
                        MOO.Database
                        MOO.Database.LambdaMOO
                        MOO.Network
+                       MOO.Network.Console
+                       MOO.Network.TCP
                        MOO.Object
                        MOO.Parser
+                       MOO.Server
                        MOO.String
                        MOO.Task
                        MOO.Types
@@ -103,6 +111,9 @@ executable etamoo
   if flag(64bit)
     cpp-options:       -DMOO_64BIT_INTEGER
 
+  if flag(outbound-network)
+    cpp-options:       -DMOO_OUTBOUND_NETWORK
+
   includes:            unistd.h pcre.h
 
   c-sources:           src/cbits/crypt.c
@@ -120,6 +131,7 @@ executable etamoo
                      , old-locale
                      , parsec
                      , pipes
+                     , pipes-bytestring
                      , pipes-concurrency
                      , pipes-network
                      , random

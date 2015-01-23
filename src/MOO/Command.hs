@@ -195,6 +195,7 @@ instance Monoid Match where
 -- for the current player, matching @dobj@ and @iobj@ objects against the
 -- strings in the typed command.
 runCommand :: Command -> MOO Value
+runCommand Command { commandVerb = "" } = return zero
 runCommand command = do
   player <- getPlayer
   dobj <- matchObject player (commandDObjStr command)
