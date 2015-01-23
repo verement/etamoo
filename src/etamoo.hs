@@ -6,9 +6,12 @@ module Main (main) where
 import Control.Monad (foldM, unless)
 import Data.List (isInfixOf, isPrefixOf)
 import Data.Maybe (isJust, isNothing, fromJust)
+import Data.Version (showVersion)
 import System.Console.GetOpt (OptDescr(..), ArgDescr(..), ArgOrder(..),
                               getOpt, usageInfo)
 import System.Environment (getArgs, getProgName)
+
+import Paths_EtaMOO (version)
 
 import MOO.Network
 import MOO.Server
@@ -18,7 +21,8 @@ main = parseArgs >>= run
 
 run :: Options -> IO ()
 run opts
-  | optHelp opts      = putStrLn =<< usage
+  | optHelp      opts = putStrLn =<< usage
+  | optVersion   opts = putStrLn $ "EtaMOO " ++ showVersion version
   | optEmergency opts = error "Emergency Wizard Mode not yet implemented"
   | otherwise         = startServer (optLogFile opts)
                         (fromJust $ optInputDB opts)
@@ -28,6 +32,7 @@ run opts
 
 data Options = Options {
     optHelp            :: Bool
+  , optVersion         :: Bool
   , optEmergency       :: Bool
   , optLogFile         :: Maybe FilePath
   , optInputDB         :: Maybe FilePath
@@ -40,6 +45,7 @@ data Options = Options {
 
 defaultOptions = Options {
     optHelp            = False
+  , optVersion         = False
   , optEmergency       = False
   , optLogFile         = Nothing
   , optInputDB         = Nothing
@@ -77,6 +83,9 @@ options = [
       (ReqArg (\port opts -> opts { optPort = fromInteger $ read port,
                                     optPortSpecified = True }) "PORT")
       $ "Listening port (default: " ++ show (optPort defaultOptions) ++ ")"
+  , Option "V" ["version"]
+      (NoArg (\opts -> opts { optVersion = True }))
+      "Show server code version"
   , Option "h?" ["help"]
       (NoArg (\opts -> opts { optHelp = True }))
       "Show this usage"
@@ -113,7 +122,7 @@ parseArgs = do
   (opts, nonOpts) <- serverOpts
   opts <- foldM handleArg opts nonOpts
 
-  unless (optHelp opts) $ do
+  unless (optHelp opts || optVersion opts) $ do
     unless (isJust $ optInputDB  opts) $ usageError "missing INPUT-DB"
     unless (isJust $ optOutputDB opts) $ usageError "missing OUTPUT-DB"
 
