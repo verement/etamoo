@@ -8,22 +8,16 @@
 </head>
 <body>
 <pre><a name="line-1"></a>
-<a name="line-2"></a><span class='hs-keyword'>module</span> <span class='hs-conid'>MOO</span><span class='hs-varop'>.</span><span class='hs-conid'>Version</span> <span class='hs-layout'>(</span> <span class='hs-varid'>serverVersion</span>
-<a name="line-3"></a>                   <span class='hs-layout'>,</span> <span class='hs-varid'>serverVersionText</span>
-<a name="line-4"></a>                   <span class='hs-layout'>)</span> <span class='hs-keyword'>where</span>
-<a name="line-5"></a>
-<a name="line-6"></a><span class='hs-keyword'>import</span> <span class='hs-conid'>Data</span><span class='hs-varop'>.</span><span class='hs-conid'>Text</span>
-<a name="line-7"></a><span class='hs-keyword'>import</span> <span class='hs-conid'>Data</span><span class='hs-varop'>.</span><span class='hs-conid'>Version</span>
+<a name="line-2"></a><span class='hs-keyword'>module</span> <span class='hs-conid'>MOO</span><span class='hs-varop'>.</span><span class='hs-conid'>Version</span> <span class='hs-layout'>(</span> <span class='hs-varid'>serverVersion</span> <span class='hs-layout'>)</span> <span class='hs-keyword'>where</span>
+<a name="line-3"></a>
+<a name="line-4"></a><span class='hs-keyword'>import</span> <span class='hs-conid'>Data</span><span class='hs-varop'>.</span><span class='hs-conid'>Text</span> <span class='hs-layout'>(</span><span class='hs-conid'>Text</span><span class='hs-layout'>,</span> <span class='hs-varid'>pack</span><span class='hs-layout'>)</span>
+<a name="line-5"></a><span class='hs-keyword'>import</span> <span class='hs-conid'>Data</span><span class='hs-varop'>.</span><span class='hs-conid'>Version</span> <span class='hs-layout'>(</span><span class='hs-varid'>showVersion</span><span class='hs-layout'>)</span>
+<a name="line-6"></a>
+<a name="line-7"></a><span class='hs-keyword'>import</span> <span class='hs-conid'>Paths_EtaMOO</span> <span class='hs-layout'>(</span><span class='hs-varid'>version</span><span class='hs-layout'>)</span>
 <a name="line-8"></a>
-<a name="line-9"></a><span class='hs-keyword'>import</span> <span class='hs-conid'>Paths_EtaMOO</span>
-<a name="line-10"></a>
-<a name="line-11"></a><a name="serverVersion"></a><span class='hs-comment'>-- | The current version of the server code, as a 'Version' value</span>
-<a name="line-12"></a><span class='hs-definition'>serverVersion</span> <span class='hs-keyglyph'>::</span> <span class='hs-conid'>Version</span>
-<a name="line-13"></a><span class='hs-definition'>serverVersion</span> <span class='hs-keyglyph'>=</span> <span class='hs-varid'>version</span>
-<a name="line-14"></a>
-<a name="line-15"></a><a name="serverVersionText"></a><span class='hs-comment'>-- | The current version of the server code, as a displayable 'Text' value</span>
-<a name="line-16"></a><span class='hs-comment'>-- (for use by the @server_version()@ built-in function)</span>
-<a name="line-17"></a><span class='hs-definition'>serverVersionText</span> <span class='hs-keyglyph'>::</span> <span class='hs-conid'>Text</span>
-<a name="line-18"></a><span class='hs-definition'>serverVersionText</span> <span class='hs-keyglyph'>=</span> <span class='hs-varid'>pack</span> <span class='hs-layout'>(</span><span class='hs-varid'>showVersion</span> <span class='hs-varid'>serverVersion</span><span class='hs-layout'>)</span>
+<a name="line-9"></a><a name="serverVersion"></a><span class='hs-comment'>-- | The current version of the server code, as a displayable 'Text' value</span>
+<a name="line-10"></a><span class='hs-comment'>-- (for use by the @server_version()@ built-in function)</span>
+<a name="line-11"></a><span class='hs-definition'>serverVersion</span> <span class='hs-keyglyph'>::</span> <span class='hs-conid'>Text</span>
+<a name="line-12"></a><span class='hs-definition'>serverVersion</span> <span class='hs-keyglyph'>=</span> <span class='hs-varid'>pack</span> <span class='hs-varop'>$</span> <span class='hs-str'>"EtaMOO/"</span> <span class='hs-varop'>++</span> <span class='hs-varid'>showVersion</span> <span class='hs-varid'>version</span>
 </pre></body>
 </html>
