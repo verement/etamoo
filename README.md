@@ -36,6 +36,8 @@ EtaMOO differs from LambdaMOO in a few significant ways:
   * EtaMOO is Unicode-aware, and will eventually include support for Unicode
     MOO strings via compile-time build option.
 
+  * EtaMOO supports fractional second delays in `suspend()` and `fork`.
+
   * EtaMOO supports IPv6.
 
 The implementation of EtaMOO closely follows the specifications of the
