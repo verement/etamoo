@@ -336,8 +336,7 @@ instance Show Wake where
 
 -- | The intermediate or final result of a running task
 data TaskDisposition = Complete Value
-                     | Suspend (Maybe Integer)    (Resume ())
-                     | Read     ObjId             (Resume Value)
+                     | Suspend                    (Resume ())
                      | forall a. RequestIO (IO a) (Resume a)
                      | Uncaught Exception
                      | Timeout  Resource  CallStack
@@ -412,7 +411,7 @@ runTask task = do
           case disposition of
             Complete value -> putResult (Just value)
 
-            Suspend _ (Resume resume) -> do
+            Suspend (Resume resume) -> do
               putResult Nothing
 
               -- restart this task only when there are none other running
@@ -422,8 +421,6 @@ runTask task = do
                   retry
 
               runTask' task' { taskComputation = resume () } noOp
-
-            Read _ _ -> error "read() not yet implemented"
 
             Uncaught exception@Exception {
                 exceptionCode      = code
@@ -462,13 +459,12 @@ runTask task = do
                     Complete value -> do
                       unless (truthOf value) $ informPlayer traceback
                       putResult Nothing
-                    Suspend _ (Resume resume) -> do
+                    Suspend (Resume resume) -> do
                       -- The aborted task is considered "handled" but continue
                       -- running the suspended handler (which might abort
                       -- again!)
                       putResult Nothing
                       runTask' task' { taskComputation = resume () } noOp
-                    Read _ _ -> error "read() not yet implemented"
                     Uncaught exception -> do
                       informPlayer traceback
                       informPlayer $ formatTraceback exception
@@ -745,7 +741,7 @@ callSystemVerb name args = callSystemVerb' systemObject name args Str.empty
 
 callSystemVerb' :: ObjId -> StrT -> [Value] -> StrT -> MOO (Maybe Value)
 callSystemVerb' object name args argstr = do
-  player <- asks (taskPlayer . task)
+  player <- getPlayer
   maybeVerb <- findVerb verbPermX name object
   case maybeVerb of
     (Just verbOid, Just verb) -> do

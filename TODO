@@ -8,7 +8,6 @@
 * § 4 The MOO Programming Language
 ** § 4.4 Built-in Functions
 *** § 4.4.4 Operations on Network Connections
-**** read()
 **** open_network_connection()
 **** hold-input
 *** § 4.4.7 Administrative Operations
@@ -73,3 +72,4 @@
 ** queue_info() includes owner of current task?
 ** recycle() object which is a target of a listening point
 ** PREFIX/SUFFIX on empty input line, uncaught exception
+** Revisit read() invariant

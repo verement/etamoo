@@ -20,6 +20,8 @@ module MOO.Connection (
   , sendToConnection
   , closeConnection
 
+  , readFromConnection
+
   , notify
   , notify'
 
@@ -36,7 +38,8 @@ module MOO.Connection (
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (STM, TVar, TMVar, atomically, newTVar,
-                               newEmptyTMVar, tryPutTMVar, takeTMVar,
+                               newEmptyTMVar, takeTMVar,
+                               putTMVar, tryPutTMVar, tryTakeTMVar,
                                readTVar, writeTVar, modifyTVar, swapTVar,
                                readTVarIO)
 import Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueue, closeTBMQueue,
@@ -46,6 +49,9 @@ import Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueue, closeTBMQueue,
                                         freeSlotsTBMQueue)
 import Control.Exception (SomeException, try, bracket)
 import Control.Monad ((<=<), join, when, unless, foldM, forever, void, liftM)
+import Control.Monad.Cont (callCC)
+import Control.Monad.Reader (asks)
+import Control.Monad.State (get, modify)
 import Control.Monad.Trans (lift)
 import Data.ByteString (ByteString)
 import Data.Map (Map)
@@ -55,6 +61,7 @@ import Data.Text (Text)
 import Data.Text.Encoding (Decoding(..), encodeUtf8, streamDecodeUtf8With)
 import Data.Text.Encoding.Error (lenientDecode)
 import Data.Time (UTCTime, getCurrentTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Pipes (Producer, Consumer, Pipe, await, yield, runEffect,
               for, cat, (>->))
 import Pipes.Concurrent (Buffer(..), Output(..), spawn, spawn',
@@ -78,7 +85,7 @@ data Connection = Connection {
     connectionObject           :: ObjId
   , connectionPlayer           :: TVar ObjId
 
-  , connectionInput            :: TBMQueue ConnectionMessage
+  , connectionInput            :: TBMQueue StrT
   , connectionOutput           :: TBMQueue ConnectionMessage
 
   , connectionName             :: ConnectionName
@@ -216,14 +223,20 @@ allIntrinsicCommands = M.fromList $ map assoc intrinsicCommands
           , icProgram
           ]
 
-outOfBandPrefix :: Text
-outOfBandPrefix = "#$#"
+maxQueueLength :: Int
+maxQueueLength = 512
 
 outOfBandQuotePrefix :: Text
 outOfBandQuotePrefix = "#$\""
 
-maxQueueLength :: Int
-maxQueueLength = 512
+outOfBandPrefix :: Text
+outOfBandPrefix = "#$#"
+
+isOOBQuoted :: Text -> Bool
+isOOBQuoted = (outOfBandQuotePrefix `T.isPrefixOf`)
+
+isOOB :: Text -> Bool
+isOOB = (outOfBandPrefix `T.isPrefixOf`)
 
 type ConnectionName = STM String
 type ConnectionHandler = ConnectionName -> (Producer ByteString IO (),
@@ -299,7 +312,7 @@ connectionHandler world' object printMessages connectionName (input, output) =
               , nextConnectionId = nextId
               }
 
-            writeTBMQueue inputQueue (Line T.empty)
+            writeTBMQueue inputQueue Str.empty
 
             return connection
 
@@ -322,34 +335,42 @@ connectionHandler world' object printMessages connectionName (input, output) =
 runConnection :: TVar World -> Bool -> Connection -> IO ()
 runConnection world' printMessages conn = loop
   where loop = do
-          input <- atomically $ readTBMQueue (connectionInput conn)
+          (line, reader) <- atomically $ do
+            line <- readTBMQueue (connectionInput conn)
+            reader <- tryTakeTMVar (connectionReader conn)
+            return (line, reader)
 
+          case (reader, line) of
+            (Nothing,          Just line) -> processLine' line   >> loop
+            (Just (Wake wake), Just line) -> wake (Str line)     >> loop
+            (Just (Wake wake), Nothing)   -> wake (Err E_INVARG)
+            (Nothing,          Nothing)   -> return ()
+
+        processLine' :: StrT -> IO ()
+        processLine' line = do
           options <- readTVarIO (connectionOptions conn)
-          let processLine'
-                | optionDisableOOB options = processLine options
-                | otherwise                = processLineWithOOB options
-          case input of
-            Just (Line line)    -> processLine'  line  >> loop
-            Just (Binary bytes) -> processBinary bytes >> loop
-            Nothing             -> return ()
+          if optionDisableOOB options
+            then processLine        options line
+            else processLineWithOOB options line
 
-        processLineWithOOB :: ConnectionOptions -> Text -> IO ()
+        processLineWithOOB :: ConnectionOptions -> StrT -> IO ()
         processLineWithOOB options line
-          | outOfBandQuotePrefix `T.isPrefixOf` line = processLine options line'
-          | outOfBandPrefix      `T.isPrefixOf` line = processOOB  line
-          | otherwise                                = processLine options line
-          where line' = T.drop (T.length outOfBandQuotePrefix) line
+          | isOOBQuoted line' = processLine options (unquote line)
+          | isOOB       line' = processOOB                   line
+          | otherwise         = processLine options          line
+          where line'   = Str.toText line
+                unquote = Str.drop (T.length outOfBandQuotePrefix)
 
-        processOOB :: Text -> IO ()
+        processOOB :: StrT -> IO ()
         processOOB line =
           void $ runServerVerb' "do_out_of_band_command" (cmdWords line) line
 
-        processLine :: ConnectionOptions -> Text -> IO ()
+        processLine :: ConnectionOptions -> StrT -> IO ()
         processLine options line = do
           player <- readTVarIO (connectionPlayer conn)
           if player < 0 then processUnLoggedIn line
             else do
-            let cmd = parseCommand line
+            let cmd = parseCommand (Str.toText line)
             case M.lookup (Str.toText $ commandVerb cmd)
                  (optionIntrinsicCommands options) of
               Just Intrinsic { intrinsicFunction = runIntrinsic } ->
@@ -369,10 +390,7 @@ runConnection world' printMessages conn = loop
                     Just value | truthOf value -> return zero
                     _                          -> runCommand cmd
 
-        processBinary :: ByteString -> IO ()
-        processBinary bytes = return ()
-
-        processUnLoggedIn :: Text -> IO ()
+        processUnLoggedIn :: StrT -> IO ()
         processUnLoggedIn line = do
           result <- runServerTask $ do
             maxObject <- maxObject `liftM` getDatabase
@@ -422,18 +440,16 @@ runConnection world' printMessages conn = loop
           print msg
           runServerVerb systemVerb [Obj player]
 
-        callSystemVerb :: StrT -> [Value] -> Text -> MOO (Maybe Value)
-        callSystemVerb vname args argstr =
-          callSystemVerb' object vname args (Str.fromText argstr)
-          where object = connectionObject conn
+        callSystemVerb :: StrT -> [Value] -> StrT -> MOO (Maybe Value)
+        callSystemVerb = callSystemVerb' (connectionObject conn)
 
         runServerVerb :: StrT -> [Value] -> IO ()
-        runServerVerb vname args = void $ runServerVerb' vname args T.empty
+        runServerVerb vname args = void $ runServerVerb' vname args Str.empty
 
-        runServerVerb' :: StrT -> [Value] -> Text -> IO (Maybe Value)
+        runServerVerb' :: StrT -> [Value] -> StrT -> IO (Maybe Value)
         runServerVerb' vname args argstr = runServerTask $
           fromMaybe zero `liftM`
-            callSystemVerb' object vname args (Str.fromText argstr)
+            callSystemVerb' object vname args argstr
           where object = connectionObject conn
 
         runServerTask :: MOO Value -> IO (Maybe Value)
@@ -445,13 +461,13 @@ runConnection world' printMessages conn = loop
         print' conn msg
           | printMessages = void $ runServerTask $
                             printMessage conn msg >> return zero
-          | otherwise = return ()
+          | otherwise     = return ()
 
         print :: (ObjId -> MOO [Text]) -> IO ()
         print = print' conn
 
-        cmdWords :: Text -> [Value]
-        cmdWords = map Str . parseWords
+        cmdWords :: StrT -> [Value]
+        cmdWords = map Str . parseWords . Str.toText
 
 -- | Connection reading thread: deliver messages from the network to our input
 -- 'TBMQueue' until EOF, handling binary mode and the flush command, if any.
@@ -521,7 +537,12 @@ connectionRead conn = do
             Binary _ -> lift $ enqueue message
 
         enqueue :: ConnectionMessage -> IO ()
-        enqueue = atomically . writeTBMQueue (connectionInput conn)
+        enqueue = atomically . writeTBMQueue (connectionInput conn) . stringize
+
+        stringize :: ConnectionMessage -> StrT
+        stringize message = case message of
+          Line   text  -> Str.fromText   text
+          Binary bytes -> Str.fromBinary bytes
 
         flushQueue :: IO ()
         flushQueue = atomically $ flushInput True conn
@@ -599,7 +620,7 @@ enqueueOutput noFlush conn message = do
     _          -> return True
 
 sendToConnection :: Connection -> Text -> STM ()
-sendToConnection conn line = void $ enqueueOutput False conn (Line line)
+sendToConnection conn = void . enqueueOutput False conn . Line
 
 printMessage :: Connection -> (ObjId -> MOO [Text]) -> MOO ()
 printMessage conn msg = serverMessage conn msg >>= liftSTM
@@ -607,6 +628,46 @@ printMessage conn msg = serverMessage conn msg >>= liftSTM
 serverMessage :: Connection -> (ObjId -> MOO [Text]) -> MOO (STM ())
 serverMessage conn msg =
   mapM_ (sendToConnection conn) `liftM` msg (connectionObject conn)
+
+readFromConnection :: ObjId -> Bool -> MOO Value
+readFromConnection oid nonBlocking = withConnection oid $ \conn -> do
+  input <- liftSTM $ tryReadTBMQueue (connectionInput conn)
+  case input of
+    Just (Just line) -> return (Str line)
+    Just Nothing
+      | nonBlocking  -> return zero
+      | otherwise    -> suspend conn
+    Nothing          -> raise E_INVARG
+
+  where suspend :: Connection -> MOO Value
+        suspend conn = do
+          resumeTVar <- liftSTM newEmptyTMVar
+          let wake value = do
+                now <- getCurrentTime
+                atomically $ putTMVar resumeTVar (now, value)
+
+          success <- liftSTM $ tryPutTMVar (connectionReader conn) (Wake wake)
+          if success
+            then do
+              task <- asks task
+              state <- get
+              putTask task { taskStatus = Reading
+                           , taskState  = state {
+                             startTime = posixSecondsToUTCTime (-1) }
+                           }
+
+              callCC $ interrupt . Suspend . Resume
+              (now, value) <- liftSTM $ takeTMVar resumeTVar
+
+              putTask task
+
+              modify $ \state -> state { ticksLeft = 15000
+                                       , startTime = now }  -- XXX ticks
+              case value of
+                Err error -> raise error
+                _         -> return value
+
+            else raise E_INVARG
 
 -- | Send data to a connection, flushing if necessary.
 notify :: ObjId -> StrT -> MOO Bool
@@ -635,17 +696,16 @@ forceInput :: Bool -> ObjId -> StrT -> MOO ()
 forceInput atFront oid line =
   withConnection oid $ \conn -> do
     let queue   = connectionInput conn
-        message = Line (Str.toText line)
     success <- liftSTM $
-      if atFront then unGetTBMQueue queue message >> return True
-      else fromMaybe True `fmap` tryWriteTBMQueue queue message
+      if atFront then unGetTBMQueue queue line >> return True
+      else fromMaybe True `fmap` tryWriteTBMQueue queue line
     unless success $ raise E_QUOTA
 
 -- | Flush a connection's input queue, optionally showing what was flushed.
 flushInput :: Bool -> Connection -> STM ()
 flushInput showMessages conn = do
   let queue  = connectionInput conn
-      notify = when showMessages . void . enqueueOutput False conn . Line
+      notify = when showMessages . sendToConnection conn
   empty <- isEmptyTBMQueue queue
   if empty then notify ">> No pending input to flush..."
     else do notify ">> Flushing the following pending input:"
@@ -656,11 +716,8 @@ flushInput showMessages conn = do
             where loop = do
                     item <- join `fmap` tryReadTBMQueue queue
                     case item of
-                      Just (Line line) -> do
-                        notify $ ">>     " <> line
-                        loop
-                      Just (Binary _)  -> do
-                        notify   ">>   * [binary data]"
+                      Just line -> do
+                        notify $ ">>     " <> Str.toText line
                         loop
                       Nothing -> return ()
 

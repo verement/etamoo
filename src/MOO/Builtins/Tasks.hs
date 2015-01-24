@@ -161,7 +161,7 @@ bf_suspend = Builtin "suspend" 0 (Just 1) [TNum] TAny $ \optional -> do
 
   putTask task'
 
-  callCC $ interrupt . Suspend maybeMicroseconds . Resume
+  callCC $ interrupt . Suspend . Resume
   (now, value) <- liftSTM $ takeTMVar resumeTMVar
 
   putTask task' { taskStatus = Running }

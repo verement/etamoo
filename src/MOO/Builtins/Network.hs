@@ -85,8 +85,13 @@ bf_buffered_output_length = Builtin "buffered_output_length" 0 (Just 1)
 
   return (Int $ fromIntegral len)
 
-bf_read = Builtin "read" 0 (Just 2) [TObj, TAny] TAny $ \optional ->
-  notyet "read"
+bf_read = Builtin "read" 0 (Just 2) [TObj, TAny] TAny $ \optional -> do
+  (conn, optional) <- case optional of
+    Obj conn : optional -> checkPermission conn >> return (conn, optional)
+    [] -> checkWizard >> getPlayer >>= \player -> return (player, [])
+  let [non_blocking] = booleanDefaults optional [False]
+
+  readFromConnection conn non_blocking
 
 bf_force_input = Builtin "force_input" 2 (Just 3) [TObj, TStr, TAny]
                  TAny $ \(Obj conn : Str line : optional) -> do
