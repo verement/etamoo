@@ -68,6 +68,7 @@ executable etamoo
                        MOO.Builtins
                        MOO.Builtins.Common
                        MOO.Builtins.Crypt
+                       MOO.Builtins.Hash
                        MOO.Builtins.Match
                        MOO.Builtins.Network
                        MOO.Builtins.Objects
@@ -124,6 +125,7 @@ executable etamoo
                      , bytestring
                      , case-insensitive
                      , containers >= 0.4
+                     , cryptohash
                      , hashable
                      , haskeline
                      , mtl
@@ -141,7 +143,6 @@ executable etamoo
                      , time
                      , unix
                      , unordered-containers
-                     , pureMD5
                      , transformers
                      , vector
 

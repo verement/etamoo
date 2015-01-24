@@ -36,6 +36,10 @@ EtaMOO differs from LambdaMOO in a few significant ways:
   * EtaMOO is Unicode-aware, and will eventually include support for Unicode
     MOO strings via compile-time build option.
 
+  * EtaMOO supports several additional hashing algorithms beyond MD5,
+    including SHA-1, SHA-2, and RIPEMD-160, via optional argument to
+    `string_hash()`, `binary_hash()`, and `value_hash()`.
+
   * EtaMOO supports fractional second delays in `suspend()` and `fork`.
 
   * EtaMOO supports IPv6.

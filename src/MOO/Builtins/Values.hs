@@ -4,10 +4,9 @@
 module MOO.Builtins.Values ( builtins ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (mplus, unless, liftM, (>=>))
+import Control.Monad (mplus, unless, liftM)
 import Data.ByteString (ByteString)
 import Data.Char (isDigit)
-import Data.Digest.Pure.MD5 (MD5Digest)
 import Data.Maybe (fromJust)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
@@ -15,12 +14,12 @@ import Data.Word (Word8)
 import Text.Printf (printf)
 
 import qualified Data.ByteString as BS
-import qualified Data.Digest.Pure.MD5 as MD5
 import qualified Data.Vector as V
 import qualified Data.Text as T
 
 import MOO.Builtins.Common
 import MOO.Builtins.Crypt
+import MOO.Builtins.Hash
 import MOO.Builtins.Match
 import MOO.Parser (parseNum, parseObj)
 import MOO.Task
@@ -148,9 +147,10 @@ bf_equal = Builtin "equal" 2 (Just 2) [TAny, TAny] TInt $ \[value1, value2] ->
 bf_value_bytes = Builtin "value_bytes" 1 (Just 1) [TAny] TInt $ \[value] ->
   return $ Int $ fromIntegral $ storageBytes value
 
-bf_value_hash = Builtin "value_hash" 1 (Just 1) [TAny] TStr $
-                builtinFunction bf_toliteral >=>
-                builtinFunction bf_string_hash . return
+bf_value_hash = Builtin "value_hash" 1 (Just 2)
+                [TAny, TStr] TStr $ \(value : optional) ->
+  builtinFunction bf_toliteral [value] >>=
+  builtinFunction bf_string_hash . (: optional)
 
 -- § 4.4.2.2 Operations on Numbers
 
@@ -412,17 +412,21 @@ bf_crypt = Builtin "crypt" 1 (Just 2)
         randSaltChar = (saltStuff !!) `liftM` random (0, length saltStuff - 1)
         saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
 
-hash :: ByteString -> Value
-hash bs = Str $ Str.fromString $ show md5hash
-  where md5hash = MD5.hash' bs :: MD5Digest
+bf_string_hash = Builtin "string_hash" 1 (Just 2)
+                 [TStr, TStr] TStr $ \(Str text : optional) ->
+  let [Str algorithm] = defaults optional [Str "MD5"]
+  in hash algorithm (encodeUtf8 $ Str.toText text)  -- XXX Unicode
 
-bf_string_hash = Builtin "string_hash" 1 (Just 1)
-                 [TStr] TStr $ \[Str text] ->
-  return $ hash $ encodeUtf8 (Str.toText text)
+bf_binary_hash = Builtin "binary_hash" 1 (Just 2)
+                 [TStr, TStr] TStr $ \(Str bin_string : optional) ->
+  let [Str algorithm] = defaults optional [Str "MD5"]
+  in hash algorithm =<< binaryString bin_string
 
-bf_binary_hash = Builtin "binary_hash" 1 (Just 1)
-                 [TStr] TStr $ \[Str bin_string] ->
-  hash `liftM` binaryString bin_string
+hash :: StrT -> ByteString -> MOO Value
+hash alg bytes = case hashBytesUsing (toId alg) bytes of
+  Just digest -> return (Str $ Str.fromString digest)
+  Nothing     -> raiseException (Err E_INVIND)
+                 "Unknown hash algorithm" (Str alg)
 
 -- § 4.4.2.4 Operations on Lists
 
