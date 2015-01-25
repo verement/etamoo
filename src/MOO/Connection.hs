@@ -47,7 +47,7 @@ import Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueue, closeTBMQueue,
                                         tryReadTBMQueue, tryWriteTBMQueue,
                                         unGetTBMQueue, isEmptyTBMQueue,
                                         freeSlotsTBMQueue)
-import Control.Exception (SomeException, try, bracket)
+import Control.Exception (SomeException, try, bracket, catch)
 import Control.Monad ((<=<), join, when, unless, foldM, forever, void, liftM)
 import Control.Monad.Cont (callCC)
 import Control.Monad.Reader (asks)
@@ -455,7 +455,11 @@ runConnection world' printMessages conn = loop
         runServerTask :: MOO Value -> IO (Maybe Value)
         runServerTask comp = do
           player <- readTVarIO (connectionPlayer conn)
-          runTask =<< newTask world' player (resetLimits True >> comp)
+          let run = runTask =<< newTask world' player (resetLimits True >> comp)
+          run `catch` \except -> do
+            atomically $ sendToConnection conn $
+              T.pack $ "*** Runtime error: " <> show (except :: SomeException)
+            return Nothing
 
         print' :: Connection -> (ObjId -> MOO [Text]) -> IO ()
         print' conn msg
