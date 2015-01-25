@@ -330,7 +330,7 @@ connectionHandler world' object printMessages connectionName (input, output) =
                 ClientDisconnected -> "user_client_disconnected"
               comp = fromMaybe zero `liftM`
                      callSystemVerb' object systemVerb [Obj player] Str.empty
-          void $ runTask =<< newTask world' player comp
+          void $ runTask =<< newTask world' player (resetLimits True >> comp)
 
 runConnection :: TVar World -> Bool -> Connection -> IO ()
 runConnection world' printMessages conn = loop
@@ -455,7 +455,7 @@ runConnection world' printMessages conn = loop
         runServerTask :: MOO Value -> IO (Maybe Value)
         runServerTask comp = do
           player <- readTVarIO (connectionPlayer conn)
-          runTask =<< newTask world' player comp
+          runTask =<< newTask world' player (resetLimits True >> comp)
 
         print' :: Connection -> (ObjId -> MOO [Text]) -> IO ()
         print' conn msg
@@ -661,8 +661,9 @@ readFromConnection oid nonBlocking = withConnection oid $ \conn -> do
 
               putTask task
 
-              modify $ \state -> state { ticksLeft = 15000
-                                       , startTime = now }  -- XXX ticks
+              resetLimits False
+              modify $ \state -> state { startTime = now }
+
               case value of
                 Err error -> raise error
                 _         -> return value

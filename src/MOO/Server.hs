@@ -33,7 +33,7 @@ startServer logFile inputDB outputDB outboundNet pf = withSocketsDo $ do
   world' <- newWorld db outboundNet
 
   runTask =<< newTask world' nothing
-    (callSystemVerb "server_started" [] >> return zero)
+    (resetLimits True >> callSystemVerb "server_started" [] >> return zero)
 
   createListener world' systemObject (pf world') True
   putStrLn "Listening for connections..."

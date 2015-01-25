@@ -115,10 +115,10 @@ setPlayer yesno oid db = db { players = change oid (players db) }
   where change = if yesno then IS.insert else IS.delete
 
 data ServerOptions = Options {
-    bgSeconds :: IntT
+    bgSeconds :: Int
     -- ^ The number of seconds allotted to background tasks
 
-  , bgTicks :: IntT
+  , bgTicks :: Int
     -- ^ The number of ticks allotted to background tasks
 
   , connectTimeout :: IntT
@@ -128,10 +128,10 @@ data ServerOptions = Options {
   , defaultFlushCommand :: Text
     -- ^ The initial setting of each new connection’s flush command
 
-  , fgSeconds :: IntT
+  , fgSeconds :: Int
     -- ^ The number of seconds allotted to foreground tasks
 
-  , fgTicks :: IntT
+  , fgTicks :: Int
     -- ^ The number of ticks allotted to foreground tasks
 
   , maxStackDepth :: IntT
@@ -201,16 +201,16 @@ loadServerOptions = do
 
   let options = Options {
           bgSeconds = case bgSeconds of
-             Just (Int secs) | secs >= 1 -> secs
+             Just (Int secs) | secs >= 1 -> fromIntegral secs
              _                           -> 3
         , bgTicks = case bgTicks of
-             Just (Int ticks) | ticks >= 100 -> ticks
+             Just (Int ticks) | ticks >= 100 -> fromIntegral ticks
              _                               -> 15000
         , fgSeconds = case fgSeconds of
-             Just (Int secs) | secs >= 1 -> secs
+             Just (Int secs) | secs >= 1 -> fromIntegral secs
              _                           -> 5
         , fgTicks = case fgTicks of
-             Just (Int ticks) | ticks >= 100 -> ticks
+             Just (Int ticks) | ticks >= 100 -> fromIntegral ticks
              _                               -> 30000
 
         , maxStackDepth = case maxStackDepth of

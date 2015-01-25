@@ -166,7 +166,8 @@ bf_suspend = Builtin "suspend" 0 (Just 1) [TNum] TAny $ \optional -> do
 
   putTask task' { taskStatus = Running }
 
-  modify $ \state -> state { ticksLeft = 15000, startTime = now }  -- XXX ticks
+  resetLimits False
+  modify $ \state -> state { startTime = now }
 
   case value of
     Err error -> raise error

@@ -7,6 +7,10 @@ module MOO.Database ( Database
                     , dbObject
                     , modifyObject
                     , loadServerOptions
+                    , fgSeconds
+                    , bgSeconds
+                    , fgTicks
+                    , bgTicks
                     ) where
 
 import Control.Concurrent.STM (STM)
@@ -27,3 +31,9 @@ dbObject :: ObjId -> Database -> STM (Maybe Object)
 modifyObject :: ObjId -> Database -> (Object -> STM Object) -> STM ()
 
 loadServerOptions :: MOO ()
+
+fgSeconds :: ServerOptions -> Int
+bgSeconds :: ServerOptions -> Int
+
+fgTicks :: ServerOptions -> Int
+bgTicks :: ServerOptions -> Int

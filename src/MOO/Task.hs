@@ -33,6 +33,7 @@ module MOO.Task (
   , initTask
   , newTaskId
   , newTask
+  , resetLimits
   , taskOwner
   , isQueued
   , queuedTasks
@@ -509,7 +510,7 @@ forkTask taskId usecs code = do
         }
 
       state' = initState {
-          ticksLeft = 15000  -- XXX
+          ticksLeft = 15000
         , stack     = Stack [frame']
         , startTime = estimatedWakeup
         , randomGen = gen
@@ -519,7 +520,7 @@ forkTask taskId usecs code = do
           taskId          = taskId
         , taskStatus      = Forked
         , taskState       = state'
-        , taskComputation = code
+        , taskComputation = resetLimits False >> code
         }
 
   -- make sure the forked task doesn't start before the current task commits
@@ -618,19 +619,21 @@ initEnvironment task = Env {
 
 -- | A 'State' structure for data that may normally change during computation
 data TaskState = State {
-    ticksLeft :: Int
-  , stack     :: CallStack
-  , startTime :: UTCTime
-  , randomGen :: StdGen
-  , delayedIO :: DelayedIO
+    ticksLeft    :: Int
+  , secondsLimit :: Int
+  , stack        :: CallStack
+  , startTime    :: UTCTime
+  , randomGen    :: StdGen
+  , delayedIO    :: DelayedIO
   }
 
 initState = State {
-    ticksLeft = 30000
-  , stack     = Stack []
-  , startTime = posixSecondsToUTCTime 0
-  , randomGen = mkStdGen 0
-  , delayedIO = mempty
+    ticksLeft    = 30000
+  , secondsLimit = 5
+  , stack        = Stack []
+  , startTime    = posixSecondsToUTCTime 0
+  , randomGen    = mkStdGen 0
+  , delayedIO    = mempty
   }
 
 instance Sizeable TaskState where
@@ -649,6 +652,18 @@ newState = do
       startTime = startTime
     , randomGen = gen
     }
+
+-- | Reset the number of ticks and seconds available for the current task
+-- based on the latest values obtained from @$server_options@.
+resetLimits :: Bool -> MOO ()
+resetLimits foreground = do
+  world <- getWorld
+  let option what = what (serverOptions $ database world)
+
+  modify $ \state ->
+    state { ticksLeft    = option $ if foreground then fgTicks   else bgTicks
+          , secondsLimit = option $ if foreground then fgSeconds else bgSeconds
+          }
 
 getWorld :: MOO World
 getWorld = liftSTM . readTVar . taskWorld =<< asks task
