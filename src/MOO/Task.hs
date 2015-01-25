@@ -115,6 +115,7 @@ module MOO.Task (
   , checkValid
   , checkFertile
   , checkRecurrence
+  , checkQueuedTaskLimit
 
   -- * Miscellaneous
   , binaryString
@@ -1373,6 +1374,22 @@ checkRecurrence relation subject = checkRecurrence'
           case join $ relation `fmap` maybeObject of
             Just oid -> checkRecurrence' oid
             Nothing  -> return ()
+
+-- | Verify that the programmer has not reached their queued task limit
+-- (before creating a new forked, suspended, or reading task).
+checkQueuedTaskLimit :: MOO ()
+checkQueuedTaskLimit = do
+  programmer <- frame permissions
+  programmerLimit <- readProperty programmer "queued_task_limit"
+  limit <- case programmerLimit of
+    Just (Int n) | n >= 0 -> return (Just $ fromIntegral n)
+    _                     -> serverOption queuedTaskLimit
+
+  case limit of
+    Just limit -> do
+      tasks <- filter ((== programmer) . taskOwner) `fmap` queuedTasks
+      when (length tasks >= limit) $ raise E_QUOTA
+    Nothing -> return ()
 
 -- | Translate a MOO /binary string/ into a Haskell 'ByteString', raising
 -- 'E_INVARG' if the MOO string is improperly formatted.

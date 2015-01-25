@@ -146,6 +146,8 @@ bf_suspend = Builtin "suspend" 0 (Just 1) [TNum] TAny $ \optional -> do
 
     Nothing -> return endOfTime  -- XXX this is a sad wart in need of remedy
 
+  checkQueuedTaskLimit
+
   resumeTMVar <- liftSTM newEmptyTMVar
   task <- asks task
 

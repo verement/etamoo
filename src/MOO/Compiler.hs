@@ -127,6 +127,8 @@ compileStatements (statement:rest) yield = case statement of
           | otherwise -> return (ceiling    $ secs * 1000000)
         _ -> raise E_TYPE
 
+      checkQueuedTaskLimit
+
       world <- getWorld
       gen <- newRandomGen
       let taskId = newTaskId world gen

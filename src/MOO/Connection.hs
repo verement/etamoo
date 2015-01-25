@@ -645,6 +645,8 @@ readFromConnection oid nonBlocking = withConnection oid $ \conn -> do
 
   where suspend :: Connection -> MOO Value
         suspend conn = do
+          checkQueuedTaskLimit
+
           resumeTVar <- liftSTM newEmptyTMVar
           let wake value = do
                 now <- getCurrentTime

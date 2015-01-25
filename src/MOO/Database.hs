@@ -137,7 +137,7 @@ data ServerOptions = Options {
   , maxStackDepth :: Int
     -- ^ The maximum number of levels of nested verb calls
 
-  , queuedTaskLimit :: Maybe IntT
+  , queuedTaskLimit :: Maybe Int
     -- ^ The default maximum number of tasks a player can have
 
   , nameLookupTimeout :: IntT
@@ -217,7 +217,7 @@ loadServerOptions = do
              Just (Int depth) | depth > 50 -> fromIntegral depth
              _                             -> 50
         , queuedTaskLimit = case queuedTaskLimit of
-             Just (Int limit) | limit >= 0 -> Just limit
+             Just (Int limit) | limit >= 0 -> Just (fromIntegral limit)
              _                             -> Nothing
 
         , connectTimeout = case connectTimeout of

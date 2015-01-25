@@ -12,6 +12,7 @@ module MOO.Database ( Database
                     , bgSeconds
                     , fgTicks
                     , bgTicks
+                    , queuedTaskLimit
                     ) where
 
 import Control.Concurrent.STM (STM)
@@ -38,3 +39,5 @@ bgSeconds :: ServerOptions -> Int
 
 fgTicks :: ServerOptions -> Int
 bgTicks :: ServerOptions -> Int
+
+queuedTaskLimit :: ServerOptions -> Maybe Int
