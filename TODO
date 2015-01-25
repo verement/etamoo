@@ -37,7 +37,6 @@
 **** $dump_interval
 **** $user_disconnected()
 *** § 5.2.8 Controlling the Execution of Tasks
-**** $server_options.max_stack_depth
 **** $server_options.queued_task_limit
 *** § 5.2.11 Restricting Access to Built-in Properties and Functions
 **** $server_options.protect_/prop/

@@ -134,7 +134,7 @@ data ServerOptions = Options {
   , fgTicks :: Int
     -- ^ The number of ticks allotted to foreground tasks
 
-  , maxStackDepth :: IntT
+  , maxStackDepth :: Int
     -- ^ The maximum number of levels of nested verb calls
 
   , queuedTaskLimit :: Maybe IntT
@@ -214,7 +214,7 @@ loadServerOptions = do
              _                               -> 30000
 
         , maxStackDepth = case maxStackDepth of
-             Just (Int depth) | depth > 50 -> depth
+             Just (Int depth) | depth > 50 -> fromIntegral depth
              _                             -> 50
         , queuedTaskLimit = case queuedTaskLimit of
              Just (Int limit) | limit >= 0 -> Just limit

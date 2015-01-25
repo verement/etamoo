@@ -501,10 +501,11 @@ forkTask taskId usecs code = do
   task <- asks task
   gen <- newRandomGen
 
+  maxDepth <- serverOption maxStackDepth
   let frame = currentFrame (stack state)
 
       frame' = frame {
-          depthLeft    = depthLeft initFrame
+          depthLeft    = maxDepth
         , contextStack = contextStack initFrame
         , lineNumber   = lineNumber frame + 1
         }
@@ -656,14 +657,19 @@ newState = do
 -- | Reset the number of ticks and seconds available for the current task
 -- based on the latest values obtained from @$server_options@.
 resetLimits :: Bool -> MOO ()
-resetLimits foreground = do
-  world <- getWorld
-  let option what = what (serverOptions $ database world)
-
-  modify $ \state ->
+resetLimits foreground = withServerOptions $ \option -> modify $ \state ->
     state { ticksLeft    = option $ if foreground then fgTicks   else bgTicks
           , secondsLimit = option $ if foreground then fgSeconds else bgSeconds
           }
+
+withServerOptions :: (((ServerOptions -> a) -> a) -> MOO b) -> MOO b
+withServerOptions f = do
+  world <- getWorld
+  let option what = what (serverOptions $ database world)
+  f option
+
+serverOption :: (ServerOptions -> a) -> MOO a
+serverOption what = withServerOptions $ \option -> return (option what)
 
 getWorld :: MOO World
 getWorld = liftSTM . readTVar . taskWorld =<< asks task
@@ -866,9 +872,9 @@ evalFromFunc func index code = do
 runVerb :: Verb -> StackFrame -> MOO Value
 runVerb verb verbFrame = do
   Stack frames <- gets stack
-  let depthLeft' = depthLeft $ case frames of
-        frame:_ -> frame
-        []      -> initFrame
+  depthLeft' <- case frames of
+    frame:_ -> return (depthLeft frame)
+    []      -> serverOption maxStackDepth
   unless (depthLeft' > 0) $ raise E_MAXREC
 
   pushFrame verbFrame {
