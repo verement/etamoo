@@ -3,6 +3,7 @@
 
 module MOO.Builtins.Tasks ( builtins ) where
 
+import Control.Arrow ((&&&))
 import Control.Concurrent (forkIO, killThread)
 import Control.Concurrent.STM (atomically, newEmptyTMVar, takeTMVar, putTMVar)
 import Control.Monad (liftM, void)
@@ -10,7 +11,7 @@ import Control.Monad.Cont (callCC)
 import Control.Monad.Reader (asks)
 import Control.Monad.State (gets, modify, get)
 import Data.List (sort)
-import Data.Time (getCurrentTime, addUTCTime)
+import Data.Time (getCurrentTime, addUTCTime, diffUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
 import qualified Data.Map as M
@@ -114,8 +115,10 @@ bf_caller_perms = Builtin "caller_perms" 0 (Just 0) [] TObj $ \[] ->
 bf_ticks_left = Builtin "ticks_left" 0 (Just 0) [] TInt $ \[] ->
   (Int . fromIntegral) `liftM` gets ticksLeft
 
-bf_seconds_left = Builtin "seconds_left" 0 (Just 0) [] TInt $ \[] ->
-  return (Int 5)  -- XXX can this be measured?
+bf_seconds_left = Builtin "seconds_left" 0 (Just 0) [] TInt $ \[] -> do
+  (limit, start) <- gets (secondsLimit &&& startTime)
+  now <- unsafeIOtoMOO getCurrentTime
+  return $ Int $ fromIntegral $ limit - round (now `diffUTCTime` start)
 
 bf_task_id = Builtin "task_id" 0 (Just 0) [] TInt $ \[] ->
   (Int . fromIntegral) `liftM` asks (taskId . task)
