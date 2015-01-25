@@ -17,6 +17,7 @@ module MOO.Task (
   , modifyWorld
   , getDatabase
   , putDatabase
+  , serverOption
 
   -- * Task Interface
   , Task(..)

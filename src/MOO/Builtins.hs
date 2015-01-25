@@ -48,10 +48,8 @@ builtinFunctions =
 -- built-in function is unknown.
 callBuiltin :: Id -> [Value] -> MOO Value
 callBuiltin func args = do
-  world <- getWorld
-  let isProtected = func `S.member` protectFunction
-                    (serverOptions $ database world)
-      call builtin = checkArgs builtin args >> builtinFunction builtin args
+  isProtected <- (func `S.member`) `liftM` serverOption protectFunction
+  let call builtin = checkArgs builtin args >> builtinFunction builtin args
 
   case (func `M.lookup` builtinFunctions, isProtected) of
     (Just builtin, False) -> call builtin
