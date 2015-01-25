@@ -8,6 +8,7 @@ import Control.Monad.State (gets)
 import Data.List (transpose, inits)
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
+import Data.Monoid ((<>))
 import Data.Time (formatTime, utcToLocalZonedTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import System.Locale (defaultTimeLocale)
@@ -17,6 +18,7 @@ import GHC.Stats (GCStats(..), getGCStats, getGCStatsEnabled)
 # endif
 
 import qualified Data.Map as M
+import qualified Data.Set as S
 
 import MOO.Builtins.Common
 import MOO.Types
@@ -45,10 +47,23 @@ builtinFunctions =
 -- for the appropriate number and types of arguments. Raise 'E_INVARG' if the
 -- built-in function is unknown.
 callBuiltin :: Id -> [Value] -> MOO Value
-callBuiltin func args = case M.lookup func builtinFunctions of
-  Just builtin -> checkArgs builtin args >> builtinFunction builtin args
-  Nothing      -> raiseException (Err E_INVARG)
-                  "Unknown built-in function" (Str $ fromId func)
+callBuiltin func args = do
+  world <- getWorld
+  let isProtected = func `S.member` protectFunction
+                    (serverOptions $ database world)
+      call builtin = checkArgs builtin args >> builtinFunction builtin args
+
+  case (func `M.lookup` builtinFunctions, isProtected) of
+    (Just builtin, False) -> call builtin
+    (Just builtin, True)  -> do
+      this <- frame initialThis
+      if this == systemObject then call builtin
+        else do result <- callSystemVerb ("bf_" <> fromId func) args
+                case result of
+                  Nothing    -> checkWizard >> call builtin
+                  Just value -> return value
+    (Nothing, _) -> raiseException (Err E_INVARG)
+                    "Unknown built-in function" (Str $ fromId func)
 
   where checkArgs :: Builtin -> [Value] -> MOO ()
         checkArgs Builtin { builtinMinArgs  = min
