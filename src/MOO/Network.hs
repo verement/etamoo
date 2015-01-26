@@ -13,9 +13,11 @@ module MOO.Network (
   , unlisten
   ) where
 
-import Control.Concurrent.STM (TVar, atomically, modifyTVar)
-import Control.Exception (try)
+import Control.Concurrent.STM (TVar, atomically, modifyTVar, readTVarIO)
+import Control.Exception (try, finally)
 import Control.Monad (when)
+import Data.Monoid ((<>))
+import Data.Text (Text)
 import System.IO.Error (isPermissionError)
 
 import MOO.Connection (connectionHandler)
@@ -26,6 +28,7 @@ import {-# SOURCE #-} MOO.Task
 import MOO.Types
 
 import qualified Data.Map as M
+import qualified Data.Text as T
 
 data Point = Console (TVar World) | TCP (Maybe HostName) PortNumber
            deriving (Eq)
@@ -62,8 +65,13 @@ value2point value = do
 
 point2value :: Point -> Value
 point2value point = case point of
-  TCP _ port  -> Int (fromIntegral port)
-  Console{}   -> Str "Console"
+  TCP _ port -> Int (fromIntegral port)
+  Console{}  -> Str "Console"
+
+point2text :: Point -> Text
+point2text point = case point of
+  TCP _ port -> "port " <> T.pack (show port)
+  Console{}  -> "console"
 
 createListener :: TVar World -> ObjId -> Point -> Bool -> IO Listener
 createListener world' object point printMessages = do
@@ -78,11 +86,21 @@ createListener world' object point printMessages = do
     TCP{}     -> createTCPListener     listener handler
     Console{} -> createConsoleListener listener handler
 
+  world <- readTVarIO world'
   let canon = listenerPoint listener
-  atomically $ modifyTVar world' $ \world -> world {
-    listeners = M.insert canon listener (listeners world) }
+      who = toText (Obj object)
+      what = " listening on " <> point2text canon
+      listening = "LISTEN: " <> who <> " now" <> what
+      notListening = "UNLISTEN: " <> who <> " no longer" <> what
+      logUnlisten = atomically $ writeLog world notListening
+      listener' = listener { listenerCancel = listenerCancel listener
+                                              `finally` logUnlisten }
+  atomically $ do
+    writeLog world listening
+    modifyTVar world' $ \world -> world {
+      listeners = M.insert canon listener' (listeners world) }
 
-  return listener
+  return listener'
 
 listen :: ObjId -> Point -> Bool -> MOO Point
 listen object point printMessages = do

@@ -270,6 +270,10 @@ connectionHandler world' object printMessages connectionName (input, output) =
 
             let connectionId = nextConnectionId world
 
+            name <- connectionName
+            writeLog world $ "ACCEPT: " <> toText (Obj connectionId) <>
+              " on " <> T.pack name
+
             playerVar     <- newTVar connectionId
 
             inputQueue    <- newTBMQueue maxQueueLength

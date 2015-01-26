@@ -42,9 +42,13 @@ startServer logFile inputDB outputDB outboundNet pf = withSocketsDo $ do
   writeLog $ "CMDLINE: Outbound network connections " <>
     if outboundNet then "enabled." else "disabled."
 
-  writeLog $ "STARTING: Version " <> serverVersion <> " of the LambdaMOO server"
+  mapM_ writeLog [
+      "STARTING: Version " <> serverVersion <> " of the LambdaMOO server"
+    , "          (Using TCP/IP with IPv6 support)"
+    , "          (Task timeouts not measured.)"
+    ]
 
-  db <- loadLMDatabase inputDB >>= either (error . show) return
+  db <- loadLMDatabase inputDB writeLog >>= either (error . show) return
 
   world' <- newWorld stmLogger db outboundNet
 
@@ -52,7 +56,6 @@ startServer logFile inputDB outputDB outboundNet pf = withSocketsDo $ do
     (resetLimits True >> callSystemVerb "server_started" [] >> return zero)
 
   createListener world' systemObject (pf world') True
-  putStrLn "Listening for connections..."
 
   world <- readTVarIO world'
   takeMVar (shutdownMessage world) >>= shutdownServer world'

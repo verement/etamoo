@@ -14,13 +14,14 @@ import Data.Bits (shiftL, shiftR, (.&.), (.|.))
 import Data.IntSet (IntSet)
 import Data.List (sort, foldl', elemIndex)
 import Data.Maybe (catMaybes, listToMaybe)
+import Data.Monoid ((<>))
 import Data.Text.Lazy (Text)
 import Data.Text.Lazy.Builder (Builder, toLazyText,
                                fromLazyText, fromString, singleton)
 import Data.Text.Lazy.Builder.Int (decimal)
 import Data.Text.Lazy.Builder.RealFloat (realFloat)
 import Data.Word (Word)
-import System.IO (Handle, hFlush, stdout, withFile, IOMode(..),
+import System.IO (Handle, withFile, IOMode(..),
                   hSetBuffering, BufferMode(..),
                   hSetNewlineMode, NewlineMode(..), Newline(..),
                   hSetEncoding, utf8)
@@ -54,22 +55,31 @@ withDBFile dbFile mode io = withFile dbFile mode $ \handle -> do
   hSetEncoding handle utf8
   io handle
 
-loadLMDatabase :: FilePath -> IO (Either ParseError Database)
-loadLMDatabase dbFile = withDBFile dbFile ReadMode $ \handle -> do
+loadLMDatabase :: FilePath -> (T.Text -> IO ()) ->
+                  IO (Either ParseError Database)
+loadLMDatabase dbFile writeLog = withDBFile dbFile ReadMode $ \handle -> do
+  writeLog $ "LOADING: " <> T.pack dbFile
   contents <- TL.hGetContents handle
-  runReaderT (runParserT lmDatabase initDatabase dbFile contents) initDBEnv
+  runReaderT (runParserT lmDatabase initDatabase dbFile contents)
+    (initDBEnv writeLog)
 
 type DBParser = ParsecT Text Database (ReaderT DBEnv IO)
 
 data DBEnv = DBEnv {
-    input_version :: Word
+    logger        :: T.Text -> IO ()
+  , input_version :: Word
   , users         :: IntSet
 }
 
-initDBEnv = DBEnv {
-    input_version = undefined
+initDBEnv logger = DBEnv {
+    logger        = logger
+  , input_version = undefined
   , users         = IS.empty
 }
+
+writeLog :: String -> DBParser ()
+writeLog line = asks logger >>= \writeLog ->
+  liftIO (writeLog $ "LOADING: " <> T.pack line)
 
 header_format_string = ("** LambdaMOO Database, Format Version ", " **")
 
@@ -78,7 +88,7 @@ lmDatabase = do
   let (before, after) = header_format_string
   dbVersion <- line $ between (string before) (string after) unsignedInt
 
-  liftIO $ putStrLn $ "LambdaMOO database (version " ++ show dbVersion ++ ")"
+  writeLog $ "LambdaMOO database (version " ++ show dbVersion ++ ")"
 
   unless (dbVersion < num_db_versions) $
     fail $ "Unsupported database format (version " ++ show dbVersion ++ ")"
@@ -89,31 +99,31 @@ lmDatabase = do
     dummy  <- line signedInt
     nusers <- line signedInt
 
-    liftIO $ putStrLn $ show nobjs ++ " objects, "
+    writeLog $ show nobjs ++ " objects, "
       ++ show nprogs ++ " programs, "
       ++ show nusers ++ " users"
 
     users <- count nusers read_objid
     installUsers users
 
-    liftIO $ putStrLn $ "Players: " ++
+    writeLog $ "Players: " ++
       T.unpack (toLiteral $ objectList $ sort users)
 
     local (\r -> r { users = IS.fromList users }) $ do
-      liftIO $ putStrLn "Reading objects..."
+      writeLog $ "Reading " <> show nobjs <> " objects..."
       installObjects =<< count nobjs read_object
 
-      liftIO $ putStrLn "Reading verb programs..."
+      writeLog $ "Reading " <> show nprogs <> " MOO verb programs..."
       mapM_ installProgram =<< count nprogs dbProgram
 
-      liftIO $ putStrLn "Reading forked and suspended tasks..."
+      writeLog "Reading forked and suspended tasks..."
       read_task_queue
 
-      liftIO $ putStrLn "Reading list of formerly active connections..."
+      writeLog "Reading list of formerly active connections..."
       read_active_connections
 
   eof
-  liftIO $ putStrLn "Database loaded!"
+  writeLog "Database loaded!"
 
   getState
 
@@ -328,7 +338,7 @@ read_object = (<?> "object") $ do
   objectDef <- if recycled then return Nothing else do
     name <- read_string
 
-    liftIO $ putStrLn $ "  #" ++ show oid ++ " (" ++ name ++ ")"
+    -- liftIO $ putStrLn $ "  #" ++ show oid ++ " (" ++ name ++ ")"
 
     read_string  -- old handles string
     flags <- read_num
@@ -459,7 +469,7 @@ dbProgram = do
 
   let verbdesc = "#" ++ show oid ++ ":" ++ show vnum
 
-  liftIO $ putStr ("  " ++ verbdesc ++ "     \r") >> hFlush stdout
+  -- liftIO $ putStr ("  " ++ verbdesc ++ "     \r") >> hFlush stdout
 
   program <- read_program
   case program of
