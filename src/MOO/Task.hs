@@ -180,7 +180,9 @@ liftSTM = lift . lift . lift
 
 -- | The known universe, as far as the MOO server is concerned
 data World = World {
-    database           :: Database              -- ^ The database of objects
+    writeLog           :: Text -> STM ()        -- ^ Logging function
+
+  , database           :: Database              -- ^ The database of objects
   , tasks              :: Map TaskId Task       -- ^ Queued and running tasks
 
   , listeners          :: Map Point Listener    -- ^ Network listening points
@@ -200,7 +202,9 @@ data World = World {
   }
 
 initWorld = World {
-    database         = undefined
+    writeLog         = undefined
+
+  , database         = undefined
   , tasks            = M.empty
 
   , listeners        = M.empty
@@ -214,12 +218,13 @@ initWorld = World {
   , shutdownMessage  = undefined
   }
 
-newWorld :: Database -> Bool -> IO (TVar World)
-newWorld db outboundNetworkEnabled = do
+newWorld :: (Text -> STM ()) -> Database -> Bool -> IO (TVar World)
+newWorld writeLog db outboundNetworkEnabled = do
   shutdownVar <- newEmptyMVar
 
   world' <- newTVarIO initWorld {
-      database        = db
+      writeLog        = writeLog
+    , database        = db
     , outboundNetwork = outboundNetworkEnabled
     , shutdownMessage = shutdownVar
     }

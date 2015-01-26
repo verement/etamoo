@@ -209,9 +209,17 @@ bf_load_server_options = Builtin "load_server_options" 0 (Just 0)
   checkWizard >> loadServerOptions >> return zero
 
 bf_server_log = Builtin "server_log" 1 (Just 2)
-                [TStr, TAny] TAny $ \(Str message : optional) ->
-  let [is_error] = booleanDefaults optional [False]
-  in notyet "server_log"
+                [TStr, TAny] TAny $ \(Str message : optional) -> do
+  let [is_error]  = booleanDefaults optional [False]
+      errorMarker = if is_error then "*** " else ""
+      logMessage  = errorMarker <> "> " <> Str.toText message
+
+  checkWizard
+
+  world <- getWorld
+  liftSTM $ writeLog world logMessage
+
+  return zero
 
 bf_renumber = Builtin "renumber" 1 (Just 1) [TObj] TObj $ \[Obj object] ->
   notyet "renumber"

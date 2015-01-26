@@ -12,7 +12,6 @@
 **** hold-input
 *** § 4.4.7 Administrative Operations
 **** dump_database()
-**** server_log()
 **** renumber()
 *** § 4.4.8 Server Statistics and Miscellaneous Information
 **** db_disk_size()
@@ -50,7 +49,6 @@
 ** L.server_options.connect_timeout
 ** $user_disconnected() on db users
 ** MOO string and list size limits?
-** Logging support
 ** Finish built-in function implementations
 ** Top-level Haskell exception handling
 ** Read and write queued tasks and active connections

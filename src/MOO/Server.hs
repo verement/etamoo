@@ -3,11 +3,18 @@
 
 module MOO.Server ( startServer ) where
 
-import Control.Concurrent (takeMVar)
-import Control.Concurrent.STM (TVar, atomically, readTVarIO, readTVar)
-import Control.Monad (forM_)
+import Control.Concurrent (takeMVar, forkIO)
+import Control.Concurrent.STM (STM, TVar, atomically, readTVarIO, readTVar)
+import Control.Monad (forM_, void)
+import Data.Monoid ((<>))
 import Data.Text (Text)
+import Data.Text.IO (hPutStrLn)
+import Data.Time (getCurrentTime, utcToLocalZonedTime, formatTime)
 import Network (withSocketsDo)
+import Pipes (Pipe, runEffect, (>->), for, cat, lift, yield)
+import Pipes.Concurrent (Buffer(..), Output(..), spawn, fromInput)
+import System.IO (IOMode(..), BufferMode(..), openFile, stderr, hSetBuffering)
+import System.Locale (defaultTimeLocale)
 import System.Posix (installHandler, sigPIPE, Handler(..))
 
 import qualified Data.Map as M
@@ -20,6 +27,7 @@ import MOO.Task
 import MOO.Types
 import MOO.Network
 import MOO.Object
+import MOO.Version
 
 -- | Start the main server and create the first listening point.
 startServer :: Maybe FilePath -> FilePath -> FilePath ->
@@ -28,9 +36,17 @@ startServer logFile inputDB outputDB outboundNet pf = withSocketsDo $ do
   either error return verifyBuiltins
   installHandler sigPIPE Ignore Nothing
 
+  stmLogger <- startLogger logFile
+  let writeLog = atomically . stmLogger
+
+  writeLog $ "CMDLINE: Outbound network connections " <>
+    if outboundNet then "enabled." else "disabled."
+
+  writeLog $ "STARTING: Version " <> serverVersion <> " of the LambdaMOO server"
+
   db <- loadLMDatabase inputDB >>= either (error . show) return
 
-  world' <- newWorld db outboundNet
+  world' <- newWorld stmLogger db outboundNet
 
   runTask =<< newTask world' nothing
     (resetLimits True >> callSystemVerb "server_started" [] >> return zero)
@@ -46,6 +62,8 @@ shutdownServer world' message = do
   atomically $ do
     world <- readTVar world'
 
+    writeLog world "SHUTDOWN: shutdown signal received"
+
     forM_ (M.elems $ connections world) $ \conn -> do
       sendToConnection conn $ T.concat ["*** Shutting down: ", message, " ***"]
       closeConnection conn
@@ -54,3 +72,24 @@ shutdownServer world' message = do
   delay 5000000
 
   return ()
+
+startLogger :: Maybe FilePath -> IO (Text -> STM ())
+startLogger dest = do
+  handle <- case dest of
+    Just path -> openFile path AppendMode
+    Nothing   -> return stderr
+
+  hSetBuffering handle LineBuffering
+
+  (output, input) <- spawn Unbounded
+
+  forkIO $ runEffect $
+    fromInput input >-> timestamp >-> for cat (lift . hPutStrLn handle)
+
+  return (void . send output)
+
+  where timestamp :: Pipe Text Text IO ()
+        timestamp = for cat $ \line -> do
+          zonedTime <- lift (getCurrentTime >>= utcToLocalZonedTime)
+          let timestamp = formatTime defaultTimeLocale "%b %_d %T: " zonedTime
+          yield $ T.pack timestamp <> line
