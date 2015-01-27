@@ -214,8 +214,8 @@ bf_queued_tasks = Builtin "queued_tasks" 0 (Just 0) [] TLst $ \[] -> do
             Int . fromIntegral . taskId        -- task-id
           , Int . floor . utcTimeToPOSIXSeconds . startTime . taskState
                                                -- start-time
-          , const (Int 0)                      -- clock-id
-          , const (Int 15000)                  -- ticks XXX
+          , const (Int 0)                      -- clock-id    (obsolete)
+          , const (Int defaultBgTicks)         -- clock-ticks (obsolete)
           , Obj . taskOwner                    -- programmer
           , Obj . verbLocation . activeFrame   -- verb-loc
           , Str . verbFullName . activeFrame   -- verb-name

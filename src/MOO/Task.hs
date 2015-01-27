@@ -34,6 +34,11 @@ module MOO.Task (
   , initTask
   , newTaskId
   , newTask
+  , defaultMaxStackDepth
+  , defaultFgTicks
+  , defaultBgTicks
+  , defaultFgSeconds
+  , defaultBgSeconds
   , resetLimits
   , taskOwner
   , isQueued
@@ -493,6 +498,21 @@ runTask task = do
             Just conn -> forM_ lines $ sendToConnection conn . Str.toText
             Nothing   -> return ()
 
+defaultMaxStackDepth :: Num a => a
+defaultMaxStackDepth = 50
+
+defaultFgTicks :: Num a => a
+defaultFgTicks = 30000
+
+defaultBgTicks :: Num a => a
+defaultBgTicks = 15000
+
+defaultFgSeconds :: Num a => a
+defaultFgSeconds = 5
+
+defaultBgSeconds :: Num a => a
+defaultBgSeconds = 3
+
 -- | Create and queue a task to run the given computation after the given
 -- microsecond delay. 'E_INVARG' may be raised if the delay is out of
 -- acceptable range. (The given 'TaskId' should have been reserved by a call
@@ -519,7 +539,7 @@ forkTask taskId usecs code = do
         }
 
       state' = initState {
-          ticksLeft = 15000
+          ticksLeft = defaultBgTicks
         , stack     = Stack [frame']
         , startTime = estimatedWakeup
         , randomGen = gen
@@ -637,8 +657,8 @@ data TaskState = State {
   }
 
 initState = State {
-    ticksLeft    = 30000
-  , secondsLimit = 5
+    ticksLeft    = defaultFgTicks
+  , secondsLimit = defaultFgSeconds
   , stack        = Stack []
   , startTime    = posixSecondsToUTCTime 0
   , randomGen    = mkStdGen 0
@@ -1056,7 +1076,7 @@ data StackFrame = Frame {
   } deriving Show
 
 initFrame = Frame {
-    depthLeft     = 50
+    depthLeft     = defaultMaxStackDepth
 
   , contextStack  = []
   , variables     = initVariables

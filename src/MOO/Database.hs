@@ -202,20 +202,20 @@ loadServerOptions = do
   let options = Options {
           bgSeconds = case bgSeconds of
              Just (Int secs) | secs >= 1 -> fromIntegral secs
-             _                           -> 3
+             _                           -> defaultBgSeconds
         , bgTicks = case bgTicks of
              Just (Int ticks) | ticks >= 100 -> fromIntegral ticks
-             _                               -> 15000
+             _                               -> defaultBgTicks
         , fgSeconds = case fgSeconds of
              Just (Int secs) | secs >= 1 -> fromIntegral secs
-             _                           -> 5
+             _                           -> defaultFgSeconds
         , fgTicks = case fgTicks of
              Just (Int ticks) | ticks >= 100 -> fromIntegral ticks
-             _                               -> 30000
+             _                               -> defaultFgTicks
 
         , maxStackDepth = case maxStackDepth of
              Just (Int depth) | depth > 50 -> fromIntegral depth
-             _                             -> 50
+             _                             -> defaultMaxStackDepth
         , queuedTaskLimit = case queuedTaskLimit of
              Just (Int limit) | limit >= 0 -> Just (fromIntegral limit)
              _                             -> Nothing
