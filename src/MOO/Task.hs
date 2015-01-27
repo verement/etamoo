@@ -134,7 +134,7 @@ import Control.Concurrent.STM (STM, TVar, atomically, retry, throwSTM,
                                newEmptyTMVar, putTMVar, takeTMVar,
                                newTVarIO, readTVar, writeTVar, modifyTVar)
 import Control.Exception (SomeException, catch)
-import Control.Monad (when, unless, join, liftM, void, (>=>))
+import Control.Monad (when, unless, join, liftM, void, (>=>), forM_)
 import Control.Monad.Cont (ContT, runContT, callCC)
 import Control.Monad.Reader (ReaderT, runReaderT, local, asks)
 import Control.Monad.State.Strict (StateT, runStateT, get, gets, modify)
@@ -487,10 +487,11 @@ runTask task = do
         informPlayer :: [StrT] -> IO ()
         informPlayer lines = atomically $ do
           world <- readTVar (taskWorld task)
-          let maybeConnection = M.lookup (taskPlayer task) (connections world)
-          case maybeConnection of
-            Just conn -> mapM_ (sendToConnection conn . Str.toText) lines
-            Nothing   -> return ()  -- XXX write to server log?
+          forM_ lines $ writeLog world . Str.toText
+
+          case M.lookup (taskPlayer task) (connections world) of
+            Just conn -> forM_ lines $ sendToConnection conn . Str.toText
+            Nothing   -> return ()
 
 -- | Create and queue a task to run the given computation after the given
 -- microsecond delay. 'E_INVARG' may be raised if the delay is out of
