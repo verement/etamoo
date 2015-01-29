@@ -30,6 +30,8 @@ module MOO.Object ( Object (..)
                   , deleteVerb
                   , definedProperties
                   , definedVerbs
+                  , renumberObject
+                  , renumberOwnership
 
                   -- * Special Object Numbers
                   , systemObject
@@ -39,8 +41,9 @@ module MOO.Object ( Object (..)
                   ) where
 
 import Control.Arrow (second)
-import Control.Concurrent.STM (STM, TVar, newTVarIO, newTVar, readTVar)
-import Control.Monad (liftM)
+import Control.Concurrent.STM (STM, TVar, newTVarIO, newTVar,
+                               readTVar, writeTVar)
+import Control.Monad (liftM, (>=>), forM_)
 import Data.HashMap.Strict (HashMap)
 import Data.IntSet (IntSet)
 import Data.Maybe (isJust)
@@ -50,6 +53,7 @@ import Prelude hiding (getContents)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
 
+import {-# SOURCE #-} MOO.Database
 import MOO.Types
 import MOO.Verb
 
@@ -295,6 +299,48 @@ definedVerbs :: Object -> STM [StrT]
 definedVerbs obj = do
   verbs <- mapM (readTVar . snd) $ objectVerbs obj
   return $ map verbNames verbs
+
+renumberObject :: Object -> ObjId -> ObjId -> Database -> STM ()
+renumberObject obj old new db = do
+  -- renumber parent/children
+  case objectParent obj of
+    Nothing     -> return ()
+    Just parent -> modifyObject parent db $ deleteChild old >=> addChild new
+
+  forM_ (getChildren obj) $ \child -> modifyObject child db $ \obj ->
+    return obj { objectParent = Just new }
+
+  -- renumber location/contents
+  case objectLocation obj of
+    Nothing    -> return ()
+    Just place -> modifyObject place db $ deleteContent old >=> addContent new
+
+  forM_ (getContents obj) $ \thing -> modifyObject thing db $ \obj ->
+    return obj { objectLocation = Just new }
+
+renumberOwnership :: ObjId -> ObjId -> Object -> STM (Maybe Object)
+renumberOwnership old new obj = do
+  -- renumber property ownerships
+  forM_ (HM.elems $ objectProperties obj) $ \propRef -> do
+    prop <- readTVar propRef
+    case propertyOwner prop of
+      owner | owner == new -> writeTVar propRef prop { propertyOwner = nothing }
+            | owner == old -> writeTVar propRef prop { propertyOwner = new     }
+      _ -> return ()
+
+  -- renumber verb ownerships
+  forM_ (map snd $ objectVerbs obj) $ \verbRef -> do
+    verb <- readTVar verbRef
+    case verbOwner verb of
+      owner | owner == new -> writeTVar verbRef verb { verbOwner = nothing }
+            | owner == old -> writeTVar verbRef verb { verbOwner = new     }
+      _ -> return ()
+
+  -- renumber object ownership
+  return $ case objectOwner obj of
+    owner | owner == new -> Just obj { objectOwner = nothing }
+          | owner == old -> Just obj { objectOwner = new     }
+    _ -> Nothing
 
 -- | The system object (@#0@)
 systemObject :: ObjId

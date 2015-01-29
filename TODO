@@ -12,7 +12,6 @@
 **** hold-input
 *** § 4.4.7 Administrative Operations
 **** dump_database()
-**** renumber()
 *** § 4.4.8 Server Statistics and Miscellaneous Information
 **** db_disk_size()
 **** verb_cache_stats()

@@ -221,8 +221,14 @@ bf_server_log = Builtin "server_log" 1 (Just 2)
 
   return zero
 
-bf_renumber = Builtin "renumber" 1 (Just 1) [TObj] TObj $ \[Obj object] ->
-  notyet "renumber"
+bf_renumber = Builtin "renumber" 1 (Just 1) [TObj] TObj $ \[Obj object] -> do
+  checkValid object
+  checkWizard
+
+  (new, db) <- liftSTM . renumber object =<< getDatabase
+  putDatabase db
+
+  return (Obj new)
 
 bf_reset_max_object = Builtin "reset_max_object" 0 (Just 0) [] TAny $ \[] -> do
   checkWizard

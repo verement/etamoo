@@ -10,6 +10,7 @@ module MOO.Database (
   , dbObject
   , maxObject
   , resetMaxObject
+  , renumber
   , setObjects
   , addObject
   , deleteObject
@@ -24,12 +25,13 @@ module MOO.Database (
 
 import Control.Concurrent.STM (STM, TVar, newTVarIO, newTVar,
                                readTVar, writeTVar)
-import Control.Monad (forM, liftM)
-import Data.Monoid ((<>))
-import Data.Vector (Vector)
+import Control.Monad (forM, forM_, liftM, when)
 import Data.IntSet (IntSet)
+import Data.Maybe (isJust)
+import Data.Monoid ((<>))
 import Data.Set (Set)
 import Data.Text (Text)
+import Data.Vector (Vector)
 
 import qualified Data.IntSet as IS
 import qualified Data.Map as M
@@ -75,6 +77,46 @@ resetMaxObject db = do
           | oid >= 0  = dbObject oid db >>=
                         maybe (findLastValid $ oid - 1) (return . const oid)
           | otherwise = return nothing
+
+-- | Renumber an object in the database to be the least nonnegative object
+-- number not currently in use pursuant to the renumber() built-in function.
+renumber :: ObjId -> Database -> STM (ObjId, Database)
+renumber old db = do
+  maybeNew <- findLeastUnused 0
+  case maybeNew of
+    Nothing  -> return (old, db)
+    Just new -> do
+      -- renumber database slot references
+      let Just oldRef = dbObjectRef old db
+          Just newRef = dbObjectRef new db
+      Just obj <- readTVar oldRef
+      writeTVar oldRef Nothing
+      writeTVar newRef (Just obj)
+
+      -- ask the object to fix up parent/children and location/contents
+      renumberObject obj old new db
+
+      -- fix up ownerships throughout entire database
+      forM_ [0..maxObject db] $ \oid -> case dbObjectRef oid db of
+        Just ref -> do
+          maybeObj <- readTVar ref
+          case maybeObj of
+            Just obj -> do
+              maybeNew <- renumberOwnership old new obj
+              when (isJust maybeNew) $ writeTVar ref maybeNew
+            Nothing  -> return ()
+        Nothing  -> return ()
+
+      -- renumber player references (if any)
+      let db' = setPlayer (objectIsPlayer obj) new $ setPlayer False old db
+
+      return (new, db')
+
+  where findLeastUnused :: ObjId -> STM (Maybe ObjId)
+        findLeastUnused new
+          | new < old = dbObject new db >>= maybe (return $ Just new)
+                        (const $ findLeastUnused $ new + 1)
+          | otherwise = return Nothing
 
 setObjects :: [Maybe Object] -> Database -> IO Database
 setObjects objs db = do
