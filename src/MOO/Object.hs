@@ -10,6 +10,8 @@ module MOO.Object ( Object (..)
                   , addChild
                   , deleteChild
                   , getContents
+                  , addContent
+                  , deleteContent
                   , builtinProperties
                   , builtinProperty
                   , isBuiltinProperty
@@ -135,6 +137,14 @@ getLocation = objectForMaybe . objectLocation
 
 getContents :: Object -> [ObjId]
 getContents = IS.elems . objectContents
+
+addContent :: ObjId -> Object -> STM Object
+addContent oid obj =
+  return obj { objectContents = IS.insert oid (objectContents obj) }
+
+deleteContent :: ObjId -> Object -> STM Object
+deleteContent oid obj =
+  return obj { objectContents = IS.delete oid (objectContents obj) }
 
 data Property = Property {
     propertyName      :: StrT

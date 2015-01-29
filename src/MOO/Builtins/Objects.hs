@@ -11,7 +11,6 @@ import Data.Text (Text)
 import Prelude hiding (getContents)
 
 import qualified Data.HashMap.Strict as HM
-import qualified Data.IntSet as IS
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
@@ -330,13 +329,12 @@ moveObject funcName what where_ = do
           return obj { objectLocation = newWhere }
         case oldWhere of
           Nothing        -> return ()
-          Just oldWhere' -> liftSTM $ modifyObject oldWhere' db $ \obj ->
-            return obj { objectContents = IS.delete what (objectContents obj) }
+          Just oldWhere' -> liftSTM $ modifyObject oldWhere' db $
+                            deleteContent what
         case newWhere of
           Nothing        -> return ()
-          Just newWhere' -> liftSTM $ modifyObject newWhere' db $ \obj ->
-            return obj { objectContents = IS.insert what (objectContents obj) }
-
+          Just newWhere' -> liftSTM $ modifyObject newWhere' db $
+                            addContent what
         case oldWhere of
           Nothing        -> return ()
           Just oldWhere' ->
