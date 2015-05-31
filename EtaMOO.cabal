@@ -130,7 +130,6 @@ executable etamoo
                      , haskeline
                      , mtl
                      , network
-                     , old-locale
                      , parsec
                      , pipes
                      , pipes-bytestring
@@ -140,7 +139,7 @@ executable etamoo
                      , stm
                      , stm-chans
                      , text >= 1.2
-                     , time
+                     , time >= 1.5
                      , unix
                      , unordered-containers
                      , transformers

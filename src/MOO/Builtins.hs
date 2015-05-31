@@ -9,9 +9,8 @@ import Data.List (transpose, inits)
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
-import Data.Time (formatTime, utcToLocalZonedTime)
+import Data.Time (formatTime, utcToLocalZonedTime, defaultTimeLocale)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
-import System.Locale (defaultTimeLocale)
 
 # ifdef __GLASGOW_HASKELL__
 import GHC.Stats (GCStats(..), getGCStats, getGCStatsEnabled)

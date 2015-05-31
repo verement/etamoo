@@ -9,12 +9,12 @@ import Control.Monad (forM_, void)
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import Data.Text.IO (hPutStrLn)
-import Data.Time (getCurrentTime, utcToLocalZonedTime, formatTime)
+import Data.Time (getCurrentTime, utcToLocalZonedTime, formatTime,
+                  defaultTimeLocale)
 import Network (withSocketsDo)
 import Pipes (Pipe, runEffect, (>->), for, cat, lift, yield)
 import Pipes.Concurrent (Buffer(..), Output(..), spawn, fromInput)
 import System.IO (IOMode(..), BufferMode(..), openFile, stderr, hSetBuffering)
-import System.Locale (defaultTimeLocale)
 import System.Posix (installHandler, sigPIPE, Handler(..))
 
 import qualified Data.Map as M
