@@ -11,9 +11,14 @@ import Control.Concurrent.STM (STM, TMVar, newEmptyTMVarIO, atomically,
 import Control.Exception (SomeException, mask, try, finally, bracketOnError)
 import Control.Monad (liftM, forever)
 import Data.Maybe (fromMaybe)
-import Network.Socket (PortNumber, Socket, SockAddr, SocketOption(..),
+import Network.Socket (PortNumber, Socket, SockAddr,
+                       SocketOption(ReuseAddr, KeepAlive),
                        Family(AF_INET6), SocketType(Stream),
-                       AddrInfo(..), AddrInfoFlag(..), NameInfoFlag(..),
+                       AddrInfo(addrFlags, addrFamily, addrSocketType,
+                                addrProtocol, addrAddress),
+                       AddrInfoFlag(AI_PASSIVE, AI_NUMERICSERV,
+                                    AI_ADDRCONFIG, AI_V4MAPPED),
+                       NameInfoFlag(NI_NAMEREQD, NI_NUMERICHOST, NI_NUMERICSERV),
                        HostName, ServiceName, maxListenQueue,
                        defaultHints, getAddrInfo, setSocketOption,
                        socket, bind, listen, accept, close,
@@ -21,7 +26,8 @@ import Network.Socket (PortNumber, Socket, SockAddr, SocketOption(..),
 import Pipes.Network.TCP (fromSocket, toSocket)
 
 import MOO.Connection (ConnectionHandler)
-import {-# SOURCE #-} MOO.Network (Point(..), Listener(..))
+import {-# SOURCE #-} MOO.Network (Point(TCP),
+                                   Listener(listenerPoint, listenerCancel))
 
 maxBufferSize :: Int
 maxBufferSize = 1024

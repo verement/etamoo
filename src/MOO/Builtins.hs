@@ -13,7 +13,8 @@ import Data.Time (formatTime, utcToLocalZonedTime, defaultTimeLocale)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 
 # ifdef __GLASGOW_HASKELL__
-import GHC.Stats (GCStats(..), getGCStats, getGCStatsEnabled)
+import GHC.Stats (GCStats(currentBytesUsed, maxBytesUsed),
+                  getGCStats, getGCStatsEnabled)
 # endif
 
 import qualified Data.Map as M

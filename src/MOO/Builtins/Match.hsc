@@ -18,7 +18,7 @@ module MOO.Builtins.Match (
 import Foreign (Ptr, FunPtr, ForeignPtr, alloca, allocaArray, nullPtr,
                 peek, peekArray, peekByteOff, pokeByteOff,
                 newForeignPtr, mallocForeignPtrBytes, withForeignPtr, (.|.))
-import Foreign.C (CString, CInt(..), CULong, peekCString)
+import Foreign.C (CString, CInt(CInt), CULong, peekCString)
 import Control.Monad (liftM)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)

@@ -15,7 +15,7 @@ import Data.Text.Encoding (encodeUtf8)
 import Pipes (Producer, Pipe, runEffect, await, yield, for, cat, (>->))
 import Pipes.ByteString (stdout)
 import Pipes.Concurrent (spawn, unbounded, send, fromInput, toOutput)
-import System.Console.Haskeline (InputT, CompletionFunc, Completion(..),
+import System.Console.Haskeline (InputT, CompletionFunc, Completion(),
                                  runInputT, getInputLine,
                                  setComplete, defaultSettings,
                                  completeWordWithPrev, simpleCompletion)
@@ -27,7 +27,8 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 
 import MOO.Connection (ConnectionHandler)
-import {-# SOURCE #-} MOO.Network (Point(..), Listener(..))
+import {-# SOURCE #-} MOO.Network (Point(Console),
+                                   Listener(listenerPoint, listenerCancel))
 import MOO.Object
 import MOO.Task
 import MOO.Types

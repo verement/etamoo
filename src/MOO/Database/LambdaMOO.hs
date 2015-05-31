@@ -21,10 +21,10 @@ import Data.Text.Lazy.Builder (Builder, toLazyText,
 import Data.Text.Lazy.Builder.Int (decimal)
 import Data.Text.Lazy.Builder.RealFloat (realFloat)
 import Data.Word (Word)
-import System.IO (Handle, withFile, IOMode(..),
-                  hSetBuffering, BufferMode(..),
-                  hSetNewlineMode, NewlineMode(..), Newline(..),
-                  hSetEncoding, utf8)
+import System.IO (Handle, withFile, IOMode(ReadMode, WriteMode),
+                  hSetBuffering, BufferMode(BlockBuffering),
+                  hSetNewlineMode, NewlineMode(NewlineMode, inputNL, outputNL),
+                  Newline(CRLF, LF), hSetEncoding, utf8)
 import Text.Parsec (ParseError, ParsecT, runParserT, string, count,
                     getState, putState, many1, oneOf, manyTill, anyToken,
                     digit, char, option, try, lookAhead, (<|>), (<?>))

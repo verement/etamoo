@@ -14,8 +14,9 @@ import Data.Time (getCurrentTime, utcToLocalZonedTime, formatTime,
 import Network (withSocketsDo)
 import Pipes (Pipe, runEffect, (>->), for, cat, lift, yield)
 import Pipes.Concurrent (spawn, unbounded, send, fromInput)
-import System.IO (IOMode(..), BufferMode(..), openFile, stderr, hSetBuffering)
-import System.Posix (installHandler, sigPIPE, Handler(..))
+import System.IO (IOMode(AppendMode), BufferMode(LineBuffering),
+                  openFile, stderr, hSetBuffering)
+import System.Posix (installHandler, sigPIPE, Handler(Ignore))
 
 import qualified Data.Map as M
 import qualified Data.Text as T

@@ -7,8 +7,8 @@ import Control.Monad (foldM, unless)
 import Data.List (isInfixOf, isPrefixOf)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Version (showVersion)
-import System.Console.GetOpt (OptDescr(..), ArgDescr(..), ArgOrder(..),
-                              getOpt, usageInfo)
+import System.Console.GetOpt (OptDescr(Option), ArgDescr(NoArg, ReqArg),
+                              ArgOrder(Permute), getOpt, usageInfo)
 import System.Environment (getArgs, getProgName)
 
 import Paths_EtaMOO (version)

@@ -6,7 +6,7 @@ module MOO.Builtins.Crypt (crypt) where
 
 import Control.Monad (liftM)
 import Foreign (allocaBytes)
-import Foreign.C (CString, CInt(..), withCString, peekCString)
+import Foreign.C (CString, CInt(CInt), withCString, peekCString)
 import System.IO.Unsafe (unsafePerformIO)
 
 -- This must be /unsafe/ to block other threads while it executes, since it
