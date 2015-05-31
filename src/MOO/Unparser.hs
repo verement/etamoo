@@ -6,7 +6,7 @@
 module MOO.Unparser ( unparse ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (unless, liftM, (<=<))
+import Control.Monad (unless, (<=<))
 import Control.Monad.Reader (ReaderT, runReaderT, asks, local)
 import Control.Monad.Writer (Writer, execWriter, tell)
 import Data.Char (isAlpha, isAlphaNum)
@@ -37,7 +37,7 @@ data UnparserEnv = UnparserEnv {
 -- true, the resulting MOO code will be indented with spaces as appropriate to
 -- show the nesting structure of statements.
 --
--- The MOO code is returned as a single 'Text' value containing embedded
+-- The MOO code is returned as a single lazy 'Text' value containing embedded
 -- newline characters.
 unparse :: Bool     -- ^ /fully-paren/
         -> Bool     -- ^ /indent/
@@ -210,9 +210,9 @@ unparseExpr expr = case expr of
   Negate lhs@(Literal x `Range` _)      | numeric x -> negateParen lhs
   Negate lhs@(Literal Flt{} `PropertyRef` _)        -> negateParen lhs
   Negate lhs@(VerbCall (Literal x) _ _) | numeric x -> negateParen lhs
-  Negate lhs -> ("-" <>) `liftM` parenL expr lhs
+  Negate lhs -> ("-" <>) <$> parenL expr lhs
 
-  Not lhs -> ("!" <>) `liftM` parenL expr lhs
+  Not lhs -> ("!" <>) <$> parenL expr lhs
 
   Conditional cond lhs rhs -> do
     cond' <- parenR expr cond
@@ -231,11 +231,13 @@ unparseExpr expr = case expr of
         expr' <- unparseExpr expr
         return $ "`" <> lhs' <> " ! " <> codes' <> " => " <> expr' <> "'"
 
-  where binaryL lhs op rhs = do
+  where binaryL :: Expr -> Builder -> Expr -> Unparser Builder
+        binaryL lhs op rhs = do
           lhs' <- parenL expr lhs
           rhs' <- parenR expr rhs
           return $ lhs' <> op <> rhs'
 
+        binaryR :: Expr -> Builder -> Expr -> Unparser Builder
         binaryR lhs op rhs = do
           lhs' <- parenR expr lhs
           rhs' <- parenL expr rhs
@@ -246,15 +248,16 @@ unparseExpr expr = case expr of
         numeric Flt{} = True
         numeric _     = False
 
-        negateParen = liftM ("-" <>) . paren
+        negateParen :: Expr -> Unparser Builder
+        negateParen = fmap ("-" <>) . paren
 
 unparseArgs :: [Argument] -> Unparser Builder
-unparseArgs = liftM (mconcat . intersperse ", ") . mapM unparseArg
-  where unparseArg (ArgNormal expr) =                  unparseExpr expr
-        unparseArg (ArgSplice expr) = ("@" <>) `liftM` unparseExpr expr
+unparseArgs = fmap (mconcat . intersperse ", ") . mapM unparseArg
+  where unparseArg (ArgNormal expr) =              unparseExpr expr
+        unparseArg (ArgSplice expr) = ("@" <>) <$> unparseExpr expr
 
 unparseScatter :: [ScatterItem] -> Unparser Builder
-unparseScatter = liftM (mconcat . intersperse ", ") . mapM unparseScat
+unparseScatter = fmap (mconcat . intersperse ", ") . mapM unparseScat
   where unparseScat (ScatRequired var)         = return $        fromId var
         unparseScat (ScatRest     var)         = return $ "@" <> fromId var
         unparseScat (ScatOptional var Nothing) = return $ "?" <> fromId var
@@ -288,10 +291,13 @@ parenR = mightParen (>=)
 
 isIdentifier :: StrT -> Bool
 isIdentifier name = isIdentifier' (Str.toString name) && not (isKeyword name)
-  where isIdentifier' (c:cs) = isIdentStart c && all isIdentChar cs
+  where isIdentifier' :: String -> Bool
+        isIdentifier' (c:cs) = isIdentStart c && all isIdentChar cs
         isIdentifier'  []    = False
-        isIdentStart   c     = isAlpha    c || c == '_'
-        isIdentChar    c     = isAlphaNum c || c == '_'
+
+        isIdentStart, isIdentChar :: Char -> Bool
+        isIdentStart c = isAlpha    c || c == '_'
+        isIdentChar  c = isAlphaNum c || c == '_'
 
 isKeyword :: StrT -> Bool
 isKeyword = (`S.member` keywordsSet) . toId
