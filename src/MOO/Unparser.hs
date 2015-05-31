@@ -5,7 +5,8 @@
 -- built-in function
 module MOO.Unparser ( unparse ) where
 
-import Control.Monad (when, unless, liftM, (<=<))
+import Control.Applicative ((<$>))
+import Control.Monad (unless, liftM, (<=<))
 import Control.Monad.Reader (ReaderT, runReaderT, asks, local)
 import Control.Monad.Writer (Writer, execWriter, tell)
 import Data.Char (isAlpha, isAlphaNum)
@@ -27,14 +28,7 @@ type Unparser = ReaderT UnparserEnv (Writer Builder)
 
 data UnparserEnv = UnparserEnv {
     fullyParenthesizing :: Bool
-  , indenting           :: Bool
-  , indentation         :: Builder
-}
-
-initUnparserEnv = UnparserEnv {
-    fullyParenthesizing = False
-  , indenting           = False
-  , indentation         = ""
+  , indentation         :: Maybe Builder
 }
 
 -- | Synthesize the MOO code corresponding to the given abstract syntax
@@ -50,19 +44,17 @@ unparse :: Bool     -- ^ /fully-paren/
         -> Program
         -> Text
 unparse fullyParen indent (Program stmts) =
-  toLazyText $ execWriter $ runReaderT (tellStatements stmts) $
-  initUnparserEnv {
-      fullyParenthesizing = fullyParen
-    , indenting           = indent
+  toLazyText $ execWriter $ runReaderT (tellStatements stmts) UnparserEnv {
+    fullyParenthesizing = fullyParen
+  , indentation         = if indent then Just "" else Nothing
   }
 
 indent :: Unparser ()
-indent = do
-  indenting <- asks indenting
-  when indenting $ tell =<< asks indentation
+indent = maybe (return ()) tell =<< asks indentation
 
 moreIndented :: Unparser a -> Unparser a
-moreIndented = local $ \env -> env { indentation = "  " <> indentation env }
+moreIndented = local $ \env ->
+  env { indentation = ("  " <>) <$> indentation env }
 
 tellStatements :: [Statement] -> Unparser ()
 tellStatements = mapM_ tellStatement
