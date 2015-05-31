@@ -39,6 +39,7 @@ module MOO.Types (
   , fromLst
 
   , equal
+  , comparable
   , truthOf
   , truthValue
   , typeOf
@@ -275,6 +276,12 @@ instance Ord Value where
   (Obj a) `compare` (Obj b) = a `compare` b
   (Err a) `compare` (Err b) = a `compare` b
   _       `compare` _       = error "Illegal comparison"
+
+-- | Can the provided values be compared for relative ordering?
+comparable :: Value -> Value -> Bool
+comparable x y = case (typeOf x, typeOf y) of
+  (TLst, _ ) -> False
+  (tx  , ty) -> tx == ty
 
 -- | A 'Type' represents one or more MOO value types.
 data Type = TAny  -- ^ any type

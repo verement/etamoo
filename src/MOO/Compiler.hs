@@ -292,10 +292,8 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
 
         comparison :: (Value -> Value -> Bool) -> Expr -> Expr -> MOO Value
         comparison op = binary test
-          where test a b = do when (typeOf a /= typeOf b) $ raise E_TYPE
-                              case a of
-                                Lst{} -> raise E_TYPE
-                                _     -> return $ truthValue (a `op` b)
+          where test x y | comparable x y = return $ truthValue (x `op` y)
+                         | otherwise      = raise E_TYPE
 
 fetchVariable :: Id -> MOO Value
 fetchVariable var =
