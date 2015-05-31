@@ -213,12 +213,12 @@ string2builder :: StrT -> Builder
 string2builder = TLB.fromText . Str.toText
 
 -- | A 'Value' represents any MOO value.
-data Value = Int !IntT  -- ^ integer
-           | Flt !FltT  -- ^ floating-point number
-           | Str !StrT  -- ^ string
-           | Obj !ObjT  -- ^ object number
-           | Err !ErrT  -- ^ error
-           | Lst !LstT  -- ^ list
+data Value = Int IntT  -- ^ integer
+           | Flt FltT  -- ^ floating-point number
+           | Str StrT  -- ^ string
+           | Obj ObjT  -- ^ object number
+           | Err ErrT  -- ^ error
+           | Lst LstT  -- ^ list
            deriving (Eq, Show)
 
 instance Sizeable Value where
