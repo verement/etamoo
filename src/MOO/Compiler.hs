@@ -1,22 +1,22 @@
 
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | Compiling abstract syntax trees into 'MOO' computations
 module MOO.Compiler ( compile, evaluate ) where
 
-import Control.Monad (when, unless, void, liftM)
+import Control.Applicative ((<$>))
+import Control.Monad (when, unless, void, liftM, (<=<))
 import Control.Monad.Cont (callCC)
 import Control.Monad.Reader (asks, local)
 import Control.Monad.State (gets)
+import Data.Monoid ((<>))
 
 import qualified Data.Map as M
 import qualified Data.Vector as V
 
-import MOO.Types
 import MOO.AST
-import MOO.Task
 import MOO.Builtins
 import MOO.Object
+import MOO.Task
+import MOO.Types
 
 import qualified MOO.String as Str
 
@@ -27,27 +27,27 @@ compile (Program stmts) = callCC $ compileStatements stmts
 
 compileStatements :: [Statement] -> (Value -> MOO Value) -> MOO Value
 compileStatements (statement:rest) yield = case statement of
-  Expression lineNumber expr -> do
-    setLineNumber lineNumber
-    evaluate expr
+  Expression lineNo expr ->
+    setLineNumber lineNo >> evaluate expr >> compile' rest
+
+  If lineNo cond (Then thens) elseIfs (Else elses) -> runTick >> do
+    compileIf ((lineNo, cond, thens) : map elseIf elseIfs) elses
     compile' rest
 
-  If lineNumber cond (Then thens) elseIfs (Else elses) -> runTick >> do
-    compileIf ((lineNumber, cond, thens) : map elseIf elseIfs) elses
-    compile' rest
+    where elseIf :: ElseIf -> (LineNo, Expr, [Statement])
+          elseIf (ElseIf lineNo cond thens) = (lineNo, cond, thens)
 
-    where elseIf (ElseIf lineNumber cond thens) = (lineNumber, cond, thens)
-
-          compileIf ((lineNumber,cond,thens):conds) elses = do
-            setLineNumber lineNumber
+          compileIf :: [(LineNo, Expr, [Statement])] -> [Statement] -> MOO Value
+          compileIf ((lineNo,cond,thens):conds) elses = do
+            setLineNumber lineNo
             cond' <- evaluate cond
             if truthOf cond' then compile' thens
               else compileIf conds elses
           compileIf [] elses = compile' elses
 
-  ForList lineNumber var expr body -> do
+  ForList lineNo var expr body -> do
     handleDebug $ do
-      setLineNumber lineNumber
+      setLineNumber lineNo
       expr' <- evaluate expr
       elts <- case expr' of
         Lst elts -> return $ V.toList elts
@@ -61,7 +61,8 @@ compileStatements (statement:rest) yield = case statement of
 
     compile' rest
 
-    where loop var (elt:elts) body = runTick >> do
+    where loop :: Id -> [Value] -> MOO a -> MOO ()
+          loop var (elt:elts) body = runTick >> do
             storeVariable var elt
             callCC $ \continue -> do
               setLoopContinue (Continuation continue)
@@ -69,14 +70,14 @@ compileStatements (statement:rest) yield = case statement of
             loop var elts body
           loop _ [] _ = return ()
 
-  ForRange lineNumber var (start, end) body -> do
+  ForRange lineNo var (start, end) body -> do
     handleDebug $ do
-      setLineNumber lineNumber
+      setLineNumber lineNo
       start' <- evaluate start
       end'   <- evaluate end
       (ty, s, e) <- case (start', end') of
-        (Int s, Int e) -> return (Int . fromIntegral, toInteger s, toInteger e)
-        (Obj s, Obj e) -> return (Obj . fromIntegral, toInteger s, toInteger e)
+        (Int s, Int e) -> return (Int . fromInteger, toInteger s, toInteger e)
+        (Obj s, Obj e) -> return (Obj . fromInteger, toInteger s, toInteger e)
         (_    , _    ) -> raise E_TYPE
 
       callCC $ \break -> do
@@ -87,7 +88,9 @@ compileStatements (statement:rest) yield = case statement of
 
     compile' rest
 
-    where loop var ty i end body
+    where loop :: Id -> (Integer -> Value) -> Integer -> Integer -> MOO a ->
+                  MOO ()
+          loop var ty i end body
             | i > end   = return ()
             | otherwise = runTick >> do
               storeVariable var (ty i)
@@ -96,27 +99,28 @@ compileStatements (statement:rest) yield = case statement of
                 void body
               loop var ty (succ i) end body
 
-  While lineNumber var expr body -> do
+  While lineNo var expr body -> do
     callCC $ \break -> do
       pushLoopContext var (Continuation break)
-      loop lineNumber var (evaluate expr) (compile' body)
+      loop lineNo var (evaluate expr) (compile' body)
     popContext
 
     compile' rest
 
-    where loop lineNumber var expr body = runTick >> do
-            setLineNumber lineNumber
+    where loop :: LineNo -> Maybe Id -> MOO Value -> MOO a -> MOO ()
+          loop lineNo var expr body = runTick >> do
+            setLineNumber lineNo
             expr' <- expr
             maybe return storeVariable var expr'
             when (truthOf expr') $ do
               callCC $ \continue -> do
                 setLoopContinue (Continuation continue)
                 void body
-              loop lineNumber var expr body
+              loop lineNo var expr body
 
-  Fork lineNumber var delay body -> runTick >> do
+  Fork lineNo var delay body -> runTick >> do
     handleDebug $ do
-      setLineNumber lineNumber
+      setLineNumber lineNo
       delay' <- evaluate delay
       usecs <- case delay' of
         Int secs
@@ -142,23 +146,26 @@ compileStatements (statement:rest) yield = case statement of
   Break    name -> breakLoop    name
   Continue name -> continueLoop name
 
-  Return _          Nothing     -> runTick >> yield zero
-  Return lineNumber (Just expr) -> runTick >> do
-    setLineNumber lineNumber
+  Return _       Nothing    -> runTick >> yield zero
+  Return lineNo (Just expr) -> runTick >> do
+    setLineNumber lineNo
     yield =<< evaluate expr
 
   TryExcept body excepts -> runTick >> do
-    excepts' <- mapM compileExcepts excepts
+    excepts' <- mapM compileExcept excepts
 
     compile' body `catchException` dispatch excepts'
     compile' rest
 
-    where compileExcepts (Except lineNumber var codes handler) = do
+    where compileExcept :: Except -> MOO (Maybe [Value], Maybe Id, MOO Value)
+          compileExcept (Except lineNo var codes handler) = do
             codes' <- case codes of
               ANY        -> return Nothing
-              Codes args -> setLineNumber lineNumber >> Just `liftM` expand args
+              Codes args -> setLineNumber lineNo >> Just <$> expand args
             return (codes', var, compile' handler)
 
+          dispatch :: [(Maybe [Value], Maybe Id, MOO Value)] -> Exception ->
+                      MOO Value
           dispatch ((codes, var, handler):next) except@Exception {
               exceptionCode      = code
             , exceptionMessage   = message
@@ -166,12 +173,12 @@ compileStatements (statement:rest) yield = case statement of
             , exceptionCallStack = Stack errorFrames
             }
             | maybe True (code `elem`) codes = do
-              Stack currentFrames <- gets stack
-              let traceback = formatFrames True $ take stackLen errorFrames
-                  stackLen  = length errorFrames - length currentFrames + 1
-                  errorInfo = fromList [code, Str message, value, traceback]
-              maybe return storeVariable var errorInfo
-              handler
+                Stack currentFrames <- gets stack
+                let traceback = formatFrames True $ take stackLen errorFrames
+                    stackLen  = length errorFrames - length currentFrames + 1
+                    errorInfo = fromList [code, Str message, value, traceback]
+                maybe return storeVariable var errorInfo
+                handler
             | otherwise = dispatch next except
           dispatch [] except = passException except
 
@@ -189,7 +196,8 @@ compileStatements (statement:rest) yield = case statement of
 
     compile' rest
 
-  where compile' ss = compileStatements ss yield
+  where compile' :: [Statement] -> MOO Value
+        compile' ss = compileStatements ss yield
 
 compileStatements [] _ = return zero
 
@@ -200,11 +208,11 @@ evaluate :: Expr -> MOO Value
 evaluate (Literal value) = return value
 evaluate expr@Variable{} = handleDebug $ fetch (lValue expr)
 evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
-  List args -> fromList `liftM` expand args
+  List args -> fromList <$> expand args
 
   PropertyRef{} -> fetch (lValue expr)
 
-  Assign what expr -> store (lValue what) =<< evaluate expr
+  Assign what expr -> evaluate expr >>= store (lValue what)
 
   Scatter items expr -> do
     expr' <- evaluate expr
@@ -223,7 +231,7 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
 
     callVerb oid oid name args'
 
-  BuiltinFunc func args -> callBuiltin func =<< expand args
+  BuiltinFunc func args -> expand args >>= callBuiltin func
 
   a `Plus`   b -> binary plus   a b
   a `Minus`  b -> binary minus  a b
@@ -232,23 +240,18 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
   a `Remain` b -> binary remain a b
   a `Power`  b -> binary power  a b
 
-  Negate x -> do
-    x' <- evaluate x
-    case x' of
-      Int z -> return (Int $ negate z)
-      Flt z -> return (Flt $ negate z)
-      _     -> raise E_TYPE
+  Negate x -> evaluate x >>= \x' -> case x' of
+    Int n -> return (Int $ negate n)
+    Flt n -> return (Flt $ negate n)
+    _     -> raise E_TYPE
 
-  Conditional cond x y -> do
-    cond' <- evaluate cond
-    evaluate $ if truthOf cond' then x else y
+  Conditional cond x y ->
+    evaluate cond >>= \cond' -> evaluate $ if truthOf cond' then x else y
 
-  x `And` y -> do x' <- evaluate x
-                  if truthOf x' then evaluate y else return x'
-  x `Or`  y -> do x' <- evaluate x
-                  if truthOf x' then return x' else evaluate y
+  x `And` y -> evaluate x >>= \v -> if truthOf v then evaluate y else return   v
+  x `Or`  y -> evaluate x >>= \v -> if truthOf v then return   v else evaluate y
 
-  Not x -> (truthValue . not . truthOf) `liftM` evaluate x
+  Not x -> truthValue . not . truthOf <$> evaluate x
 
   x `CompareEQ` y -> equality   (==) x y
   x `CompareNE` y -> equality   (/=) x y
@@ -273,20 +276,21 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
   Catch expr codes (Default dv) -> do
     codes' <- case codes of
       ANY        -> return Nothing
-      Codes args -> Just `liftM` expand args
+      Codes args -> Just <$> expand args
     evaluate expr `catchException` \except@Exception { exceptionCode = code } ->
       if maybe True (code `elem`) codes'
-        then maybe (return code) evaluate dv
-        else passException except
+      then maybe (return code) evaluate dv
+      else passException except
 
-  where binary op a b = do
-          a' <- evaluate a
-          b' <- evaluate b
-          a' `op` b'
+  where binary :: (Value -> Value -> MOO Value) -> Expr -> Expr -> MOO Value
+        binary op x y = evaluate x >>= \x' -> evaluate y >>= \y' -> x' `op` y'
+        -- binary op x y = join $ op <$> evaluate x <*> evaluate y
 
+        equality :: (Value -> Value -> Bool) -> Expr -> Expr -> MOO Value
         equality op = binary test
           where test a b = return $ truthValue (a `op` b)
 
+        comparison :: (Value -> Value -> Bool) -> Expr -> Expr -> MOO Value
         comparison op = binary test
           where test a b = do when (typeOf a /= typeOf b) $ raise E_TYPE
                               case a of
@@ -305,10 +309,11 @@ storeVariable var value = do
 
 fetchProperty :: (ObjT, StrT) -> MOO Value
 fetchProperty (oid, name) = do
-  obj <- getObject oid >>= maybe (raise E_INVIND) return
+  obj <- maybe (raise E_INVIND) return =<< getObject oid
   maybe (search False obj) (return . ($ obj)) $ builtinProperty name
 
-  where search skipPermCheck obj = do
+  where search :: Bool -> Object -> MOO Value
+        search skipPermCheck obj = do
           prop <- getProperty obj name
           unless (skipPermCheck || propertyPermR prop) $
             checkPermission (propertyOwner prop)
@@ -321,7 +326,7 @@ fetchProperty (oid, name) = do
 
 storeProperty :: (ObjT, StrT) -> Value -> MOO Value
 storeProperty (oid, name) value = do
-  obj <- getObject oid >>= maybe (raise E_INVIND) return
+  obj <- maybe (raise E_INVIND) return =<< getObject oid
   if isBuiltinProperty name
     then setBuiltinProperty (oid, obj) name value
     else modifyProperty obj name $ \prop -> do
@@ -341,8 +346,8 @@ checkLstRange :: LstT -> Int -> MOO ()
 checkLstRange v i = when (i < 1 || i > V.length v) $ raise E_RANGE
 
 checkStrRange :: StrT -> Int -> MOO ()
-checkStrRange t i = when (i < 1 ||
-                          t `Str.compareLength` i == LT) $ raise E_RANGE
+checkStrRange t i = when (i < 1 || t `Str.compareLength` i == LT) $
+                    raise E_RANGE
 
 checkIndex :: Value -> MOO Int
 checkIndex (Int i) = return (fromIntegral i)
@@ -357,15 +362,12 @@ data LValue = LValue {
 lValue :: Expr -> LValue
 
 lValue (Variable var) = LValue fetch store change
-  where fetch = fetchVariable var
-        store = storeVariable var
-
-        change = do
-          value <- fetch
-          return (value, store)
+  where fetch  = fetchVariable var
+        store  = storeVariable var
+        change = fetch >>= \value -> return (value, store)
 
 lValue (PropertyRef objExpr nameExpr) = LValue fetch store change
-  where fetch = getRefs >>= fetchProperty
+  where fetch       = getRefs >>= fetchProperty
         store value = getRefs >>= flip storeProperty value
 
         change = do
@@ -381,9 +383,7 @@ lValue (PropertyRef objExpr nameExpr) = LValue fetch store change
             _                   -> raise E_TYPE
 
 lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
-  where fetchIndex = do
-          (value, _) <- changeIndex
-          return value
+  where fetchIndex = fst <$> changeIndex
 
         storeIndex newValue = do
           (_, change) <- changeIndex
@@ -400,14 +400,13 @@ lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
             _     -> raise E_TYPE
           return (value', changeValue value index' changeExpr)
 
+        changeValue :: Value -> Int -> (Value -> MOO a) -> Value -> MOO a
         changeValue (Lst v) index changeExpr newValue =
           changeExpr $ Lst $ listSet v (index - 1) newValue
-
         changeValue (Str t) index changeExpr (Str c) = do
           when (c `Str.compareLength` 1 /= EQ) $ raise E_INVARG
           let (s, r) = Str.splitAt (index - 1) t
           changeExpr $ Str $ Str.concat [s, c, Str.tail r]
-
         changeValue _ _ _ _ = raise E_TYPE
 
 lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
@@ -462,12 +461,9 @@ lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
         changeRange = error "Illegal Range as lvalue subexpression"
 
 lValue expr = LValue fetch store change
-  where fetch = evaluate expr
+  where fetch   = evaluate expr
         store _ = error "Unmodifiable LValue"
-
-        change = do
-          value <- fetch
-          return (value, store)
+        change  = fetch >>= \value -> return (value, store)
 
 scatterAssign :: [ScatterItem] -> LstT -> MOO Value
 scatterAssign items args = do
@@ -481,9 +477,10 @@ scatterAssign items args = do
         ntarg = nreqs + nopts
         nrest = if haveRest && nargs >= ntarg then nargs - ntarg else 0
 
+        count p  = length . filter p
         haveRest = any rest items
-        count p = length . filter p
 
+        required, optional, rest :: ScatterItem -> Bool
         required ScatRequired{} = True
         required _              = False
         optional ScatOptional{} = True
@@ -491,23 +488,22 @@ scatterAssign items args = do
         rest     ScatRest{}     = True
         rest     _              = False
 
-        walk (item:items) args noptAvail =
-          case item of
-            ScatRequired var -> do
-              storeVariable var (V.head args)
-              walk items (V.tail args) noptAvail
-            ScatOptional var opt
-              | noptAvail > 0 -> do storeVariable var (V.head args)
-                                    walk items (V.tail args) (noptAvail - 1)
-              | otherwise     -> do
-                case opt of
-                  Nothing   -> return ()
-                  Just expr -> void $ storeVariable var =<< evaluate expr
+        walk :: [ScatterItem] -> LstT -> Int -> MOO ()
+        walk (item:items) args noptAvail = case item of
+          ScatRequired var -> do
+            storeVariable var (V.head args)
+            walk items (V.tail args) noptAvail
+          ScatOptional var opt
+            | noptAvail > 0 -> do
+                storeVariable var (V.head args)
+                walk items (V.tail args) (noptAvail - 1)
+            | otherwise     -> do
+                maybe (return zero) (storeVariable var <=< evaluate) opt
                 walk items args noptAvail
-            ScatRest var -> do
-              let (s, r) = V.splitAt nrest args
-              storeVariable var (Lst s)
-              walk items r noptAvail
+          ScatRest var -> do
+            let (s, r) = V.splitAt nrest args
+            storeVariable var (Lst s)
+            walk items r noptAvail
         walk [] _ _ = return ()
 
 expand :: [Argument] -> MOO [Value]
@@ -521,54 +517,52 @@ expand (a:as) = case a of
 expand [] = return []
 
 plus :: Value -> Value -> MOO Value
-Int a `plus` Int b = return $ Int (a + b)
-Flt a `plus` Flt b = checkFloat (a + b)
-Str a `plus` Str b = return $ Str (a `Str.append` b)
+Int a `plus` Int b = return $ Int (a +  b)
+Flt a `plus` Flt b = checkFloat   (a +  b)
+Str a `plus` Str b = return $ Str (a <> b)
 _     `plus` _     = raise E_TYPE
 
 minus :: Value -> Value -> MOO Value
 Int a `minus` Int b = return $ Int (a - b)
-Flt a `minus` Flt b = checkFloat (a - b)
+Flt a `minus` Flt b = checkFloat   (a - b)
 _     `minus` _     = raise E_TYPE
 
 times :: Value -> Value -> MOO Value
 Int a `times` Int b = return $ Int (a * b)
-Flt a `times` Flt b = checkFloat (a * b)
+Flt a `times` Flt b = checkFloat   (a * b)
 _     `times` _     = raise E_TYPE
 
 divide :: Value -> Value -> MOO Value
-Int _ `divide` Int 0 = raise E_DIV
-Int a `divide` Int (-1)  -- avoid arithmetic overflow
-  | a == minBound    = return $ Int a
-Int a `divide` Int b = return $ Int (a `quot` b)
-Flt _ `divide` Flt 0 = raise E_DIV
-Flt a `divide` Flt b = checkFloat (a / b)
-_     `divide` _     = raise E_TYPE
+Int _ `divide` Int   0 = raise E_DIV
+Int a `divide` Int (-1)
+  | a == minBound      = return $ Int  a  -- avoid arithmetic overflow exception
+Int a `divide` Int   b = return $ Int (a `quot` b)
+Flt _ `divide` Flt   0 = raise E_DIV
+Flt a `divide` Flt   b = checkFloat   (a / b)
+_     `divide` _       = raise E_TYPE
 
 remain :: Value -> Value -> MOO Value
 Int _ `remain` Int 0 = raise E_DIV
-Int a `remain` Int b = return $ Int (a `rem` b)
+Int a `remain` Int b = return $ Int (a `rem`  b)
 Flt _ `remain` Flt 0 = raise E_DIV
-Flt a `remain` Flt b = checkFloat (a `fmod` b)
+Flt a `remain` Flt b = checkFloat   (a `fmod` b)
 _     `remain` _     = raise E_TYPE
 
 fmod :: FltT -> FltT -> FltT
-x `fmod` y = x - fromIntegral n * y
-  where n = roundZero (x / y)
-        roundZero :: FltT -> Integer
+x `fmod` y = x - y * fromInteger (roundZero $ x / y)
+  where roundZero :: FltT -> Integer
         roundZero q | q > 0     = floor   q
                     | q < 0     = ceiling q
                     | otherwise = round   q
 
 power :: Value -> Value -> MOO Value
-Int a `power` Int b
-  | b >= 0    = return $ Int (a ^ b)
-  | otherwise = case a of
-    -1 | even b    -> return $ Int   1
-       | otherwise -> return $ Int (-1)
-    0 -> raise E_DIV
-    1 -> return $ Int 1
-    _ -> return $ Int 0
-Flt a `power` Int b = checkFloat (a ^^ b)
-Flt a `power` Flt b = checkFloat (a ** b)
-_     `power` _     = raise E_TYPE
+Flt   a  `power` Flt b             = checkFloat   (a ** b)
+Flt   a  `power` Int b             = checkFloat   (a ^^ b)
+Int   a  `power` Int b | b >= 0    = return $ Int (a ^  b)
+--                     | b <  0 ...
+Int   0  `power` Int _             = raise E_DIV
+Int   1  `power` Int _             = return $ Int   1
+Int (-1) `power` Int b | even b    = return $ Int   1
+                       | otherwise = return $ Int (-1)
+Int   _  `power` Int _             = return $ Int   0
+_        `power` _                 = raise E_TYPE
