@@ -30,25 +30,25 @@ newtype Program = Program [Statement]
 instance Sizeable Program where
   storageBytes (Program stmts) = storageBytes stmts
 
-data Statement = Expression !Int Expr
-               | If         !Int Expr Then [ElseIf] Else
-               | ForList    !Int Id  Expr        [Statement]
-               | ForRange   !Int Id (Expr, Expr) [Statement]
-               | While      !Int (Maybe Id) Expr [Statement]
-               | Fork       !Int (Maybe Id) Expr [Statement]
-               | Break           (Maybe Id)
-               | Continue        (Maybe Id)
-               | Return     !Int (Maybe Expr)
-               | TryExcept       [Statement] [Except]
-               | TryFinally      [Statement] Finally
+data Statement = Expression !LineNo Expr
+               | If         !LineNo Expr Then [ElseIf] Else
+               | ForList    !LineNo Id  Expr        [Statement]
+               | ForRange   !LineNo Id (Expr, Expr) [Statement]
+               | While      !LineNo (Maybe Id) Expr [Statement]
+               | Fork       !LineNo (Maybe Id) Expr [Statement]
+               | Break              (Maybe Id)
+               | Continue           (Maybe Id)
+               | Return     !LineNo (Maybe Expr)
+               | TryExcept          [Statement] [Except]
+               | TryFinally         [Statement] Finally
                deriving Show
 
-newtype Then    = Then             [Statement]             deriving Show
-data    ElseIf  = ElseIf !Int Expr [Statement]             deriving Show
-newtype Else    = Else             [Statement]             deriving Show
+newtype Then    = Then                [Statement]             deriving Show
+data    ElseIf  = ElseIf !LineNo Expr [Statement]             deriving Show
+newtype Else    = Else                [Statement]             deriving Show
 
-data    Except  = Except !Int (Maybe Id) Codes [Statement] deriving Show
-newtype Finally = Finally                      [Statement] deriving Show
+data    Except  = Except !LineNo (Maybe Id) Codes [Statement] deriving Show
+newtype Finally = Finally                         [Statement] deriving Show
 
 instance Sizeable Statement where
   storageBytes (Expression line expr) =

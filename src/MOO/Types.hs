@@ -15,6 +15,8 @@ module MOO.Types (
   , ObjId
   , Id
 
+  , LineNo
+
   -- * MOO Type and Value Reification
   , Type(..)
   , Value(..)
@@ -182,6 +184,8 @@ type LstT = Vector Value  -- ^ MOO list
 
 type ObjId = Int          -- ^ MOO object number
 type Id    = CI Text      -- ^ MOO identifier (string lite)
+
+type LineNo = Int         -- ^ MOO code line number
 
 -- | Convert an identifier to and from another type.
 class Ident a where
