@@ -133,7 +133,7 @@ executable etamoo
                      , parsec
                      , pipes
                      , pipes-bytestring
-                     , pipes-concurrency
+                     , pipes-concurrency >= 2.0.3
                      , pipes-network
                      , random
                      , stm

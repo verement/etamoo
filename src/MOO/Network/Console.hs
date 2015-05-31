@@ -14,7 +14,7 @@ import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
 import Pipes (Producer, Pipe, runEffect, await, yield, for, cat, (>->))
 import Pipes.ByteString (stdout)
-import Pipes.Concurrent (Buffer(..), Output, spawn, send, fromInput, toOutput)
+import Pipes.Concurrent (spawn, unbounded, send, fromInput, toOutput)
 import System.Console.Haskeline (InputT, CompletionFunc, Completion(..),
                                  runInputT, getInputLine,
                                  setComplete, defaultSettings,
@@ -48,7 +48,7 @@ acceptConnection worldTVar handler = do
   let connectionName :: STM String
       connectionName = return "console"
 
-  (output, input) <- spawn Unbounded
+  (output, input) <- spawn unbounded
 
   thread <- forkIO $ runInputT defaultSettings $ runEffect $
     consoleInput >-> writeLines >-> writeUtf8 >-> toOutput output

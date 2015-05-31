@@ -13,7 +13,7 @@ import Data.Time (getCurrentTime, utcToLocalZonedTime, formatTime,
                   defaultTimeLocale)
 import Network (withSocketsDo)
 import Pipes (Pipe, runEffect, (>->), for, cat, lift, yield)
-import Pipes.Concurrent (Buffer(..), Output(..), spawn, fromInput)
+import Pipes.Concurrent (spawn, unbounded, send, fromInput)
 import System.IO (IOMode(..), BufferMode(..), openFile, stderr, hSetBuffering)
 import System.Posix (installHandler, sigPIPE, Handler(..))
 
@@ -84,7 +84,7 @@ startLogger dest = do
 
   hSetBuffering handle LineBuffering
 
-  (output, input) <- spawn Unbounded
+  (output, input) <- spawn unbounded
 
   forkIO $ runEffect $
     fromInput input >-> timestamp >-> for cat (lift . hPutStrLn handle)

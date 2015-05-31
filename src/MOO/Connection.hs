@@ -64,7 +64,7 @@ import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Pipes (Producer, Consumer, Pipe, await, yield, runEffect,
               for, cat, (>->))
-import Pipes.Concurrent (Buffer(..), Output(..), spawn, spawn',
+import Pipes.Concurrent (Output, send, spawn, spawn', unbounded,
                          fromInput, toOutput)
 
 import qualified Data.ByteString as BS
@@ -481,8 +481,8 @@ runConnection world' printMessages conn = loop
 -- 'TBMQueue' until EOF, handling binary mode and the flush command, if any.
 connectionRead :: Connection -> Consumer ByteString IO ()
 connectionRead conn = do
-  (outputLines,    inputLines)    <- lift $ spawn Unbounded
-  (outputMessages, inputMessages) <- lift $ spawn Unbounded
+  (outputLines,    inputLines)    <- lift $ spawn unbounded
+  (outputMessages, inputMessages) <- lift $ spawn unbounded
 
   lift $ forkIO $ runEffect $
     fromInput inputLines >->
@@ -560,8 +560,8 @@ connectionRead conn = do
 -- connection.
 connectionWrite :: Connection -> Producer ByteString IO ()
 connectionWrite conn = do
-  (outputBinary, inputBinary, sealBinary) <- lift $ spawn' Unbounded
-  (outputLines,  inputLines,  sealLines)  <- lift $ spawn' Unbounded
+  (outputBinary, inputBinary, sealBinary) <- lift $ spawn' unbounded
+  (outputLines,  inputLines,  sealLines)  <- lift $ spawn' unbounded
 
   lift $ forkIO $ do
     runEffect $ fromInput inputLines >-> writeLines >-> writeUtf8 >->
