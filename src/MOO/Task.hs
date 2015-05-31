@@ -635,7 +635,7 @@ data Environment = Env {
     task             :: Task
   , interruptHandler :: InterruptHandler
   , exceptionHandler :: ExceptionHandler
-  , indexLength      :: MOO Int
+  , indexLength      :: MOO Value
   }
 
 initEnvironment :: Task -> Environment

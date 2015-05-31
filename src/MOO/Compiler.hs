@@ -3,7 +3,7 @@
 module MOO.Compiler ( compile, evaluate ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (when, unless, void, liftM, (<=<))
+import Control.Monad (when, unless, void, join, (<=<))
 import Control.Monad.Cont (callCC)
 import Control.Monad.Reader (asks, local)
 import Control.Monad.State (gets)
@@ -256,7 +256,7 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
   Index{} -> fetch (lValue expr)
   Range{} -> fetch (lValue expr)
 
-  Length -> liftM (Int . fromIntegral) =<< asks indexLength
+  Length -> join (asks indexLength)
 
   item `In` list -> do
     elt <- evaluate item
@@ -323,12 +323,11 @@ storeProperty (oid, name) value = do
   return value
 
 withIndexLength :: Value -> MOO a -> MOO a
-withIndexLength expr =
-  local $ \env -> env { indexLength = case expr of
-                           Lst v -> return (V.length v)
-                           Str t -> return (Str.length t)
-                           _     -> raise E_TYPE
-                      }
+withIndexLength expr = local $ \env -> env { indexLength = len }
+  where len = Int . fromIntegral <$> case expr of
+          Lst v -> return   (V.length v)
+          Str t -> return (Str.length t)
+          _     -> raise E_TYPE
 
 usingList :: (LstT -> MOO a) -> Value -> MOO a
 usingList f (Lst v) = f v
