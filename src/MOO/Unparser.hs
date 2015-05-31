@@ -297,6 +297,7 @@ parenR = mightParen (>=)
 isIdentifier :: StrT -> Bool
 isIdentifier name = isIdentifier' (Str.toString name) && not (isKeyword name)
   where isIdentifier' (c:cs) = isIdentStart c && all isIdentChar cs
+        isIdentifier'  []    = False
         isIdentStart   c     = isAlpha    c || c == '_'
         isIdentChar    c     = isAlphaNum c || c == '_'
 
