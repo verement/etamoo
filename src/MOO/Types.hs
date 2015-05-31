@@ -1,5 +1,5 @@
 
-{-# LANGUAGE CPP, OverloadedStrings, TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE CPP, OverloadedStrings, FlexibleInstances #-}
 
 -- | Basic data types used throughout the MOO server code
 module MOO.Types (
@@ -193,7 +193,7 @@ class Ident a where
   fromId :: Id -> a
   toId   :: a -> Id
 
-instance Ident String where
+instance Ident [Char] where
   fromId = T.unpack . CI.original
   toId   = CI.mk . T.pack
 

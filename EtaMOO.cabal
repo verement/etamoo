@@ -103,7 +103,6 @@ executable etamoo
                        FlexibleInstances
                        ForeignFunctionInterface
                        OverloadedStrings
-                       TypeSynonymInstances
 
   extra-libraries:     pcre
   if !os(darwin)
