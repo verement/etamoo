@@ -36,7 +36,7 @@ EtaMOO differs from LambdaMOO in a few significant ways:
 
   * EtaMOO supports 64-bit MOO integers via compile-time build option.
 
-  * EtaMOO supports several additional hashing algorithms beyond MD5,
+  * EtaMOO supports several additional hashing algorithms besides MD5,
     including SHA-1, SHA-2, and RIPEMD-160, via optional argument to
     `string_hash()`, `binary_hash()`, and `value_hash()`.
 
