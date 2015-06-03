@@ -69,9 +69,9 @@ module MOO.Types (
 
   ) where
 
+import Control.Applicative ((<$>))
 import Control.Concurrent (ThreadId)
 import Control.Concurrent.STM (TVar)
-import Control.Monad (liftM)
 import Data.CaseInsensitive (CI)
 import Data.HashMap.Strict (HashMap)
 import Data.Int (Int32, Int64)
@@ -442,8 +442,8 @@ listInsert list index value
 -- | Return a modified list with the value at the given 0-based index removed.
 listDelete :: LstT -> Int -> LstT
 listDelete list index
-  | index == 0           = V.create $ VM.tail `liftM` V.thaw list
-  | index == listLen - 1 = V.create $ VM.init `liftM` V.thaw list
+  | index == 0           = V.create $ VM.tail <$> V.thaw list
+  | index == listLen - 1 = V.create $ VM.init <$> V.thaw list
   | otherwise            = V.create $ do
     list' <- V.thaw list
     let moveLen = listLen - index - 1

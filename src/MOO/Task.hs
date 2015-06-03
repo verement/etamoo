@@ -133,6 +133,7 @@ module MOO.Task (
   , notyet
   ) where
 
+import Control.Applicative ((<$>))
 import Control.Arrow ((&&&))
 import Control.Concurrent (MVar, ThreadId, myThreadId, forkIO, threadDelay,
                            newEmptyMVar, putMVar, tryPutMVar, takeMVar)
@@ -140,7 +141,7 @@ import Control.Concurrent.STM (STM, TVar, atomically, retry, throwSTM,
                                newEmptyTMVar, putTMVar, takeTMVar,
                                newTVarIO, readTVar, writeTVar, modifyTVar)
 import Control.Exception (SomeException, catch)
-import Control.Monad (when, unless, join, liftM, void, (>=>), forM_)
+import Control.Monad (when, unless, join, void, (>=>), forM_)
 import Control.Monad.Cont (ContT, runContT, callCC)
 import Control.Monad.Reader (ReaderT, runReaderT, local, asks)
 import Control.Monad.State.Strict (StateT, runStateT, get, gets, modify)
@@ -335,8 +336,7 @@ isRunning Running = True
 isRunning _       = False
 
 queuedTasks :: MOO [Task]
-queuedTasks =
-  (filter (isQueued . taskStatus) . M.elems . tasks) `liftM` getWorld
+queuedTasks = filter (isQueued . taskStatus) . M.elems . tasks <$> getWorld
 
 instance Sizeable TaskStatus where
   storageBytes (Suspended _) = 2 * storageBytes ()
@@ -376,7 +376,7 @@ stepTask task = do
   let env    = initEnvironment task
       comp   = taskComputation task
       comp'  = callCC $ \k ->
-        Complete `liftM` local (\r -> r { interruptHandler = Interrupt k }) comp
+        Complete <$> local (\r -> r { interruptHandler = Interrupt k }) comp
       state  = taskState task
       contM  = runReaderT comp' env
       stateM = runContT contM return
@@ -463,7 +463,7 @@ runTask task = do
           state <- newState
           handleAbortedTask' traceback task {
               taskState = state
-            , taskComputation = fromMaybe zero `fmap` call
+            , taskComputation = fromMaybe zero <$> call
             }
 
           where handleAbortedTask' :: [StrT] -> Task -> IO ()
@@ -723,7 +723,7 @@ modifyWorld f = do
   liftSTM $ modifyTVar world' f
 
 getTask :: TaskId -> MOO (Maybe Task)
-getTask taskId = (M.lookup taskId . tasks) `liftM` getWorld
+getTask taskId = M.lookup taskId . tasks <$> getWorld
 
 putTask :: Task -> MOO ()
 putTask task = modifyWorld $ \world ->
@@ -734,7 +734,7 @@ purgeTask task = modifyWorld $ \world ->
   world { tasks = M.delete (taskId task) $ tasks world }
 
 getDatabase :: MOO Database
-getDatabase = database `liftM` getWorld
+getDatabase = database <$> getWorld
 
 putDatabase :: Database -> MOO ()
 putDatabase db = modifyWorld $ \world -> world { database = db }
@@ -808,7 +808,7 @@ callSystemVerb' object name args argstr = do
             , ("args"  , fromList args)
             , ("argstr", Str argstr)
             ]
-      Just `liftM` runVerb verb initFrame {
+      Just <$> runVerb verb initFrame {
           variables     = vars
         , verbName      = name
         , verbLocation  = verbOid
@@ -884,7 +884,7 @@ callFromFunc :: StrT -> LineNo -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
 callFromFunc func index (oid, name) args = do
   maybeVerb <- findVerb verbPermX name oid
   case maybeVerb of
-    (Just verbOid, Just verb) -> liftM Just $ evalFromFunc func index $
+    (Just verbOid, Just verb) -> fmap Just $ evalFromFunc func index $
                                  callVerb' (verbOid, verb) oid name args
     _                         -> return Nothing
 
@@ -1349,7 +1349,7 @@ checkFloat flt
 -- not.
 checkProgrammer' :: ObjId -> MOO ()
 checkProgrammer' perm = do
-  programmer <- maybe False objectProgrammer `liftM` getObject perm
+  programmer <- maybe False objectProgrammer <$> getObject perm
   unless programmer $ raise E_PERM
 
 -- | Verify that the current task permissions have programmer privileges,
@@ -1359,7 +1359,7 @@ checkProgrammer = checkProgrammer' =<< frame permissions
 
 -- | Determine whether the given object has its wizard bit set.
 isWizard :: ObjId -> MOO Bool
-isWizard = liftM (maybe False objectWizard) . getObject
+isWizard = fmap (maybe False objectWizard) . getObject
 
 -- | Verify that the given object is a wizard, raising 'E_PERM' if not.
 checkWizard' :: ObjId -> MOO ()
@@ -1403,7 +1403,7 @@ checkRecurrence relation subject = checkRecurrence'
   where checkRecurrence' object = do
           when (object == subject) $ raise E_RECMOVE
           maybeObject <- getObject object
-          case join $ relation `fmap` maybeObject of
+          case join $ relation <$> maybeObject of
             Just oid -> checkRecurrence' oid
             Nothing  -> return ()
 
@@ -1419,7 +1419,7 @@ checkQueuedTaskLimit = do
 
   case limit of
     Just limit -> do
-      tasks <- filter ((== programmer) . taskOwner) `fmap` queuedTasks
+      tasks <- filter ((== programmer) . taskOwner) <$> queuedTasks
       when (length tasks >= limit) $ raise E_QUOTA
     Nothing -> return ()
 
@@ -1432,7 +1432,7 @@ binaryString = maybe (raise E_INVARG) return . Str.toBinary
 -- the local generator state.
 random :: (Random a) => (a, a) -> MOO a
 random range = do
-  (r, gen) <- randomR range `liftM` gets randomGen
+  (r, gen) <- randomR range <$> gets randomGen
   modify $ \state -> state { randomGen = gen }
   return r
 
@@ -1440,7 +1440,7 @@ random range = do
 -- state with one of them and returning the other.
 newRandomGen :: MOO StdGen
 newRandomGen = do
-  (gen, gen') <- split `liftM` gets randomGen
+  (gen, gen') <- split <$> gets randomGen
   modify $ \state -> state { randomGen = gen }
   return gen'
 

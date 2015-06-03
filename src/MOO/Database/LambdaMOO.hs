@@ -3,8 +3,9 @@
 
 module MOO.Database.LambdaMOO ( loadLMDatabase, saveLMDatabase ) where
 
+import Control.Applicative ((<$>))
 import Control.Concurrent.STM (STM, atomically, readTVar, writeTVar)
-import Control.Monad (unless, when, forM, forM_, join, liftM)
+import Control.Monad (unless, when, forM, forM_, join)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (ReaderT, runReaderT, local, asks, ask)
 import Control.Monad.Trans.Class (lift)
@@ -255,7 +256,7 @@ objectTrail arr def first rest = follow first rest (Just def)
 
 objectForDBObject :: Array ObjId (Maybe ObjectDef) ->
                      DBObject -> (ObjId, Maybe Object)
-objectForDBObject dbArray dbObj = (oid dbObj, fmap mkObject $ valid dbObj)
+objectForDBObject dbArray dbObj = (oid dbObj, mkObject <$> valid dbObj)
   where mkObject def = initObject {
             objectParent     = maybeObject (objParent   def)
           , objectChildren   = IS.fromList $
@@ -299,17 +300,17 @@ installProgram (oid, vnum, program) = do
         desc = "#" ++ show oid ++ ":" ++ show vnum
 
 integer :: DBParser Integer
-integer = signed (read `fmap` many1 digit)
+integer = signed (read <$> many1 digit)
 
 unsignedInt :: DBParser Word
-unsignedInt = read `fmap` many1 digit
+unsignedInt = read <$> many1 digit
 
 signedInt :: DBParser Int
-signedInt = signed (read `fmap` many1 digit)
+signedInt = signed (read <$> many1 digit)
 
 signed :: (Num a) => DBParser a -> DBParser a
 signed parser = negative <|> parser
-  where negative = char '-' >> negate `fmap` parser
+  where negative = char '-' >> negate <$> parser
 
 line :: DBParser a -> DBParser a
 line parser = do
@@ -318,10 +319,10 @@ line parser = do
   return x
 
 read_num :: DBParser IntT
-read_num = line (fmap fromInteger integer) <?> "num"
+read_num = line (fromInteger <$> integer) <?> "num"
 
 read_objid :: DBParser ObjId
-read_objid = line (fmap fromInteger integer) <?> "objid"
+read_objid = line (fromInteger <$> integer) <?> "objid"
 
 read_float :: DBParser FltT
 read_float = line (fmap read $ many1 $ oneOf "-0123456789.eE+") <?> "float"
@@ -446,16 +447,16 @@ read_var = (<?> "var") $ do
     cases l
       | l == type_clear   = return LMClear
       | l == type_none    = return LMNone
-      | l == _type_str    = fmap   LMStr     read_string
-      | l == type_obj     = fmap   LMObj     read_num
-      | l == type_err     = fmap   LMErr     read_num
-      | l == type_int     = fmap   LMInt     read_num
-      | l == type_catch   = fmap   LMCatch   read_num
-      | l == type_finally = fmap   LMFinally read_num
-      | l == _type_float  = fmap   LMFloat   read_float
-      | l == _type_list   =
-        do l <- read_num
-           fmap LMList $ count (fromIntegral l) read_var
+      | l == _type_str    =        LMStr     <$> read_string
+      | l == type_obj     =        LMObj     <$> read_num
+      | l == type_err     =        LMErr     <$> read_num
+      | l == type_int     =        LMInt     <$> read_num
+      | l == type_catch   =        LMCatch   <$> read_num
+      | l == type_finally =        LMFinally <$> read_num
+      | l == _type_float  =        LMFloat   <$> read_float
+      | l == _type_list   = do
+          l <- read_num
+          LMList <$> count (fromIntegral l) read_var
 
     cases l = fail $ "Unknown type (" ++ show l ++ ")"
 
@@ -690,7 +691,7 @@ writeDatabase = do
   let nobjs = maxObject db + 1
   tellLn (decimal nobjs)
 
-  objects <- listArray (0, maxObject db) `liftM`
+  objects <- listArray (0, maxObject db) <$>
              forM [0..maxObject db] (\oid -> liftSTM $ dbObject oid db)
 
   let nprogs = foldl' numVerbs 0 (elems objects)
@@ -785,7 +786,7 @@ nextLink :: Array ObjId (Maybe Object) -> ObjId ->
             (Object -> IntSet) -> Maybe ObjId -> ObjId
 nextLink objects oid projection superior = next
   where nexts   = maybe [] (IS.toList . projection) $
-                  join $ (objects !) `fmap` superior
+                  join $ (objects !) <$> superior
         myIndex = elemIndex oid nexts
         next    = objectForMaybe $ listToMaybe $
                   maybe (const []) (drop . (+ 1)) myIndex nexts

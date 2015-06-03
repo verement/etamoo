@@ -3,8 +3,9 @@
 
 module MOO.Builtins.Network ( builtins ) where
 
+import Control.Applicative ((<$>))
 import Control.Concurrent.STM (readTVar)
-import Control.Monad (liftM, unless, (<=<))
+import Control.Monad (unless, (<=<))
 import Control.Monad.State (gets)
 import Data.Time (UTCTime, diffUTCTime)
 
@@ -71,7 +72,7 @@ bf_notify = Builtin "notify" 2 (Just 3)
   let [no_flush] = booleanDefaults optional [False]
 
   checkPermission conn
-  truthValue `liftM` notify' no_flush conn string
+  truthValue <$> notify' no_flush conn string
 
 bf_buffered_output_length = Builtin "buffered_output_length" 0 (Just 1)
                             [TObj] TInt $ \optional -> do
@@ -123,8 +124,7 @@ bf_boot_player = Builtin "boot_player" 1 (Just 1) [TObj] TAny $ \[Obj player] ->
 bf_connection_name = Builtin "connection_name" 1 (Just 1)
                      [TObj] TStr $ \[Obj player] -> do
   checkPermission player
-  (Str . Str.fromString) `liftM`
-    withConnection player (liftSTM . connectionName)
+  Str . Str.fromString <$> withConnection player (liftSTM . connectionName)
 
 bf_set_connection_option = Builtin "set_connection_option" 3 (Just 3)
                            [TObj, TStr, TAny]
@@ -136,7 +136,7 @@ bf_set_connection_option = Builtin "set_connection_option" 3 (Just 3)
 bf_connection_options = Builtin "connection_options" 1 (Just 1)
                         [TObj] TLst $ \[Obj conn] -> do
   checkPermission conn
-  (fromListBy pair . M.toList) `liftM` getConnectionOptions conn
+  fromListBy pair . M.toList <$> getConnectionOptions conn
 
   where pair (k, v) = fromList [Str $ fromId k, v]
 
@@ -172,7 +172,7 @@ bf_listen = Builtin "listen" 2 (Just 3)
   checkValid object
 
   point <- value2point point
-  point2value `liftM` listen object point print_messages
+  point2value <$> listen object point print_messages
 
 bf_unlisten = Builtin "unlisten" 1 (Just 1) [TAny] TAny $ \[canon] -> do
   checkWizard
@@ -181,7 +181,7 @@ bf_unlisten = Builtin "unlisten" 1 (Just 1) [TAny] TAny $ \[canon] -> do
   return zero
 
 bf_listeners = Builtin "listeners" 0 (Just 0) [] TLst $ \[] ->
-  (fromListBy formatListener . M.elems . listeners) `liftM` getWorld
+  fromListBy formatListener . M.elems . listeners <$> getWorld
 
   where formatListener Listener { listenerObject        = object
                                 , listenerPoint         = point

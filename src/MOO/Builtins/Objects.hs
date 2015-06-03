@@ -3,8 +3,9 @@
 
 module MOO.Builtins.Objects ( builtins ) where
 
+import Control.Applicative ((<$>))
 import Control.Concurrent.STM (STM, TVar, newTVar, readTVar, writeTVar)
-import Control.Monad (when, unless, liftM, void, forM_, foldM, join)
+import Control.Monad (when, unless, void, forM_, foldM, join)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Set (Set)
 import Data.Text (Text)
@@ -115,7 +116,7 @@ bf_create = Builtin "create" 1 (Just 2)
 
       -- properties inherited from parent
       Just parent <- getObject oid
-      HM.fromList `liftM` mapM mkProperty (HM.toList $ objectProperties parent)
+      HM.fromList <$> mapM mkProperty (HM.toList $ objectProperties parent)
 
         where mkProperty :: (StrT, TVar Property) -> MOO (StrT, TVar Property)
               mkProperty (name, propTVar) = liftSTM $ do
@@ -170,7 +171,7 @@ reparentObject (object, obj) (new_parent, maybeNewParent) = do
   newProperties <- case maybeNewParent of
     Just newParent ->
       allDefinedProperties (underCommon newAncestors) >>=
-      mapM (liftSTM . liftM fromJust . lookupProperty newParent)
+      mapM (liftSTM . fmap fromJust . lookupProperty newParent)
     Nothing -> return []
 
   flip (modifyDescendants db) object $ \obj -> do
@@ -179,7 +180,7 @@ reparentObject (object, obj) (new_parent, maybeNewParent) = do
 
   -- Update the parent/child hierarchy
   liftSTM $ modifyObject object db $ \obj ->
-    return obj { objectParent = const new_parent `fmap` maybeNewParent }
+    return obj { objectParent = const new_parent <$> maybeNewParent }
   case objectParent obj of
     Just parentOid -> liftSTM $ modifyObject parentOid db $ deleteChild object
     Nothing        -> return ()
@@ -190,14 +191,14 @@ reparentObject (object, obj) (new_parent, maybeNewParent) = do
   where ancestors :: ObjId -> MOO [ObjId]
         ancestors oid = do
           maybeObject <- getObject oid
-          case join $ objectParent `fmap` maybeObject of
+          case join $ objectParent <$> maybeObject of
             Just parent -> do
               ancestors <- ancestors parent
               return (parent : ancestors)
             Nothing -> return []
 
         ancestors' :: ObjId -> MOO [ObjId]
-        ancestors' oid = (oid :) `liftM` ancestors oid
+        ancestors' oid = (oid :) <$> ancestors oid
 
         findCommon :: [ObjId] -> [ObjId] -> Maybe ObjId
         findCommon xs ys = findCommon' (reverse xs) (reverse ys) Nothing
@@ -206,7 +207,7 @@ reparentObject (object, obj) (new_parent, maybeNewParent) = do
         findCommon' _ _ common = common
 
         allDefinedProperties :: [ObjId] -> MOO [StrT]
-        allDefinedProperties = liftM ($ []) . foldM concatProps id
+        allDefinedProperties = fmap ($ []) . foldM concatProps id
           where concatProps acc oid = do
                   Just obj <- getObject oid
                   props <- liftSTM $ definedProperties obj
@@ -229,13 +230,13 @@ bf_chparent = Builtin "chparent" 2 (Just 2)
   return zero
 
 bf_valid = Builtin "valid" 1 (Just 1) [TObj] TInt $ \[Obj object] ->
-  (truthValue . isJust) `liftM` getObject object
+  truthValue . isJust <$> getObject object
 
 bf_parent = Builtin "parent" 1 (Just 1) [TObj] TObj $ \[Obj object] ->
-  (Obj . getParent) `liftM` checkValid object
+  Obj . getParent <$> checkValid object
 
 bf_children = Builtin "children" 1 (Just 1) [TObj] TLst $ \[Obj object] ->
-  (objectList . getChildren) `liftM` checkValid object
+  objectList . getChildren <$> checkValid object
 
 bf_recycle = Builtin "recycle" 1 (Just 1) [TObj] TAny $ \[Obj object] -> do
   obj <- checkValid object
@@ -260,7 +261,7 @@ bf_recycle = Builtin "recycle" 1 (Just 1) [TObj] TAny $ \[Obj object] -> do
   where moveContentsToNothing :: ObjId -> MOO ()
         moveContentsToNothing object = do
           maybeObj <- getObject object
-          case getContents `fmap` maybeObj of
+          case getContents <$> maybeObj of
             Just (oid:_) -> do
               moveToNothing oid
               moveContentsToNothing object
@@ -272,7 +273,7 @@ bf_recycle = Builtin "recycle" 1 (Just 1) [TObj] TAny $ \[Obj object] -> do
         reparentChildren :: ObjId -> Maybe ObjId -> MOO ()
         reparentChildren object maybeParent = do
           maybeObj <- getObject object
-          case getChildren `fmap` maybeObj of
+          case getChildren <$> maybeObj of
             Just (oid:_) -> do
               reparent oid maybeParent
               reparentChildren object maybeParent
@@ -296,15 +297,15 @@ bf_object_bytes = Builtin "object_bytes" 1 (Just 1)
   checkWizard
   obj <- checkValid object
 
-  propertyBytes <- liftM storageBytes $ liftSTM $
+  propertyBytes <- fmap storageBytes $ liftSTM $
                    mapM readTVar $ HM.elems (objectProperties obj)
-  verbBytes     <- liftM storageBytes $ liftSTM $
+  verbBytes     <- fmap storageBytes $ liftSTM $
                    mapM (readTVar . snd) $ objectVerbs obj
 
   return $ Int $ fromIntegral $ storageBytes obj + propertyBytes + verbBytes
 
 bf_max_object = Builtin "max_object" 0 (Just 0) [] TObj $ \[] ->
-  (Obj . maxObject) `liftM` getDatabase
+  Obj . maxObject <$> getDatabase
 
 -- § 4.4.3.2 Object Movement
 
@@ -352,11 +353,11 @@ bf_move = Builtin "move" 2 (Just 2)
   what' <- checkValid what
   where' <- case where_ of
     -1  -> return Nothing
-    oid -> Just `liftM` checkValid oid
+    oid -> Just <$> checkValid oid
   checkPermission (objectOwner what')
 
   when (isJust where') $ do
-    accepted <- maybe False truthOf `liftM`
+    accepted <- maybe False truthOf <$>
                 callFromFunc "move" 0 (where_, "accept") [Obj what]
     unless accepted $ do
       wizard <- isWizard =<< frame permissions
@@ -373,7 +374,7 @@ bf_properties = Builtin "properties" 1 (Just 1)
   obj <- checkValid object
   unless (objectPermR obj) $ checkPermission (objectOwner obj)
 
-  stringList `liftM` liftSTM (definedProperties obj)
+  stringList <$> liftSTM (definedProperties obj)
 
 bf_property_info = Builtin "property_info" 2 (Just 2)
                    [TObj, TStr] TLst $ \[Obj object, Str prop_name] -> do
@@ -534,7 +535,7 @@ bf_verbs = Builtin "verbs" 1 (Just 1) [TObj] TLst $ \[Obj object] -> do
   obj <- checkValid object
   unless (objectPermR obj) $ checkPermission (objectOwner obj)
 
-  stringList `liftM` liftSTM (definedVerbs obj)
+  stringList <$> liftSTM (definedVerbs obj)
 
 bf_verb_info = Builtin "verb_info" 2 (Just 2)
                [TObj, TAny] TLst $ \[Obj object, verb_desc] -> do
@@ -685,7 +686,7 @@ bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
                    TLst $ \[Obj object, verb_desc, Lst code] -> do
   obj <- checkValid object
   verb <- getVerb obj verb_desc
-  text <- (T.concat . ($ [])) `liftM` V.foldM addLine id code
+  text <- T.concat . ($ []) <$> V.foldM addLine id code
   unless (verbPermW verb) $ checkPermission (verbOwner verb)
   checkProgrammer
 
@@ -715,10 +716,10 @@ bf_disassemble = Builtin "disassemble" 2 (Just 2)
 -- § 4.4.3.5 Operations on Player Objects
 
 bf_players = Builtin "players" 0 (Just 0) [] TLst $ \[] ->
-  (objectList . allPlayers) `liftM` getDatabase
+  objectList . allPlayers <$> getDatabase
 
 bf_is_player = Builtin "is_player" 1 (Just 1) [TObj] TInt $ \[Obj object] ->
-  (truthValue . objectIsPlayer) `liftM` checkValid object
+  truthValue . objectIsPlayer <$> checkValid object
 
 setPlayerFlag :: Bool -> ObjId -> Bool -> MOO ()
 setPlayerFlag recycled object isPlayer = do

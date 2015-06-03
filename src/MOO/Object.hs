@@ -40,10 +40,11 @@ module MOO.Object ( Object (..)
                   , failedMatch
                   ) where
 
+import Control.Applicative ((<$>))
 import Control.Arrow (second)
 import Control.Concurrent.STM (STM, TVar, newTVarIO, newTVar,
                                readTVar, writeTVar)
-import Control.Monad (liftM, (>=>), forM_)
+import Control.Monad ((>=>), forM_)
 import Data.HashMap.Strict (HashMap)
 import Data.IntSet (IntSet)
 import Data.Maybe (isJust)
@@ -212,7 +213,7 @@ setProperties :: [Property] -> Object -> IO Object
 setProperties props obj = do
   propHash <- mkHash props
   return obj { objectProperties = propHash }
-  where mkHash = liftM HM.fromList . mapM mkAssoc
+  where mkHash = fmap HM.fromList . mapM mkAssoc
         mkAssoc prop = do
           tvarProp <- newTVarIO prop
           return (propertyKey prop, tvarProp)
@@ -258,7 +259,7 @@ deleteProperty name obj =
 
 lookupVerbRef :: Object -> Value -> Maybe (Int, TVar Verb)
 lookupVerbRef obj (Str name) =
-  fmap (second snd) $ find matchVerb (zip [0..] $ objectVerbs obj)
+  second snd <$> find matchVerb (zip [0..] $ objectVerbs obj)
   where matchVerb (_, (names, _)) = verbNameMatch name names
 lookupVerbRef obj (Int index)
   | index' < 1        = Nothing

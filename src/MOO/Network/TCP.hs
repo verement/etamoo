@@ -5,11 +5,12 @@ module MOO.Network.TCP (
   , createTCPListener
   ) where
 
+import Control.Applicative ((<$>))
 import Control.Concurrent (forkIO, killThread)
 import Control.Concurrent.STM (STM, TMVar, newEmptyTMVarIO, atomically,
                                putTMVar, readTMVar)
 import Control.Exception (SomeException, mask, try, finally, bracketOnError)
-import Control.Monad (liftM, forever)
+import Control.Monad (forever)
 import Data.Maybe (fromMaybe)
 import Network.Socket (PortNumber, Socket, SockAddr,
                        SocketOption(ReuseAddr, KeepAlive),
@@ -100,7 +101,7 @@ addrName addr = do
   nameVar <- newEmptyTMVarIO
 
   forkIO $ do
-    maybeHost <- try (fst `liftM` getNameInfo [NI_NAMEREQD] True False addr) >>=
+    maybeHost <- try (fst <$> getNameInfo [NI_NAMEREQD] True False addr) >>=
                  either (\except -> let _ = except :: SomeException
                                     in return Nothing) return
     atomically $ putTMVar nameVar maybeHost

@@ -16,7 +16,8 @@ module MOO.Command (
 
   ) where
 
-import Control.Monad (liftM, void, foldM, join)
+import Control.Applicative ((<$>))
+import Control.Monad (void, foldM, join)
 import Data.Char (isSpace, isDigit)
 import Data.Monoid (Monoid(mempty, mappend, mconcat), First(First, getFirst))
 import Data.Text (Text)
@@ -42,9 +43,9 @@ commandWord = do
   spaces
   return (T.concat word)
 
-  where wordChar = T.singleton `liftM` satisfy nonspecial <|>
-                   T.pack      `liftM` quotedChars        <|>
-                   T.singleton `liftM` backslashChar      <|>
+  where wordChar = T.singleton <$> satisfy nonspecial <|>
+                   T.pack      <$> quotedChars        <|>
+                   T.singleton <$> backslashChar      <|>
                    trailingBackslash
 
         nonspecial '\"' = False
@@ -71,7 +72,7 @@ builtinCommand = say <|> emote <|> eval
 command :: Parser (Text, Text)
 command = between spaces eof $ do
   verb <- builtinCommand <|> commandWord <|> return ""
-  argstr <- T.pack `liftM` many anyChar
+  argstr <- T.pack <$> many anyChar
   return (verb, argstr)
 
 matchPrep :: [StrT] -> (StrT, (PrepSpec, StrT), StrT)
@@ -120,7 +121,7 @@ parseCommand cmd = Command {
         (dobjstr, (prepSpec, prepstr), iobjstr) = matchPrep args
 
 objectNumber :: Parser ObjId
-objectNumber = liftM read $ between (char '#') eof $ many1 (satisfy isDigit)
+objectNumber = fmap read $ between (char '#') eof $ many1 (satisfy isDigit)
 
 matchObject :: ObjId -> StrT -> MOO ObjId
 matchObject player str
@@ -136,7 +137,7 @@ matchObject player str
   where matchObject' :: ObjId -> StrT -> MOO ObjId
         matchObject' player str = case str of
           "me"   -> return player
-          "here" -> maybe nothing (objectForMaybe . objectLocation) `liftM`
+          "here" -> maybe nothing (objectForMaybe . objectLocation) <$>
                     getObject player
           _      -> do
             maybePlayer <- getObject player
@@ -147,12 +148,12 @@ matchObject player str
                     maybeRoom = objectLocation player'
                 roomContents <-
                   maybe (return IS.empty)
-                  (liftM (maybe IS.empty objectContents) . getObject)
+                  (fmap (maybe IS.empty objectContents) . getObject)
                   maybeRoom
                 matchName str $ IS.toList (holding `IS.union` roomContents)
 
         matchName :: StrT -> [ObjId] -> MOO ObjId
-        matchName str = liftM (uncurry matchResult) .
+        matchName str = fmap (uncurry matchResult) .
                         foldM (matchName' str) ([], [])
         matchName' str matches@(exact, prefix) oid = do
           maybeAliases <- readProperty oid "aliases"
@@ -201,8 +202,8 @@ runCommand command = do
   dobj <- matchObject player (commandDObjStr command)
   iobj <- matchObject player (commandIObjStr command)
 
-  room <- (objectForMaybe . join . fmap objectLocation) `liftM` getObject player
-  maybeVerb <- (getFirst . mconcat . map First) `liftM`
+  room <- objectForMaybe . join . fmap objectLocation <$> getObject player
+  maybeVerb <- getFirst . mconcat . map First <$>
                mapM (locateVerb dobj iobj) [player, room, dobj, iobj]
   case maybeVerb of
     Just (this, spec) -> callCommandVerb player spec this command (dobj, iobj)

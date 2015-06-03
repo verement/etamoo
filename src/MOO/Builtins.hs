@@ -3,7 +3,8 @@
 
 module MOO.Builtins ( builtinFunctions, callBuiltin, verifyBuiltins ) where
 
-import Control.Monad (foldM, liftM, join)
+import Control.Applicative ((<$>))
+import Control.Monad (foldM, join)
 import Control.Monad.State (gets)
 import Data.List (transpose, inits)
 import Data.Map (Map)
@@ -48,7 +49,7 @@ builtinFunctions =
 -- built-in function is unknown.
 callBuiltin :: Id -> [Value] -> MOO Value
 callBuiltin func args = do
-  isProtected <- (func `S.member`) `liftM` serverOption protectFunction
+  isProtected <- (func `S.member`) <$> serverOption protectFunction
   let call builtin = checkArgs builtin args >> builtinFunction builtin args
 
   case (func `M.lookup` builtinFunctions, isProtected) of
@@ -165,7 +166,7 @@ miscBuiltins = [
 bf_pass = Builtin "pass" 0 Nothing [] TAny $ \args -> do
   (name, verbLoc, this) <- frame $ \frame ->
     (verbName frame, verbLocation frame, initialThis frame)
-  maybeMaybeParent <- fmap objectParent `liftM` getObject verbLoc
+  maybeMaybeParent <- fmap objectParent <$> getObject verbLoc
   case join maybeMaybeParent of
     Just parent -> callVerb parent this name args
     Nothing     -> raise E_VERBNF
@@ -173,9 +174,9 @@ bf_pass = Builtin "pass" 0 Nothing [] TAny $ \args -> do
 -- § 4.4.5 Operations Involving Times and Dates
 
 currentTime :: MOO IntT
-currentTime = (floor . utcTimeToPOSIXSeconds) `liftM` gets startTime
+currentTime = floor . utcTimeToPOSIXSeconds <$> gets startTime
 
-bf_time = Builtin "time" 0 (Just 0) [] TInt $ \[] -> Int `liftM` currentTime
+bf_time = Builtin "time" 0 (Just 0) [] TInt $ \[] -> Int <$> currentTime
 
 bf_ctime = Builtin "ctime" 0 (Just 1) [TInt] TStr $ \arg -> case arg of
   []         -> ctime =<< currentTime
@@ -245,7 +246,7 @@ bf_memory_usage = Builtin "memory_usage" 0 (Just 0) [] TLst $ \[] ->
   -- Server must be run with +RTS -T to enable statistics
   do maybeStats <- requestIO $ do
        enabled <- getGCStatsEnabled
-       if enabled then Just `liftM` getGCStats else return Nothing
+       if enabled then Just <$> getGCStats else return Nothing
 
      return $ case maybeStats of
        Just stats ->

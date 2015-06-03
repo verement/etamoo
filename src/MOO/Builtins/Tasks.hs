@@ -3,10 +3,11 @@
 
 module MOO.Builtins.Tasks ( builtins ) where
 
+import Control.Applicative ((<$>))
 import Control.Arrow ((&&&))
 import Control.Concurrent (forkIO, killThread)
 import Control.Concurrent.STM (atomically, newEmptyTMVar, takeTMVar, putTMVar)
-import Control.Monad (liftM, void)
+import Control.Monad (void)
 import Control.Monad.Cont (callCC)
 import Control.Monad.Reader (asks)
 import Control.Monad.State (gets, modify, get)
@@ -110,10 +111,10 @@ bf_set_task_perms = Builtin "set_task_perms" 1 (Just 1)
   return zero
 
 bf_caller_perms = Builtin "caller_perms" 0 (Just 0) [] TObj $ \[] ->
-  (Obj . objectForMaybe) `liftM` caller permissions
+  Obj . objectForMaybe <$> caller permissions
 
 bf_ticks_left = Builtin "ticks_left" 0 (Just 0) [] TInt $ \[] ->
-  (Int . fromIntegral) `liftM` gets ticksLeft
+  Int . fromIntegral <$> gets ticksLeft
 
 bf_seconds_left = Builtin "seconds_left" 0 (Just 0) [] TInt $ \[] -> do
   (limit, start) <- gets (secondsLimit &&& startTime)
@@ -121,7 +122,7 @@ bf_seconds_left = Builtin "seconds_left" 0 (Just 0) [] TInt $ \[] -> do
   return $ Int $ fromIntegral $ limit - round (now `diffUTCTime` start)
 
 bf_task_id = Builtin "task_id" 0 (Just 0) [] TInt $ \[] ->
-  (Int . fromIntegral) `liftM` asks (taskId . task)
+  Int . fromIntegral <$> asks (taskId . task)
 
 bf_suspend = Builtin "suspend" 0 (Just 1) [TNum] TAny $ \optional -> do
   let (maybeSeconds : _) = maybeDefaults optional
@@ -192,7 +193,7 @@ bf_queue_info = Builtin "queue_info" 0 (Just 1) [TObj] TAny $ \args ->
                         foldr (S.insert . taskOwner) S.empty
         [Obj player] -> Int . fromIntegral . length .
                         filter ((== player) . taskOwner)
-  in info `liftM` queuedTasks
+  in info <$> queuedTasks
 
 bf_queued_tasks = Builtin "queued_tasks" 0 (Just 0) [] TLst $ \[] -> do
   tasks <- queuedTasks
@@ -230,7 +231,7 @@ bf_kill_task = Builtin "kill_task" 1 (Just 1) [TInt] TAny $ \[Int task_id] -> do
       delayIO $ killThread (taskThread task)
       return zero
     _ -> do
-      thisTaskId <- taskId `liftM` asks task
+      thisTaskId <- taskId <$> asks task
       if task_id' == thisTaskId
         then interrupt Suicide
         else raise E_INVARG

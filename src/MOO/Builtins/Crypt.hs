@@ -4,7 +4,7 @@
 
 module MOO.Builtins.Crypt (crypt) where
 
-import Control.Monad (liftM)
+import Control.Applicative ((<$>))
 import Foreign (allocaBytes)
 import Foreign.C (CString, CInt(CInt), withCString, peekCString)
 import System.IO.Unsafe (unsafePerformIO)
@@ -28,6 +28,6 @@ crypt' key salt len =
   allocaBytes (fromIntegral len) $ \encrypted -> do
     result <- crypt_helper key salt encrypted len
     case result of
-      0   -> Just `liftM` peekCString encrypted
+      0   -> Just <$> peekCString encrypted
       -1  -> return Nothing
       req -> crypt' key salt req

@@ -23,9 +23,10 @@ module MOO.Database (
   , getServerMessage
   ) where
 
+import Control.Applicative ((<$>))
 import Control.Concurrent.STM (STM, TVar, newTVarIO, newTVar,
                                readTVar, writeTVar)
-import Control.Monad (forM, forM_, liftM, when)
+import Control.Monad (forM, forM_, when)
 import Data.IntSet (IntSet)
 import Data.Maybe (isJust)
 import Data.Monoid ((<>))
@@ -215,7 +216,7 @@ getServerOptions oid = do
 
 getProtected :: (Id -> MOO (Maybe Value)) -> [Id] -> MOO (Set Id)
 getProtected getOption ids = do
-  maybes <- forM ids $ liftM (fmap truthOf) . getOption . ("protect_" <>)
+  maybes <- forM ids $ fmap (fmap truthOf) . getOption . ("protect_" <>)
   return $ S.fromList [ id | (id, Just True) <- zip ids maybes ]
 
 loadServerOptions :: MOO ()
@@ -298,6 +299,6 @@ getServerMessage oid msg def = do
     Nothing      -> def
   where strings :: [Value] -> Maybe [Text]
         strings (v:vs) = case v of
-          Str s -> (Str.toText s :) `fmap` strings vs
+          Str s -> (Str.toText s :) <$> strings vs
           _     -> Nothing
         strings [] = Just []

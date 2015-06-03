@@ -4,7 +4,7 @@
 module MOO.Builtins.Values ( builtins ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (mplus, unless, liftM)
+import Control.Monad (mplus, unless)
 import Data.ByteString (ByteString)
 import Data.Char (isDigit)
 import Data.Maybe (fromJust)
@@ -157,7 +157,7 @@ bf_value_hash = Builtin "value_hash" 1 (Just 2)
 bf_random = Builtin "random" 0 (Just 1) [TInt] TInt $ \optional ->
   let [Int mod] = defaults optional [Int maxBound]
   in if mod < 1 then raise E_INVARG
-     else Int `liftM` random (1, mod)
+     else Int <$> random (1, mod)
 
 bf_min = Builtin "min" 1 Nothing [TNum] TNum $ \args -> case args of
   Int x:xs -> minMaxInt min x xs
@@ -279,7 +279,7 @@ bf_decode_binary = Builtin "decode_binary" 1 (Just 2)
   let [fully] = booleanDefaults optional [False]
       mkResult | fully     = fromListBy (Int . fromIntegral)
                | otherwise = fromList . groupPrinting ("" ++)
-  in (mkResult . BS.unpack) `liftM` binaryString bin_string
+  in mkResult . BS.unpack <$> binaryString bin_string
 
   where groupPrinting :: (String -> String) -> [Word8] -> [Value]
         groupPrinting g (w:ws)
@@ -295,7 +295,7 @@ bf_decode_binary = Builtin "decode_binary" 1 (Just 2)
           where group = g ""
 
 bf_encode_binary = Builtin "encode_binary" 0 Nothing [] TStr $
-                   liftM (Str . Str.fromBinary) . encodeBinary
+                   fmap (Str . Str.fromBinary) . encodeBinary
 
 encodeBinary :: [Value] -> MOO ByteString
 encodeBinary = maybe (raise E_INVARG) (return . BS.pack) . encode
@@ -380,18 +380,18 @@ bf_substitute = Builtin "substitute" 2 (Just 2)
 
       unless (valid start end && V.length replacements' == 9) $
         raise E_INVARG
-      replacements <- (substr start end :) `liftM`
+      replacements <- (substr start end :) <$>
                       mapM substitution (V.toList replacements')
 
       let walk ('%':c:cs)
             | isDigit c = let i = fromEnum c - fromEnum '0'
-                          in (replacements !! i ++) `liftM` walk cs
-            | c == '%'  = ("%" ++) `liftM` walk cs
+                          in (replacements !! i ++) <$> walk cs
+            | c == '%'  = ("%" ++) <$> walk cs
             | otherwise = raise E_INVARG
-          walk (c:cs) = ([c] ++) `liftM` walk cs
+          walk (c:cs) = ([c] ++) <$> walk cs
           walk []     = return []
 
-      (Str . Str.fromString) `liftM` walk (Str.toString template)
+      Str . Str.fromString <$> walk (Str.toString template)
     _ -> raise E_INVARG
 
 bf_crypt = Builtin "crypt" 1 (Just 2)
@@ -409,7 +409,7 @@ bf_crypt = Builtin "crypt" 1 (Just 2)
           c1 <- randSaltChar
           c2 <- randSaltChar
           return $ Str.fromString [c1, c2]
-        randSaltChar = (saltStuff !!) `liftM` random (0, length saltStuff - 1)
+        randSaltChar = (saltStuff !!) <$> random (0, length saltStuff - 1)
         saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
 
 bf_string_hash = Builtin "string_hash" 1 (Just 2)

@@ -15,11 +15,11 @@ module MOO.Builtins.Match (
   , rmatch
   ) where
 
+import Control.Applicative ((<$>))
 import Foreign (Ptr, FunPtr, ForeignPtr, alloca, allocaArray, nullPtr,
                 peek, peekArray, peekByteOff, pokeByteOff,
                 newForeignPtr, mallocForeignPtrBytes, withForeignPtr, (.|.))
 import Foreign.C (CString, CInt(CInt), CULong, peekCString)
-import Control.Monad (liftM)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.ByteString (ByteString, useAsCString, useAsCStringLen)
@@ -245,8 +245,7 @@ doMatch helper Regexp { code = codeFP, extra = extraFP } text =
 
 mkMatchResult :: CInt -> Ptr CInt -> (ByteString, Int) -> IO MatchResult
 mkMatchResult rc ovec (subject, subjectCharLen) =
-  (MatchSucceeded . pairs . map (rebase . fromIntegral)) `liftM`
-  peekArray (n * 2) ovec
+  MatchSucceeded . pairs . map (rebase . fromIntegral) <$> peekArray (n * 2) ovec
 
   where rc' = fromIntegral rc
         n   = if rc' == 0 || rc' > maxCaptures then maxCaptures else rc'

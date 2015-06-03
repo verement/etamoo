@@ -3,6 +3,7 @@ module MOO.Parser ( Program, parse, runParser, initParserState
                   , expression, between, whiteSpace, eof, program
                   , parseInt, parseFlt, parseNum, parseObj, keywords ) where
 
+import Control.Applicative ((<$>))
 import Control.Monad (when, unless, mplus)
 import Control.Monad.Identity (Identity)
 import Data.List (find)
@@ -100,7 +101,7 @@ semiSep1       = T.semiSep1       lexer
 
 signed :: (Num a) => MOOParser a -> MOOParser a
 signed parser = negative <|> parser
-  where negative = char '-' >> fmap negate parser
+  where negative = char '-' >> negate <$> parser
 
 plusMinus :: (Num a) => MOOParser a -> MOOParser a
 plusMinus parser = positive <|> signed parser
@@ -146,7 +147,7 @@ floatLiteral = try (lexeme $ signed real) >>= checkRange >>= return . Flt
 stringLiteral :: MOOParser Value
 stringLiteral = lexeme mooString <?> "string literal"
   where mooString = between (char '"') (char '"' <?> "terminating quote") $
-                    fmap (Str . fromString) $ many stringChar
+                    Str . fromString <$> many stringChar
         stringChar = noneOf "\"\\" <|> (char '\\' >> anyChar <?> "")
 
 objectLiteral :: MOOParser Value
@@ -155,7 +156,7 @@ objectLiteral = lexeme (char '#' >> signed decimal) >>=
                 <?> "object number"
 
 errorLiteral :: MOOParser Value
-errorLiteral = checkPrefix >> fmap Err errorValue <?> "error value"
+errorLiteral = checkPrefix >> Err <$> errorValue <?> "error value"
   where checkPrefix = try $ lookAhead $ (char 'E' <|> char 'e') >> char '_'
         errorValue = choice $ map literal [minBound..maxBound]
         literal err = reserved (show err) >> return err
@@ -236,10 +237,10 @@ factor = chainr1 base power
 
 base :: MOOParser Expr
 base = bangThing <|> minusThing <|> unary
-  where bangThing = symbol "!" >> fmap Not base
+  where bangThing = symbol "!" >> Not <$> base
         minusThing = do
           try $ lexeme $ char '-' >> notFollowedBy (digit <|> char '.')
-          fmap Negate base
+          Negate <$> base
 
 unary :: MOOParser Expr
 unary = primary >>= modifiers
@@ -253,21 +254,21 @@ primary = subexpression <|> dollarThing <|> identThing <|>
           symbol "$"
           dollarRef <|> justDollar
         dollarRef = do
-          name <- fmap (Literal . Str . fromId) identifier
+          name <- Literal . Str . fromId <$> identifier
           dollarVerb name <|> return (PropertyRef objectZero name)
-        dollarVerb name = fmap (VerbCall objectZero name) $ parens argList
+        dollarVerb name = VerbCall objectZero name <$> parens argList
         objectZero = Literal $ Obj 0
         justDollar = do
-          dc <- fmap dollarContext getState
+          dc <- dollarContext <$> getState
           unless (dc > 0) $ fail "Illegal context for `$' expression."
           return Length
 
         identThing = do
           ident <- identifier
-          let builtin = fmap (BuiltinFunc ident) $ parens argList
+          let builtin = BuiltinFunc ident <$> parens argList
           builtin <|> return (Variable ident)
 
-        list = fmap List $ braces argList
+        list = List <$> braces argList
 
         catchExpr = do
           symbol "`"
@@ -320,8 +321,8 @@ arguments allowEmpty
   | allowEmpty = commaSep  arg
   | otherwise  = commaSep1 arg
   where arg = splice <|> normal
-        splice = symbol "@" >> fmap ArgSplice expression
-        normal = fmap ArgNormal expression
+        splice = symbol "@" >> ArgSplice <$> expression
+        normal =               ArgNormal <$> expression
 
 scatList :: MOOParser [ScatterItem]
 scatList = commaSep1 scat
@@ -331,8 +332,8 @@ scatList = commaSep1 scat
           ident <- identifier
           dv <- optionMaybe $ symbol "=" >> expression
           return $ ScatOptional ident dv
-        rest = symbol "@" >> fmap ScatRest identifier
-        required = fmap ScatRequired identifier
+        rest     = symbol "@" >> ScatRest     <$> identifier
+        required =               ScatRequired <$> identifier
 
 scatFromArgList :: [Argument] -> MOOParser [ScatterItem]
 scatFromArgList [] = fail "Empty list in scattering assignment."
@@ -361,10 +362,10 @@ incLineNumber :: MOOParser ()
 incLineNumber = modifyState $ \st -> st { lineNumber = succ (lineNumber st) }
 
 getLineNumber :: MOOParser Int
-getLineNumber = fmap lineNumber getState
+getLineNumber = lineNumber <$> getState
 
 statements :: MOOParser [Statement]
-statements = fmap catMaybes (many statement) <?> "statements"
+statements = catMaybes <$> many statement <?> "statements"
 
 statement :: MOOParser (Maybe Statement)
 statement = fmap Just someStatement <|> nullStatement <?> "statement"
@@ -456,7 +457,7 @@ resumeLoopScope = modifyLoopStack tail
 
 checkLoopName :: String -> Maybe Id -> MOOParser ()
 checkLoopName kind ident = do
-  stack <- fmap (head . loopStack) getState
+  stack <- head . loopStack <$> getState
   case ident of
     Nothing -> when (null stack) $
                fail $ "No enclosing loop for `" ++ kind ++ "' statement"
@@ -527,7 +528,7 @@ expressionStatement = do
 -- Main parser interface
 
 program :: MOOParser Program
-program = between whiteSpace eof $ fmap Program statements
+program = between whiteSpace eof $ Program <$> statements
 
 type Errors = [String]
 

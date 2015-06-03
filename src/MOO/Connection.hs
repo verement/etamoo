@@ -36,6 +36,7 @@ module MOO.Connection (
   , getConnectionOptions
   ) where
 
+import Control.Applicative ((<$>))
 import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (STM, TVar, TMVar, atomically, newTVar,
                                newEmptyTMVar, takeTMVar,
@@ -48,7 +49,7 @@ import Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueue, closeTBMQueue,
                                         unGetTBMQueue, isEmptyTBMQueue,
                                         freeSlotsTBMQueue)
 import Control.Exception (SomeException, try, bracket, catch)
-import Control.Monad ((<=<), join, when, unless, foldM, forever, void, liftM)
+import Control.Monad ((<=<), join, when, unless, foldM, forever, void)
 import Control.Monad.Cont (callCC)
 import Control.Monad.Reader (asks)
 import Control.Monad.State (get, modify)
@@ -332,7 +333,7 @@ connectionHandler world' object printMessages connectionName (input, output) =
           let systemVerb = case how of
                 Disconnected       -> "user_disconnected"
                 ClientDisconnected -> "user_client_disconnected"
-              comp = fromMaybe zero `liftM`
+              comp = fromMaybe zero <$>
                      callSystemVerb' object systemVerb [Obj player] Str.empty
           void $ runTask =<< newTask world' player (resetLimits True >> comp)
 
@@ -397,8 +398,8 @@ runConnection world' printMessages conn = loop
         processUnLoggedIn :: StrT -> IO ()
         processUnLoggedIn line = do
           result <- runServerTask $ do
-            maxObject <- maxObject `liftM` getDatabase
-            player <- fromMaybe zero `liftM`
+            maxObject <- maxObject <$> getDatabase
+            player <- fromMaybe zero <$>
                       callSystemVerb "do_login_command" (cmdWords line) line
             return $ fromList [Obj maxObject, player]
           case result of
@@ -452,8 +453,7 @@ runConnection world' printMessages conn = loop
 
         runServerVerb' :: StrT -> [Value] -> StrT -> IO (Maybe Value)
         runServerVerb' vname args argstr = runServerTask $
-          fromMaybe zero `liftM`
-            callSystemVerb' object vname args argstr
+          fromMaybe zero <$> callSystemVerb' object vname args argstr
           where object = connectionObject conn
 
         runServerTask :: MOO Value -> IO (Maybe Value)
@@ -635,7 +635,7 @@ printMessage conn msg = serverMessage conn msg >>= liftSTM
 
 serverMessage :: Connection -> (ObjId -> MOO [Text]) -> MOO (STM ())
 serverMessage conn msg =
-  mapM_ (sendToConnection conn) `liftM` msg (connectionObject conn)
+  mapM_ (sendToConnection conn) <$> msg (connectionObject conn)
 
 readFromConnection :: ObjId -> Bool -> MOO Value
 readFromConnection oid nonBlocking = withConnection oid $ \conn -> do
@@ -690,7 +690,7 @@ notify' noFlush who what =
   withMaybeConnection who . maybe (return True) $ \conn -> do
     options <- liftSTM $ readTVar (connectionOptions conn)
     message <- if optionBinaryMode options
-               then Binary `fmap` binaryString what
+               then Binary <$> binaryString what
                else return (Line $ Str.toText what)
     liftSTM $ enqueueOutput noFlush conn message
 
@@ -700,7 +700,7 @@ notify' noFlush who what =
 bufferedOutputLength :: Maybe Connection -> STM Int
 bufferedOutputLength Nothing     = return maxQueueLength
 bufferedOutputLength (Just conn) =
-  (maxQueueLength -) `fmap` freeSlotsTBMQueue (connectionOutput conn)
+  (maxQueueLength -) <$> freeSlotsTBMQueue (connectionOutput conn)
 
 -- | Force a line of input for a connection.
 forceInput :: Bool -> ObjId -> StrT -> MOO ()
@@ -709,7 +709,7 @@ forceInput atFront oid line =
     let queue   = connectionInput conn
     success <- liftSTM $
       if atFront then unGetTBMQueue queue line >> return True
-      else fromMaybe True `fmap` tryWriteTBMQueue queue line
+      else fromMaybe True <$> tryWriteTBMQueue queue line
     unless success $ raise E_QUOTA
 
 -- | Flush a connection's input queue, optionally showing what was flushed.
@@ -725,7 +725,7 @@ flushInput showMessages conn = do
 
     where flushQueue queue notify = loop
             where loop = do
-                    item <- join `fmap` tryReadTBMQueue queue
+                    item <- join <$> tryReadTBMQueue queue
                     case item of
                       Just line -> do
                         notify $ ">>     " <> Str.toText line

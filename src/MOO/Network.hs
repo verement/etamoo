@@ -13,6 +13,7 @@ module MOO.Network (
   , unlisten
   ) where
 
+import Control.Applicative ((<$>))
 import Control.Concurrent.STM (TVar, atomically, modifyTVar, readTVarIO)
 import Control.Exception (try, finally)
 import Control.Monad (when)
@@ -60,7 +61,7 @@ value2point value = do
   world <- getWorld
   case value of
     Int port      -> return $ TCP (bindAddress world) (fromIntegral port)
-    Str "Console" -> Console `fmap` getWorld'
+    Str "Console" -> Console <$> getWorld'
     _             -> raise E_TYPE
 
 point2value :: Point -> Value

@@ -53,6 +53,7 @@ module MOO.String (
   , index
   ) where
 
+import Control.Applicative ((<$>))
 import Data.ByteString (ByteString)
 import Data.Char (isAscii, isPrint, isHexDigit, digitToInt, intToDigit)
 import Data.Function (on)
@@ -152,10 +153,10 @@ decodeBinary = fmap BS.pack . decode . T.unpack
           q' <- fromHex q
           r' <- fromHex r
           let b = 16 * q' + r'
-          (b :) `fmap` decode rest
+          (b :) <$> decode rest
         decode ('~':_) = Nothing
         decode (c:rest)
-          | isAscii c && isPrint c = (b :) `fmap` decode rest
+          | isAscii c && isPrint c = (b :) <$> decode rest
           | otherwise              = Nothing
           where b = fromIntegral (fromEnum c)
         decode [] = return []
