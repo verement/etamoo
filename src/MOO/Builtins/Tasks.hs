@@ -126,18 +126,12 @@ bf_task_id = Builtin "task_id" 0 (Just 0) [] TInt $ \[] ->
 bf_suspend = Builtin "suspend" 0 (Just 1) [TNum] TAny $ \optional -> do
   let (maybeSeconds : _) = maybeDefaults optional
 
-  maybeMicroseconds <- case maybeSeconds of
-    Just (Int secs)
-      | secs < 0  -> raise E_INVARG
-      | otherwise -> return (Just $ fromIntegral secs * 1000000)
-    Just (Flt secs)
-      | secs < 0  -> raise E_INVARG
-      | otherwise -> return (Just $ ceiling    $ secs * 1000000)
-    Nothing -> return Nothing
+  {- maybeMicrosecs <- mapM getDelay maybeSeconds  -- requires GHC 7.10 -}
+  maybeMicrosecs <- maybe (return Nothing) (fmap Just . getDelay) maybeSeconds
 
   state <- get
 
-  estimatedWakeup <- case maybeMicroseconds of
+  estimatedWakeup <- case maybeMicrosecs of
     Just usecs
       | time < now || time > endOfTime -> raise E_INVARG
       | otherwise                      -> return time
@@ -160,7 +154,7 @@ bf_suspend = Builtin "suspend" 0 (Just 1) [TNum] TAny $ \optional -> do
         , taskState  = state { startTime = estimatedWakeup }
         }
 
-  case maybeMicroseconds of
+  case maybeMicrosecs of
     Just usecs -> delayIO $ void $ forkIO $ delay usecs >> wake zero
     Nothing    -> return ()
 

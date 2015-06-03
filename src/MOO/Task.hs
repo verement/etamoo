@@ -39,6 +39,7 @@ module MOO.Task (
   , defaultBgTicks
   , defaultFgSeconds
   , defaultBgSeconds
+  , getDelay
   , resetLimits
   , taskOwner
   , isQueued
@@ -512,6 +513,12 @@ defaultFgSeconds = 5
 
 defaultBgSeconds :: Num a => a
 defaultBgSeconds = 3
+
+getDelay :: Value -> MOO Integer
+getDelay v = case toMicroseconds v of
+  Just usecs | usecs >= 0 -> return usecs
+             | otherwise  -> raise E_INVARG
+  Nothing                 -> raise E_TYPE
 
 -- | Create and queue a task to run the given computation after the given
 -- microsecond delay. 'E_INVARG' may be raised if the delay is out of

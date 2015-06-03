@@ -48,6 +48,7 @@ module MOO.Types (
 
   , toText
   , toLiteral
+  , toMicroseconds
   , error2text
 
   -- * List Convenience Functions
@@ -374,6 +375,12 @@ toLiteral (Str x) = T.concat ["\"", T.concatMap escape $ Str.toText x, "\""]
         escape c    = T.singleton c
 toLiteral (Err x) = T.pack (show x)
 toLiteral v = toText v
+
+-- | Interpret a MOO value as a number of microseconds.
+toMicroseconds :: Value -> Maybe Integer
+toMicroseconds (Int secs) = Just $ fromIntegral secs * 1000000
+toMicroseconds (Flt secs) = Just $ ceiling    $ secs * 1000000
+toMicroseconds  _         = Nothing
 
 -- | Return a string description of the given error value.
 error2text :: Error -> Text

@@ -118,15 +118,7 @@ compileStatements (statement:rest) yield = case statement of
   Fork lineNo var delay body -> runTick >> do
     handleDebug $ do
       setLineNumber lineNo
-      delay' <- evaluate delay
-      usecs <- case delay' of
-        Int secs
-          | secs < 0  -> raise E_INVARG
-          | otherwise -> return (fromIntegral secs * 1000000)
-        Flt secs
-          | secs < 0  -> raise E_INVARG
-          | otherwise -> return (ceiling    $ secs * 1000000)
-        _ -> raise E_TYPE
+      usecs <- getDelay =<< evaluate delay
 
       checkQueuedTaskLimit
 
