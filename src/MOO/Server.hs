@@ -3,7 +3,7 @@
 
 module MOO.Server ( startServer ) where
 
-import Control.Concurrent (takeMVar, forkIO)
+import Control.Concurrent (takeMVar, forkIO, getNumCapabilities)
 import Control.Concurrent.STM (STM, TVar, atomically, readTVarIO, readTVar)
 import Control.Monad (forM_, void)
 import Data.Monoid ((<>))
@@ -40,13 +40,17 @@ startServer logFile inputDB outputDB outboundNet pf = withSocketsDo $ do
   stmLogger <- startLogger logFile
   let writeLog = atomically . stmLogger
 
+  numCapabilities <- getNumCapabilities
+
   writeLog $ "CMDLINE: Outbound network connections " <>
     if outboundNet then "enabled." else "disabled."
 
   mapM_ writeLog [
       "STARTING: Version " <> serverVersion <> " of the LambdaMOO server"
     , "          (Using TCP/IP with IPv6 support)"
-    , "          (Task timeouts not measured.)"
+    , "          (Task timeouts not measured)"
+    , "          (Multithreading over " <>
+      pluralize numCapabilities "processor core" <> ")"
     ]
 
   db <- loadLMDatabase inputDB writeLog >>= either (error . show) return
@@ -60,6 +64,10 @@ startServer logFile inputDB outputDB outboundNet pf = withSocketsDo $ do
 
   world <- readTVarIO world'
   takeMVar (shutdownMessage world) >>= shutdownServer world'
+
+  where pluralize :: Int -> Text -> Text
+        pluralize n what = T.concat $
+                           [ T.pack (show n), " ", what ] ++ [ "s" | n /= 1 ]
 
 shutdownServer :: TVar World -> Text -> IO ()
 shutdownServer world' message = do
