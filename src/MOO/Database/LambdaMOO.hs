@@ -414,19 +414,19 @@ read_propval = (<?> "propval") $ do
 data LMVar = LMClear
            | LMNone
            | LMStr     String
-           | LMObj     IntT
-           | LMErr     IntT
+           | LMObj     ObjT
+           | LMErr     Int
            | LMInt     IntT
-           | LMCatch   IntT
-           | LMFinally IntT
+           | LMCatch   Int
+           | LMFinally Int
            | LMFloat   FltT
            | LMList    [LMVar]
 
 valueFromVar :: LMVar -> Either LMVar (Maybe Value)
 valueFromVar LMClear       = Right Nothing
 valueFromVar (LMStr str)   = Right $ Just (Str $ Str.fromString str)
-valueFromVar (LMObj obj)   = Right $ Just (Obj $ fromIntegral obj)
-valueFromVar (LMErr err)   = Right $ Just (Err $ toEnum $ fromIntegral err)
+valueFromVar (LMObj obj)   = Right $ Just (Obj obj)
+valueFromVar (LMErr err)   = Right $ Just (Err $ toEnum err)
 valueFromVar (LMInt int)   = Right $ Just (Int int)
 valueFromVar (LMFloat flt) = Right $ Just (Flt flt)
 valueFromVar (LMList list) = do
@@ -449,13 +449,13 @@ read_var = (<?> "var") $ do
     cases l
       | l == type_clear   = return LMClear
       | l == type_none    = return LMNone
-      | l == _type_str    =        LMStr     <$> read_string
-      | l == type_obj     =        LMObj     <$> read_num
-      | l == type_err     =        LMErr     <$> read_num
-      | l == type_int     =        LMInt     <$> read_num
-      | l == type_catch   =        LMCatch   <$> read_num
-      | l == type_finally =        LMFinally <$> read_num
-      | l == _type_float  =        LMFloat   <$> read_float
+      | l == _type_str    =        LMStr                    <$> read_string
+      | l == type_obj     =        LMObj     . fromIntegral <$> read_num
+      | l == type_err     =        LMErr     . fromIntegral <$> read_num
+      | l == type_int     =        LMInt                    <$> read_num
+      | l == type_catch   =        LMCatch   . fromIntegral <$> read_num
+      | l == type_finally =        LMFinally . fromIntegral <$> read_num
+      | l == _type_float  =        LMFloat                  <$> read_float
       | l == _type_list   = do
           l <- read_num
           LMList <$> count (fromIntegral l) read_var
