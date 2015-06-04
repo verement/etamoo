@@ -16,17 +16,17 @@ module MOO.Builtins.Match (
   ) where
 
 import Control.Applicative ((<$>))
+import Data.ByteString (ByteString, useAsCString, useAsCStringLen)
+import Data.Text (Text)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Foreign (Ptr, FunPtr, ForeignPtr, alloca, allocaArray, nullPtr,
                 peek, peekArray, peekByteOff, pokeByteOff,
                 newForeignPtr, mallocForeignPtrBytes, withForeignPtr, (.|.))
 import Foreign.C (CString, CInt(CInt), CULong, peekCString)
-import Data.Text (Text)
-import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import Data.ByteString (ByteString, useAsCString, useAsCStringLen)
 import System.IO.Unsafe (unsafePerformIO)
 
-import qualified Data.Text as T
 import qualified Data.ByteString as BS
+import qualified Data.Text as T
 
 {-# ANN module ("HLint: ignore Avoid lambda" :: String) #-}
 
@@ -35,6 +35,9 @@ import qualified Data.ByteString as BS
 data PCRE
 data PCREExtra
 data CharacterTables
+
+type Helper = Ptr PCRE -> Ptr PCREExtra -> CString -> CInt ->
+              CInt -> Ptr CInt -> IO CInt
 
 foreign import ccall unsafe "static pcre.h"
   pcre_compile :: CString -> CInt -> Ptr CString -> Ptr CInt ->
@@ -52,14 +55,12 @@ foreign import ccall unsafe "static pcre.h &"
 -- This must be /unsafe/ to block other threads while it executes, since it
 -- relies on being able to modify and use some PCRE global state.
 foreign import ccall unsafe "static match.h"
-  match_helper :: Ptr PCRE -> Ptr PCREExtra -> CString -> CInt ->
-                  CInt -> Ptr CInt -> IO CInt
+  match_helper :: Helper
 
 -- This must be /unsafe/ to block other threads while it executes, since it
 -- relies on being able to modify and use some PCRE global state.
 foreign import ccall unsafe "static match.h"
-  rmatch_helper :: Ptr PCRE -> Ptr PCREExtra -> CString -> CInt ->
-                   CInt -> Ptr CInt -> IO CInt
+  rmatch_helper :: Helper
 
 data Regexp = Regexp {
     pattern     :: Text
@@ -174,13 +175,13 @@ newRegexp regexp caseMatters =
     code <- pcre_compile pattern options errorPtr errorOffsetPtr nullPtr
     if code == nullPtr
       then do
-        error <- peek errorPtr >>= peekCString
+        error <- peekCString =<< peek errorPtr
         errorOffset <- peek errorOffsetPtr
         return $ Left (patchError error, fromIntegral errorOffset)
       else do
         extraFP <- mkExtra code
         setExtraFlags extraFP
-        codeFP <- peek pcre_free >>= flip newForeignPtr code
+        codeFP <- flip newForeignPtr code =<< peek pcre_free
         return $ Right Regexp { pattern     = regexp
                               , caseMatters = caseMatters
                               , code        = codeFP
@@ -205,12 +206,15 @@ newRegexp regexp caseMatters =
           #{poke pcre_extra, match_limit}           extra matchLimit
           #{poke pcre_extra, match_limit_recursion} extra matchLimitRecursion
           flags <- #{peek pcre_extra, flags} extra
-          #{poke pcre_extra, flags} extra $ flags .|. (0 :: CULong)
-            .|. #{const PCRE_EXTRA_MATCH_LIMIT}
-            .|. #{const PCRE_EXTRA_MATCH_LIMIT_RECURSION}
+          #{poke pcre_extra, flags} extra $ flags .|. matchLimitFlags
 
-        matchLimit          = 100000 :: CULong
-        matchLimitRecursion =   5000 :: CULong
+          where matchLimit, matchLimitRecursion :: CULong
+                matchLimit          = 100000
+                matchLimitRecursion =   5000
+
+                matchLimitFlags :: CULong
+                matchLimitFlags = #{const PCRE_EXTRA_MATCH_LIMIT} .|.
+                                  #{const PCRE_EXTRA_MATCH_LIMIT_RECURSION}
 
         patchError :: String -> String
         patchError = concatMap patch
@@ -242,8 +246,7 @@ match regexp text = unsafePerformIO $ doMatch match_helper regexp text
 rmatch :: Regexp -> Text -> MatchResult
 rmatch regexp text = unsafePerformIO $ doMatch rmatch_helper regexp text
 
-doMatch :: (Ptr PCRE -> Ptr PCREExtra -> CString -> CInt ->
-            CInt -> Ptr CInt -> IO CInt) -> Regexp -> Text -> IO MatchResult
+doMatch :: Helper -> Regexp -> Text -> IO MatchResult
 doMatch helper Regexp { code = codeFP, extra = extraFP } text =
   withForeignPtr codeFP  $ \code           ->
   withForeignPtr extraFP $ \extra          ->
@@ -265,8 +268,9 @@ mkMatchResult :: CInt -> Ptr CInt -> (ByteString, Int) -> IO MatchResult
 mkMatchResult rc ovec (subject, subjectCharLen) =
   MatchSucceeded . pairs . map (rebase . fromIntegral) <$> peekArray (n * 2) ovec
 
-  where rc' = fromIntegral rc
-        n   = if rc' == 0 || rc' > maxCaptures then maxCaptures else rc'
+  where n :: Int
+        n = let rc' = fromIntegral rc
+            in if rc' == 0 || rc' > maxCaptures then maxCaptures else rc'
 
         pairs :: [a] -> [(a, a)]
         pairs (s:e:rs) = (s, e) : pairs rs
