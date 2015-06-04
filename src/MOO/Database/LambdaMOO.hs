@@ -96,7 +96,7 @@ lmDatabase = do
   local (\r -> r { input_version = dbVersion }) $ do
     nobjs  <- line signedInt
     nprogs <- line signedInt
-    dummy  <- line signedInt
+    _dummy <- line signedInt
     nusers <- line signedInt
 
     writeLog $ show nobjs ++ " objects, "
@@ -496,26 +496,26 @@ read_task_queue = (<?> "task_queue") $ do
   string " queued tasks\n"
   count ntasks $ do
     signedInt >> char ' '
-    first_lineno <- signedInt
+    _first_lineno <- signedInt
     char ' '
-    st <- signedInt
+    _st <- signedInt
     char ' '
-    id <- signedInt
+    _id <- signedInt
     char '\n'
 
-    a <- read_activ_as_pi
+    _a <- read_activ_as_pi
     read_rt_env
-    program <- read_program
+    _program <- read_program
     return ()
 
   suspended_count <- signedInt
   string " suspended tasks\n"
   count suspended_count $ do
-    start_time <- signedInt
+    _start_time <- signedInt
     char ' '
-    task_id <- signedInt
-    value <- (char ' ' >> read_var) <|> (char '\n' >> return (LMInt 0))
-    the_vm <- read_vm
+    _task_id <- signedInt
+    _value <- (char ' ' >> read_var) <|> (char '\n' >> return (LMInt 0))
+    _the_vm <- read_vm
     return ()
 
   return ()
@@ -524,11 +524,11 @@ read_vm :: DBParser ()
 read_vm = (<?> "vm") $ do
   top <- unsignedInt
   char ' '
-  vector <- signedInt
+  _vector <- signedInt
   char ' '
-  func_id <- unsignedInt
-  max <- (char ' ' >> unsignedInt) <|>
-         (lookAhead (char '\n') >> return default_max_stack_depth)
+  _func_id <- unsignedInt
+  _max <- (char ' ' >> unsignedInt) <|>
+          (lookAhead (char '\n') >> return default_max_stack_depth)
   char '\n'
   count (fromIntegral top) read_activ
   return ()
@@ -543,7 +543,7 @@ read_activ = (<?> "activ") $ do
   unless (version < num_db_versions) $
     fail $ "Unrecognized language version: " ++ show version
 
-  prog <- read_program
+  _prog <- read_program
   read_rt_env
 
   stack_in_use <- signedInt
@@ -551,32 +551,32 @@ read_activ = (<?> "activ") $ do
   count stack_in_use read_var
 
   read_activ_as_pi
-  temp <- read_var
+  _temp <- read_var
 
   pc <- unsignedInt
   char ' '
   i <- unsignedInt
   let bi_func_pc = i
-  error_pc <- (lookAhead (char '\n') >> return pc) <|> (char ' ' >> unsignedInt)
+  _error_pc <- (lookAhead (char '\n') >> return pc) <|> (char ' ' >> unsignedInt)
   char '\n'
 
   when (bi_func_pc /= 0) $ do
-    func_name <- read_string
+    _func_name <- read_string
     read_bi_func_data
 
 read_activ_as_pi :: DBParser ()
 read_activ_as_pi = (<?> "activ_as_pi") $ do
   read_var
 
-  this <- signedInt
+  _this <- signedInt
   char ' ' >> signedInt
   char ' ' >> signedInt
-  player <- char ' ' >> signedInt
+  _player <- char ' ' >> signedInt
   char ' ' >> signedInt
-  progr <- char ' ' >> signedInt
-  vloc <- char ' ' >> signedInt
+  _progr <- char ' ' >> signedInt
+  _vloc <- char ' ' >> signedInt
   char ' ' >> signedInt
-  debug <- char ' ' >> signedInt
+  _debug <- char ' ' >> signedInt
   char '\n'
 
   read_string  -- was argstr
@@ -584,8 +584,8 @@ read_activ_as_pi = (<?> "activ_as_pi") $ do
   read_string  -- was iobjstr
   read_string  -- was prepstr
 
-  verb <- read_string
-  verbname <- read_string
+  _verb <- read_string
+  _verbname <- read_string
 
   return ()
 
@@ -632,13 +632,13 @@ type_finally = 8
 _type_float  = 9
 
 type_any     = -1
-type_numeric = -2
+-- type_numeric = -2
 
 dbv_prehistory  = 0
-dbv_exceptions  = 1
-dbv_breakcont   = 2
+-- dbv_exceptions  = 1
+-- dbv_breakcont   = 2
 dbv_float       = 3
-dbv_bfbugfixed  = 4
+-- dbv_bfbugfixed  = 4
 num_db_versions = 5
 
 system_object = 0
@@ -646,10 +646,10 @@ system_object = 0
 flag_user       = 0
 flag_programmer = 1
 flag_wizard     = 2
-flag_obsolete_1 = 3
+-- flag_obsolete_1 = 3
 flag_read       = 4
 flag_write      = 5
-flag_obsolete_2 = 6
+-- flag_obsolete_2 = 6
 flag_fertile    = 7
 
 pf_read  = 0x01
@@ -664,7 +664,7 @@ vf_debug = 0x08
 dobjShift = 4
 iobjShift = 6
 objMask   = 0x3
-permMask  = 0xF
+-- permMask  = 0xF
 
 -- Database writing ...
 
