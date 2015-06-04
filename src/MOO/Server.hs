@@ -24,10 +24,10 @@ import qualified Data.Text as T
 import MOO.Builtins
 import MOO.Connection
 import MOO.Database.LambdaMOO
-import MOO.Task
-import MOO.Types
 import MOO.Network
 import MOO.Object
+import MOO.Task
+import MOO.Types
 import MOO.Version
 
 -- | Start the main server and create the first listening point.
@@ -69,7 +69,7 @@ shutdownServer world' message = do
     writeLog world "SHUTDOWN: shutdown signal received"
 
     forM_ (M.elems $ connections world) $ \conn -> do
-      sendToConnection conn $ T.concat ["*** Shutting down: ", message, " ***"]
+      sendToConnection conn $ "*** Shutting down: " <> message <> " ***"
       closeConnection conn
 
   -- Give connections time to close

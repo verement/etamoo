@@ -207,8 +207,8 @@ bf_queued_tasks = Builtin "queued_tasks" 0 (Just 0) [] TLst $ \[] -> do
   where formatTask :: Task -> Value
         formatTask task = fromListBy ($ task) [
             Int . fromIntegral . taskId        -- task-id
-          , Int . floor . utcTimeToPOSIXSeconds . startTime . taskState
-                                               -- start-time
+          , Int . floor . utcTimeToPOSIXSeconds .
+                  startTime . taskState        -- start-time
           , const (Int 0)                      -- clock-id    (obsolete)
           , const (Int defaultBgTicks)         -- clock-ticks (obsolete)
           , Obj . taskOwner                    -- programmer

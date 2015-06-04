@@ -3,7 +3,7 @@ module MOO.Parser ( Program, parse, runParser, initParserState
                   , expression, between, whiteSpace, eof, program
                   , parseInt, parseFlt, parseNum, parseObj, keywords ) where
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (when, unless, mplus)
 import Control.Monad.Identity (Identity)
 import Data.List (find)
@@ -250,14 +250,12 @@ primary = subexpression <|> dollarThing <|> identThing <|>
           list <|> catchExpr <|> literal
   where subexpression = parens expression
 
-        dollarThing = do
-          symbol "$"
-          dollarRef <|> justDollar
+        dollarThing = symbol "$" >> (dollarRef <|> justDollar)
         dollarRef = do
           name <- Literal . Str . fromId <$> identifier
           dollarVerb name <|> return (PropertyRef objectZero name)
         dollarVerb name = VerbCall objectZero name <$> parens argList
-        objectZero = Literal $ Obj 0
+        objectZero = Literal (Obj 0)
         justDollar = do
           dc <- dollarContext <$> getState
           unless (dc > 0) $ fail "Illegal context for `$' expression."
@@ -327,11 +325,8 @@ arguments allowEmpty
 scatList :: MOOParser [ScatterItem]
 scatList = commaSep1 scat
   where scat = optional <|> rest <|> required
-        optional = do
-          symbol "?"
-          ident <- identifier
-          dv <- optionMaybe $ symbol "=" >> expression
-          return $ ScatOptional ident dv
+        optional = symbol "?" >> ScatOptional <$> identifier <*>
+                   optionMaybe (symbol "=" >> expression)
         rest     = symbol "@" >> ScatRest     <$> identifier
         required =               ScatRequired <$> identifier
 
@@ -545,9 +540,8 @@ parse input = case runParser program initParserState "MOO code" input of
 -- Auxiliary parser interface
 
 standalone :: MOOParser Value -> Text -> Maybe Value
-standalone parser input = case runParser parser' initParserState "" input of
-  Right v -> Just v
-  Left  _ -> Nothing
+standalone parser input = either (const Nothing) Just $
+                          runParser parser' initParserState "" input
   where parser' = between whiteSpace eof parser
 
 parseInt :: Text -> Maybe Value

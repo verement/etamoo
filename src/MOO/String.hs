@@ -159,7 +159,7 @@ decodeBinary = fmap BS.pack . decode . T.unpack
           | isAscii c && isPrint c = (b :) <$> decode rest
           | otherwise              = Nothing
           where b = fromIntegral (fromEnum c)
-        decode [] = return []
+        decode [] = Just []
 
         fromHex :: Char -> Maybe Word8
         fromHex c

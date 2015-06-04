@@ -22,16 +22,16 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 
 import MOO.Builtins.Common
-import MOO.Types
-import MOO.Task
 import MOO.Database
 import MOO.Object
+import MOO.Task
+import MOO.Types
 import MOO.Version
 
-import MOO.Builtins.Values  as Values
-import MOO.Builtins.Objects as Objects
 import MOO.Builtins.Network as Network
+import MOO.Builtins.Objects as Objects
 import MOO.Builtins.Tasks   as Tasks
+import MOO.Builtins.Values  as Values
 
 import qualified MOO.String as Str
 
@@ -123,7 +123,7 @@ verifyBuiltins = foldM accum 0 $ M.elems builtinFunctions
                                enumerateArgs argSpec
 
         enumerateArgs :: [[Value]] -> [[Value]]
-        enumerateArgs (a:[]) = transpose [a]
+        enumerateArgs [a]    = transpose [a]
         enumerateArgs (a:as) = concatMap (combine a) (enumerateArgs as)
           where combine ps rs = map (: rs) ps
         enumerateArgs []     = [[]]
@@ -205,9 +205,9 @@ bf_shutdown = Builtin "shutdown" 0 (Just 1) [TStr] TAny $ \optional -> do
   checkWizard
 
   name <- getObjectName =<< frame permissions
-  let msg = "shutdown() called by " `Str.append` name
+  let msg = "shutdown() called by " <> name
 
-  shutdown $ maybe msg (\(Str reason) -> Str.concat [msg, ": ", reason]) message
+  shutdown $ maybe msg (\(Str reason) -> msg <> ": " <> reason) message
   return zero
 
 bf_load_server_options = Builtin "load_server_options" 0 (Just 0)

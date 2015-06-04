@@ -3,7 +3,6 @@
 module MOO.Database ( Database
                     , ServerOptions
                     , serverOptions
-                    , maxStackDepth
                     , getServerOption'
                     , dbObject
                     , modifyObject
@@ -12,6 +11,7 @@ module MOO.Database ( Database
                     , bgSeconds
                     , fgTicks
                     , bgTicks
+                    , maxStackDepth
                     , queuedTaskLimit
                     ) where
 
@@ -25,8 +25,6 @@ data Database
 data ServerOptions
 
 serverOptions :: Database -> ServerOptions
-maxStackDepth :: ServerOptions -> Int
-
 getServerOption' :: ObjId -> Id -> MOO (Maybe Value)
 
 dbObject :: ObjId -> Database -> STM (Maybe Object)
@@ -40,4 +38,5 @@ bgSeconds :: ServerOptions -> Int
 fgTicks :: ServerOptions -> Int
 bgTicks :: ServerOptions -> Int
 
+maxStackDepth :: ServerOptions -> Int
 queuedTaskLimit :: ServerOptions -> Maybe Int

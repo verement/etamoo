@@ -657,28 +657,26 @@ readFromConnection oid nonBlocking = withConnection oid $ \conn -> do
                 atomically $ putTMVar resumeTVar (now, value)
 
           success <- liftSTM $ tryPutTMVar (connectionReader conn) (Wake wake)
-          if success
-            then do
-              task <- asks task
-              state <- get
-              putTask task { taskStatus = Reading
-                           , taskState  = state {
-                             startTime = posixSecondsToUTCTime (-1) }
-                           }
+          unless success $ raise E_INVARG
 
-              callCC $ interrupt . Suspend . Resume
-              (now, value) <- liftSTM $ takeTMVar resumeTVar
+          task <- asks task
+          state <- get
+          putTask task { taskStatus = Reading
+                       , taskState  = state {
+                         startTime = posixSecondsToUTCTime (-1) }
+                       }
 
-              putTask task
+          callCC $ interrupt . Suspend . Resume
+          (now, value) <- liftSTM $ takeTMVar resumeTVar
 
-              resetLimits False
-              modify $ \state -> state { startTime = now }
+          putTask task
 
-              case value of
-                Err error -> raise error
-                _         -> return value
+          resetLimits False
+          modify $ \state -> state { startTime = now }
 
-            else raise E_INVARG
+          case value of
+            Err error -> raise error
+            _         -> return value
 
 -- | Send data to a connection, flushing if necessary.
 notify :: ObjId -> StrT -> MOO Bool

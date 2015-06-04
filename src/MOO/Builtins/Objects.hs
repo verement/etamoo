@@ -408,6 +408,8 @@ checkPerms valid perms = do
   unless (S.null $ permSet `S.difference` S.fromList valid) $ raise E_INVARG
   return permSet
 
+{-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
+
 bf_set_property_info = Builtin "set_property_info" 3 (Just 3)
                        [TObj, TStr, TLst]
                        TAny $ \[Obj object, Str prop_name, Lst info] -> do

@@ -29,7 +29,6 @@ import System.IO (Handle, withFile, IOMode(ReadMode, WriteMode),
 import Text.Parsec (ParseError, ParsecT, runParserT, string, count,
                     getState, putState, many1, oneOf, manyTill, anyToken,
                     digit, char, option, try, lookAhead, (<|>), (<?>))
-import Text.Parsec.Text.Lazy ()
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
@@ -37,13 +36,13 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy.IO as TL
 import qualified Data.Vector as V
 
+import MOO.Compiler
 import MOO.Database
 import MOO.Object
-import MOO.Verb
-import MOO.Types
 import MOO.Parser
+import MOO.Types
 import MOO.Unparser
-import MOO.Compiler
+import MOO.Verb
 
 import qualified MOO.String as Str
 

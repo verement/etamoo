@@ -3,8 +3,8 @@
 
 module MOO.Builtins.Values ( builtins ) where
 
-import Control.Applicative ((<$>), (<*>))
-import Control.Monad (mplus, unless)
+import Control.Applicative ((<$>), (<*>), (<|>))
+import Control.Monad (unless)
 import Data.ByteString (ByteString)
 import Data.Char (isDigit)
 import Data.Maybe (fromJust)
@@ -127,7 +127,7 @@ bf_toobj = Builtin "toobj" 1 (Just 1) [TAny] TObj $ \[value] -> toobj value
                                then raise E_FLOAT else return (Obj $ ceiling x)
           Obj _ -> return value
           Str x -> maybe (return $ Obj 0) toobj $
-                   parseNum (Str.toText x) `mplus` parseObj (Str.toText x)
+                   parseNum (Str.toText x) <|> parseObj (Str.toText x)
           Err x -> return (Obj $ fromIntegral $ fromEnum x)
           Lst _ -> raise E_TYPE
 
@@ -225,7 +225,7 @@ bf_trunc = floatBuiltin "trunc" $ \x ->
 
 bf_length = Builtin "length" 1 (Just 1) [TAny] TInt $ \[arg] -> case arg of
   Str string -> return $ Int $ fromIntegral $ Str.length string
-  Lst list   -> return $ Int $ fromIntegral $ V.length list
+  Lst list   -> return $ Int $ fromIntegral $   V.length list
   _          -> raise E_TYPE
 
 bf_strsub = Builtin "strsub" 3 (Just 4) [TStr, TStr, TStr, TAny]
@@ -333,7 +333,7 @@ matchBuiltin name matchFunc = Builtin name 2 (Just 3) [TStr, TStr, TAny]
   let [case_matters] = booleanDefaults optional [False]
   in runMatch matchFunc subject pattern case_matters
 
-bf_match  = matchBuiltin "match"  match
+bf_match  = matchBuiltin  "match"  match
 bf_rmatch = matchBuiltin "rmatch" rmatch
 
 runMatch :: (Regexp -> Text -> MatchResult) -> StrT -> StrT -> Bool -> MOO Value
@@ -342,15 +342,15 @@ runMatch match subject pattern caseMatters =
     Left (err, at) -> raiseException (Err E_INVARG)
                       (Str.fromString $ "Invalid pattern: " ++ err)
                       (Int $ fromIntegral at)
-    Right regexp   -> case match regexp (Str.toText subject) of
-      MatchFailed            -> return emptyList
-      MatchAborted           -> raise E_QUOTA
+    Right regexp -> case match regexp (Str.toText subject) of
       MatchSucceeded offsets ->
         let (m : offs)   = offsets
             (start, end) = convert m
             replacements = repls 9 offs
         in return $ fromList
            [Int start, Int end, fromList replacements, Str subject]
+      MatchFailed  -> return emptyList
+      MatchAborted -> raise E_QUOTA
 
   where convert :: (Int, Int) -> (IntT, IntT)
         convert (s, e) = (1 + fromIntegral s, fromIntegral e)
@@ -391,8 +391,7 @@ bf_substitute = Builtin "substitute" 2 (Just 2)
             _ -> raise E_INVARG
           substitution _ = raise E_INVARG
 
-      unless (valid start end && V.length replacements' == 9) $
-        raise E_INVARG
+      unless (valid start end && V.length replacements' == 9) $ raise E_INVARG
       replacements <- (substr start end :) <$>
                       mapM substitution (V.toList replacements')
 
@@ -400,9 +399,9 @@ bf_substitute = Builtin "substitute" 2 (Just 2)
           walk ('%':c:cs)
             | isDigit c = let i = fromEnum c - fromEnum '0'
                           in (replacements !! i ++) <$> walk cs
-            | c == '%'  = ("%" ++) <$> walk cs
+            | c == '%'  = (c :) <$> walk cs
             | otherwise = raise E_INVARG
-          walk (c:cs) = ([c] ++) <$> walk cs
+          walk (c:cs) = (c :) <$> walk cs
           walk []     = return []
 
       Str . Str.fromString <$> walk (Str.toString template)
@@ -486,6 +485,4 @@ bf_setadd = Builtin "setadd" 2 (Just 2)
 
 bf_setremove = Builtin "setremove" 2 (Just 2)
                [TLst, TAny] TLst $ \[Lst list, value] ->
-  return $ Lst $ case V.elemIndex value list of
-    Nothing    -> list
-    Just index -> listDelete list (fromIntegral index)
+  return $ Lst $ maybe list (listDelete list) $ value `V.elemIndex` list

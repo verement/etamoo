@@ -166,9 +166,9 @@ import qualified Data.Map as M
 import qualified Data.Text as T
 
 import MOO.Command
+import {-# SOURCE #-} MOO.Connection
 import {-# SOURCE #-} MOO.Database
 import {-# SOURCE #-} MOO.Network
-import {-# SOURCE #-} MOO.Connection
 import MOO.Object
 import MOO.Types
 import MOO.Verb
@@ -615,7 +615,7 @@ requestIO io = callCC $ interrupt . RequestIO io . Resume
 -- alternative when the value returned by the IO isn't needed.
 delayIO :: IO () -> MOO ()
 delayIO io = modify $ \state ->
-  state { delayedIO = delayedIO state `mappend` DelayedIO io }
+  state { delayedIO = delayedIO state <> DelayedIO io }
 
 -- | Unsafely perform the given IO computation within the current 'STM'
 -- transaction.

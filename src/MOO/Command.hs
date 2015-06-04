@@ -180,8 +180,7 @@ matchObject player str
         nameMatch str (Str name)
           | str ==               name = ExactMatch
           | str `Str.isPrefixOf` name = PrefixMatch
-          | otherwise                 = NoMatch
-        nameMatch _ _ = NoMatch
+        nameMatch _ _                 = NoMatch
 
 data Match = NoMatch | PrefixMatch | ExactMatch
 
