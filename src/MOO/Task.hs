@@ -148,6 +148,7 @@ import Control.Monad.State.Strict (StateT, runStateT, get, gets, modify)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (Writer, execWriter, tell)
 import Data.ByteString (ByteString)
+import Data.Function (on)
 import Data.Int (Int32)
 import Data.List (find)
 import Data.Map (Map)
@@ -280,12 +281,10 @@ instance Sizeable Task where
     -- storageBytes (taskComputation task)
 
 instance Eq Task where
-  Task { taskId = taskId1 } == Task { taskId = taskId2 } =
-    taskId1 == taskId2
+  (==) = (==) `on` taskId
 
 instance Ord Task where
-  Task { taskState = state1 } `compare` Task { taskState = state2 } =
-    startTime state1 `compare` startTime state2
+  compare = compare `on` (startTime . taskState)
 
 type TaskId = Int32
 

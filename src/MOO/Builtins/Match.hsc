@@ -16,7 +16,9 @@ module MOO.Builtins.Match (
   ) where
 
 import Control.Applicative ((<$>))
+import Control.Arrow ((&&&))
 import Data.ByteString (ByteString, useAsCString, useAsCStringLen)
+import Data.Function (on)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Foreign (Ptr, FunPtr, ForeignPtr, alloca, allocaArray, nullPtr,
@@ -71,9 +73,7 @@ data Regexp = Regexp {
   } deriving Show
 
 instance Eq Regexp where
-  Regexp { pattern = p1, caseMatters = cm1 } ==
-    Regexp { pattern = p2, caseMatters = cm2 } =
-      cm1 == cm2 && p1 == p2
+  (==) = (==) `on` (caseMatters &&& pattern)
 
 data RewriteState = StateBase
                   | StateEsc
