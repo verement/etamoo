@@ -288,21 +288,18 @@ bf_decode_binary = Builtin "decode_binary" 1 (Just 2)
                    [TStr, TAny] TLst $ \(Str bin_string : optional) ->
   let [fully] = booleanDefaults optional [False]
       mkResult | fully     = fromListBy (Int . fromIntegral)
-               | otherwise = fromList . groupPrinting ("" ++)
+               | otherwise = fromList . grouping id
   in mkResult . BS.unpack <$> binaryString bin_string
 
-  where groupPrinting :: (String -> String) -> [Word8] -> [Value]
-        groupPrinting g (w:ws)
-          | Str.validChar c = groupPrinting (g [c] ++) ws
-          | null group      = Int (fromIntegral w) : groupPrinting g ws
-          | otherwise       = Str (Str.fromString group) :
-                              Int (fromIntegral w) : groupPrinting ("" ++) ws
+  where grouping :: (String -> String) -> [Word8] -> [Value]
+        grouping g (w:ws)
+          | Str.validChar c = grouping (g . (c :)) ws
+          | otherwise       = group g ++ Int (fromIntegral w) : grouping id ws
           where c = toEnum (fromIntegral w)
-                group = g ""
-        groupPrinting g []
-          | null group = []
-          | otherwise  = [Str $ Str.fromString group]
-          where group = g ""
+        grouping g [] = group g
+
+        group :: (String -> String) -> [Value]
+        group g = [ Str (Str.fromString g') | let g' = g [], not (null g') ]
 
 bf_encode_binary = Builtin "encode_binary" 0 Nothing [] TStr $
                    fmap (Str . Str.fromBinary) . encodeBinary
