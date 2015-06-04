@@ -118,8 +118,12 @@ bf_ticks_left = Builtin "ticks_left" 0 (Just 0) [] TInt $ \[] ->
 
 bf_seconds_left = Builtin "seconds_left" 0 (Just 0) [] TInt $ \[] -> do
   (limit, start) <- gets (secondsLimit &&& startTime)
-  now <- unsafeIOtoMOO getCurrentTime
-  return $ Int $ fromIntegral $ limit - round (now `diffUTCTime` start)
+  -- We calculate the elapsed time within the following IO action rather than
+  -- simply return the current time so that the action depends on some local
+  -- state and thus will be re-executed each time and not be optimized away to
+  -- a constant. Unsafe indeed!
+  elapsed <- unsafeIOtoMOO $ (`diffUTCTime` start) <$> getCurrentTime
+  return $ Int $ fromIntegral $ limit - round elapsed
 
 bf_task_id = Builtin "task_id" 0 (Just 0) [] TInt $ \[] ->
   Int . fromIntegral <$> asks (taskId . task)
