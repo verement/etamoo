@@ -337,16 +337,16 @@ usingList _  _      = raise E_TYPE
 getList :: Value -> MOO [Value]
 getList = usingList (return . V.toList)
 
+getIndex :: Value -> MOO Int
+getIndex (Int i) = return (fromIntegral i)
+getIndex _       = raise E_TYPE
+
 checkLstRange :: LstT -> Int -> MOO ()
 checkLstRange v i = when (i < 1 || i > V.length v) $ raise E_RANGE
 
 checkStrRange :: StrT -> Int -> MOO ()
 checkStrRange t i = when (i < 1 || t `Str.compareLength` i == LT) $
                     raise E_RANGE
-
-checkIndex :: Value -> MOO Int
-checkIndex (Int i) = return (fromIntegral i)
-checkIndex _       = raise E_TYPE
 
 data LValue = LValue {
     fetch  :: MOO Value
@@ -387,7 +387,7 @@ lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
 
         changeIndex = do
           (value, changeExpr) <- change (lValue expr)
-          index' <- checkIndex =<< withIndexLength value (evaluate index)
+          index' <- getIndex =<< withIndexLength value (evaluate index)
           value' <- case value of
             Lst v -> checkLstRange v index' >> return (v V.! (index' - 1))
             Str t -> checkStrRange t index' >>
@@ -420,18 +420,21 @@ lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
                           return $ Str $ Str.take len $ Str.drop (start' - 1) t
               _     -> raise E_TYPE
 
-        getIndices value = withIndexLength value $ do
-          start' <- checkIndex =<< evaluate start
-          end'   <- checkIndex =<< evaluate end
-          return (start', end')
-
         storeRange newValue = do
           (value, changeExpr) <- change (lValue expr)
-          (start', end') <- getIndices value
-          changeValue value start' end' changeExpr newValue
+          startEnd <- getIndices value
+          changeValue value startEnd changeExpr newValue
           return newValue
 
-        changeValue (Lst v) start end changeExpr (Lst r) = do
+        changeRange = error "Illegal Range as lvalue subexpression"
+
+        getIndices :: Value -> MOO (Int, Int)
+        getIndices value = withIndexLength value $
+                           (,) <$> (evaluate start >>= getIndex)
+                               <*> (evaluate end   >>= getIndex)
+
+        changeValue :: Value -> (Int, Int) -> (Value -> MOO a) -> Value -> MOO a
+        changeValue (Lst v) (start, end) changeExpr (Lst r) = do
           let len = V.length v
           when (end < 0 || start > len + 1) $ raise E_RANGE
           let pre  = sublist v 1 (start - 1)
@@ -440,20 +443,16 @@ lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
                 | e < s     = V.empty
                 | otherwise = V.slice (s - 1) (e - s + 1) v
           changeExpr $ Lst $ V.concat [pre, r, post]
-
-        changeValue (Str t) start end changeExpr (Str r) = do
-          when (end < 0 ||
-                t `Str.compareLength` (start - 1) == LT) $ raise E_RANGE
+        changeValue (Str t) (start, end) changeExpr (Str r) = do
+          when (end < 0 || t `Str.compareLength` (start - 1) == LT) $
+            raise E_RANGE
           let pre  = substr t 1 (start - 1)
               post = substr t (end + 1) (Str.length t)
               substr t s e
                 | e < s     = Str.empty
                 | otherwise = Str.take (e - s + 1) $ Str.drop (s - 1) t
           changeExpr $ Str $ Str.concat [pre, r, post]
-
-        changeValue _ _ _ _ _ = raise E_TYPE
-
-        changeRange = error "Illegal Range as lvalue subexpression"
+        changeValue _ _ _ _ = raise E_TYPE
 
 lValue expr = LValue fetch store change
   where fetch   = evaluate expr
