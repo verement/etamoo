@@ -146,7 +146,7 @@ import Control.Monad.Cont (ContT, runContT, callCC)
 import Control.Monad.Reader (ReaderT, runReaderT, local, asks)
 import Control.Monad.State.Strict (StateT, runStateT, get, gets, modify)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Writer (execWriter, tell)
+import Control.Monad.Writer (Writer, execWriter, tell)
 import Data.ByteString (ByteString)
 import Data.Int (Int32)
 import Data.List (find)
@@ -1450,18 +1450,21 @@ formatTraceback :: Exception -> [StrT]
 formatTraceback except@Exception { exceptionCallStack = Stack frames } =
   map Str.fromText $ T.splitOn "\n" $ execWriter (traceback frames)
 
-  where traceback (frame:frames) = do
+  where traceback :: [StackFrame] -> Writer Text ()
+        traceback (frame:frames) = do
           describeVerb frame
           tell $ ":  " <> Str.toText (exceptionMessage except)
           traceback' frames
         traceback [] = traceback' []
 
+        traceback' :: [StackFrame] -> Writer Text ()
         traceback' (frame:frames) = do
           tell "\n... called from "
           describeVerb frame
           traceback' frames
         traceback' [] = tell "\n(End of traceback)"
 
+        describeVerb :: StackFrame -> Writer Text ()
         describeVerb Frame { builtinFunc = False
                            , verbLocation = loc, verbFullName = name
                            , initialThis = this, lineNumber = line } = do

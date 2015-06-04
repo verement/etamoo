@@ -238,9 +238,12 @@ installObjects dbObjs = do
                                  (vbPerms def `shiftR` iobjShift) .&. objMask
         }
 
+        setPlayerFlags :: [Maybe Object] -> DBParser [Maybe Object]
         setPlayerFlags objs = do
           players <- asks users
           return $ map (setPlayerFlag players) $ zip [0..] objs
+
+        setPlayerFlag :: IntSet -> (ObjId, Maybe Object) -> Maybe Object
         setPlayerFlag players (oid, Just obj) = Just $
           obj { objectIsPlayer = oid `IS.member` players }
         setPlayerFlag _ _ = Nothing

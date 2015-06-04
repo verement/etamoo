@@ -231,15 +231,22 @@ bf_length = Builtin "length" 1 (Just 1) [TAny] TInt $ \[arg] -> case arg of
 bf_strsub = Builtin "strsub" 3 (Just 4) [TStr, TStr, TStr, TAny]
             TStr $ \(Str subject : Str what : Str with : optional) ->
   let [case_matters] = booleanDefaults optional [False]
+
+      caseFold :: StrT -> StrT
       caseFold str = if case_matters then str
                      else Str.fromText (Str.toCaseFold str)
                           -- XXX this won't work for Unicode in general
+
+      subs :: StrT -> [StrT]
       subs ""      = []
       subs subject = case Str.breakOn (caseFold what) (caseFold subject) of
         (_, "")     -> [subject]
         (prefix, _) -> let (s, r) = Str.splitAt (Str.length prefix) subject
                        in s : with : subs (Str.drop whatLen r)
+
+      whatLen :: Int
       whatLen = Str.length what
+
   in if Str.null what then raise E_INVARG
      else return $ Str $ Str.concat $ subs subject
 
@@ -248,9 +255,12 @@ indexBuiltin name nullCase mainCase =
   Builtin name 2 (Just 3) [TStr, TStr, TAny]
   TInt $ \(Str str1 : Str str2 : optional) ->
   let [case_matters] = booleanDefaults optional [False]
+
+      caseFold :: StrT -> StrT
       caseFold str = if case_matters then str
                      else Str.fromText (Str.toCaseFold str)
                           -- XXX this won't work for Unicode in general
+
   in return $ Int $ if Str.null str2 then nullCase str1
                     else mainCase (caseFold str2) (caseFold str1)
 
@@ -357,18 +367,21 @@ bf_substitute = Builtin "substitute" 2 (Just 2)
                 [TStr, TLst] TStr $ \[Str template, Lst subs] ->
   case V.toList subs of
     [Int start', Int end', Lst replacements', Str subject'] -> do
-      let start      = fromIntegral start'
-          end        = fromIntegral end'
-          subject    = Str.toString subject'
-          subjectLen = Str.length subject'
+      let start      = fromIntegral start'   :: Int
+          end        = fromIntegral end'     :: Int
+          subject    = Str.toString subject' :: String
+          subjectLen = Str.length subject'   :: Int
 
+          valid :: Int -> Int -> Bool
           valid s e  = (s == 0 && e == -1) ||
                        (s >  0 && e >= s - 1 && e <= subjectLen)
 
+          substr :: Int -> Int -> String
           substr start end =
             let len = end - start + 1
             in take len $ drop (start - 1) subject
 
+          substitution :: Value -> MOO String
           substitution (Lst sub) = case V.toList sub of
             [Int start', Int end'] -> do
               let start = fromIntegral start'
@@ -383,7 +396,8 @@ bf_substitute = Builtin "substitute" 2 (Just 2)
       replacements <- (substr start end :) <$>
                       mapM substitution (V.toList replacements')
 
-      let walk ('%':c:cs)
+      let walk :: String -> MOO String
+          walk ('%':c:cs)
             | isDigit c = let i = fromEnum c - fromEnum '0'
                           in (replacements !! i ++) <$> walk cs
             | c == '%'  = ("%" ++) <$> walk cs
@@ -404,12 +418,19 @@ bf_crypt = Builtin "crypt" 1 (Just 2)
      then generateSalt >>= go
      else go $ fromStr $ fromJust saltArg
 
-  where invalidSalt (Str salt) = salt `Str.compareLength` 2 == LT
+  where invalidSalt :: Value -> Bool
+        invalidSalt (Str salt) = salt `Str.compareLength` 2 == LT
+
+        generateSalt :: MOO StrT
         generateSalt = do
           c1 <- randSaltChar
           c2 <- randSaltChar
           return $ Str.fromString [c1, c2]
+
+        randSaltChar :: MOO Char
         randSaltChar = (saltStuff !!) <$> random (0, length saltStuff - 1)
+
+        saltStuff :: String
         saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
 
 bf_string_hash = Builtin "string_hash" 1 (Just 2)

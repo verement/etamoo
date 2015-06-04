@@ -90,9 +90,11 @@ data RewriteState = StateBase
 translate :: Text -> Text
 translate = T.pack . concat . rewrite . T.unpack
   where
+    rewrite :: String -> [String]
     -- wrap entire expression so we can add a callout at the end
     rewrite s = "(?:" : rewrite' StateBase s
 
+    rewrite' :: RewriteState -> String -> [String]
     rewrite' StateBase ('%':cs)     =              rewrite' StateEsc       cs
     rewrite' StateBase ('[':cs)     = "["        : rewrite' StateCsetInit  cs
     rewrite' StateBase ( c :cs)
@@ -133,16 +135,26 @@ translate = T.pack . concat . rewrite . T.unpack
     -- add callout at end of pattern for rmatch
     rewrite' state []               = ")(?C)"    : rewriteFinal state
 
+    rewriteFinal :: RewriteState -> [String]
     -- don't let a trailing % get away without a syntax error
     rewriteFinal StateEsc           = "\\"       : []
     rewriteFinal _                  =              []
 
+    word, nonword :: String
     word       = "[^\\W_]"
     nonword    =  "[\\W_]"
+
+    alt :: String -> String -> String
     alt a b    = "(?:" ++ a ++ "|" ++ b ++ ")"
+
+    lbehind, lahead :: String -> String
     lbehind p  = "(?<=" ++ p ++ ")"
     lahead  p  = "(?="  ++ p ++ ")"
+
+    lookba :: String -> String -> String
     lookba b a = lbehind b ++ lahead a
+
+    wordBegin, wordEnd :: String
     wordBegin  = alt "^" (lbehind nonword) ++ lahead word
     wordEnd    = lbehind word ++ alt "$" (lahead nonword)
 
@@ -174,8 +186,10 @@ newRegexp regexp caseMatters =
                               , code        = codeFP
                               , extra       = extraFP
                               }
-  where string = encodeUtf8 (translate regexp)
+  where string :: ByteString
+        string = encodeUtf8 (translate regexp)
 
+        mkExtra :: Ptr PCRE -> IO (ForeignPtr PCREExtra)
         mkExtra code = alloca $ \errorPtr -> do
           extra <- pcre_study code 0 errorPtr
           if extra == nullPtr
@@ -186,6 +200,7 @@ newRegexp regexp caseMatters =
               return extraFP
             else newForeignPtr pcre_free_study extra
 
+        setExtraFlags :: ForeignPtr PCREExtra -> IO ()
         setExtraFlags extraFP = withForeignPtr extraFP $ \extra -> do
           #{poke pcre_extra, match_limit}           extra matchLimit
           #{poke pcre_extra, match_limit_recursion} extra matchLimitRecursion
@@ -197,17 +212,20 @@ newRegexp regexp caseMatters =
         matchLimit          = 100000 :: CULong
         matchLimitRecursion =   5000 :: CULong
 
+        patchError :: String -> String
         patchError = concatMap patch
           where patch '\\' = "%"
                 patch '('  = "%("
                 patch ')'  = "%)"
                 patch  c   = [c]
 
+        options :: CInt
         options = #{const PCRE_UTF8 | PCRE_NO_UTF8_CHECK}
         -- allow PCRE to optimize .* at beginning of pattern by implicit anchor
           .|. #{const PCRE_DOTALL}
           .|. if caseMatters then 0 else #{const PCRE_CASELESS}
 
+maxCaptures, ovecLen :: Num a => a
 maxCaptures = 10
 ovecLen     = maxCaptures * 3
 
@@ -239,9 +257,9 @@ doMatch helper Regexp { code = codeFP, extra = extraFP } text =
         _                           -> return MatchAborted
       else mkMatchResult rc ovec subject
 
-  where string  = encodeUtf8 text
-        subject = (string, T.length text)
-        options = #{const PCRE_NO_UTF8_CHECK}
+  where string  = encodeUtf8 text             :: ByteString
+        subject = (string, T.length text)     :: (ByteString, Int)
+        options = #{const PCRE_NO_UTF8_CHECK} :: CInt
 
 mkMatchResult :: CInt -> Ptr CInt -> (ByteString, Int) -> IO MatchResult
 mkMatchResult rc ovec (subject, subjectCharLen) =
@@ -250,9 +268,11 @@ mkMatchResult rc ovec (subject, subjectCharLen) =
   where rc' = fromIntegral rc
         n   = if rc' == 0 || rc' > maxCaptures then maxCaptures else rc'
 
+        pairs :: [a] -> [(a, a)]
         pairs (s:e:rs) = (s, e) : pairs rs
         pairs []       = []
 
+        rebase :: Int -> Int
         -- translate UTF-8 byte offset to character offset
         rebase 0 = 0
         rebase i = subjectCharLen - T.length (decodeUtf8 $ BS.drop i subject)

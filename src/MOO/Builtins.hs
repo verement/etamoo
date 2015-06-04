@@ -95,7 +95,11 @@ callBuiltin func args = do
 -- (verified) built-in functions.
 verifyBuiltins :: Either String Int
 verifyBuiltins = foldM accum 0 $ M.elems builtinFunctions
-  where accum a b = valid b >>= Right . (+ a)
+
+  where accum :: Int -> Builtin -> Either String Int
+        accum a b = valid b >>= Right . (+ a)
+
+        valid :: Builtin -> Either String Int
         valid Builtin { builtinName     = name
                       , builtinMinArgs  = min
                       , builtinMaxArgs  = max
@@ -106,7 +110,8 @@ verifyBuiltins = foldM accum 0 $ M.elems builtinFunctions
           | maybe False (< min) max           = invalid "arg max < min"
           | length types /= fromMaybe min max = invalid "incorrect # types"
           | testArgs func min max types       = ok
-          where invalid msg = Left $ "problem with built-in function " ++
+          where invalid :: String -> Either String Int
+                invalid msg = Left $ "problem with built-in function " ++
                               fromId name ++ ": " ++ msg
                 ok = Right 1
 
