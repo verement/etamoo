@@ -2,7 +2,7 @@
 -- | Compiling abstract syntax trees into 'MOO' computations
 module MOO.Compiler ( compile, evaluate ) where
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (when, unless, void, liftM, (<=<))
 import Control.Monad.Cont (callCC)
 import Control.Monad.Reader (asks, local)
@@ -48,10 +48,7 @@ compileStatements (statement:rest) yield = case statement of
   ForList lineNo var expr body -> do
     handleDebug $ do
       setLineNumber lineNo
-      expr' <- evaluate expr
-      elts <- case expr' of
-        Lst elts -> return $ V.toList elts
-        _        -> raise E_TYPE
+      elts <- getList =<< evaluate expr
 
       callCC $ \break -> do
         pushLoopContext (Just var) (Continuation break)
@@ -214,11 +211,7 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
 
   Assign what expr -> evaluate expr >>= store (lValue what)
 
-  Scatter items expr -> do
-    expr' <- evaluate expr
-    case expr' of
-      Lst v -> scatterAssign items v
-      _     -> raise E_TYPE
+  Scatter items expr -> evaluate expr >>= usingList (scatterAssign items)
 
   VerbCall target vname args -> do
     target' <- evaluate target
@@ -266,12 +259,9 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
   Length -> liftM (Int . fromIntegral) =<< asks indexLength
 
   item `In` list -> do
-    item' <- evaluate item
-    list' <- evaluate list
-    case list' of
-      Lst v -> return $ Int $ maybe 0 (fromIntegral . succ) $
-               V.elemIndex item' v
-      _     -> raise E_TYPE
+    elt <- evaluate item
+    evaluate list >>= usingList
+      (return . Int . maybe 0 (fromIntegral . succ) . V.elemIndex elt)
 
   Catch expr codes (Default dv) -> do
     codes' <- case codes of
@@ -339,6 +329,13 @@ withIndexLength expr =
                            Str t -> return (Str.length t)
                            _     -> raise E_TYPE
                       }
+
+usingList :: (LstT -> MOO a) -> Value -> MOO a
+usingList f (Lst v) = f v
+usingList _  _      = raise E_TYPE
+
+getList :: Value -> MOO [Value]
+getList = usingList (return . V.toList)
 
 checkLstRange :: LstT -> Int -> MOO ()
 checkLstRange v i = when (i < 1 || i > V.length v) $ raise E_RANGE
@@ -505,13 +502,9 @@ scatterAssign items args = do
         walk [] _ _ = return ()
 
 expand :: [Argument] -> MOO [Value]
-expand (a:as) = case a of
-  ArgNormal expr -> do a' <- evaluate expr
-                       (a' :) `liftM` expand as
-  ArgSplice expr -> do a' <- evaluate expr
-                       case a' of
-                         Lst v -> (V.toList v ++) `liftM` expand as
-                         _     -> raise E_TYPE
+expand (x:xs) = case x of
+  ArgNormal expr -> (:)  <$>  evaluate expr              <*> expand xs
+  ArgSplice expr -> (++) <$> (evaluate expr >>= getList) <*> expand xs
 expand [] = return []
 
 plus :: Value -> Value -> MOO Value
