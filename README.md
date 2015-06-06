@@ -38,7 +38,8 @@ EtaMOO differs from LambdaMOO in a few significant ways:
 
   * EtaMOO supports several additional hashing algorithms besides MD5,
     including SHA-1, SHA-2, and RIPEMD-160, via optional argument to
-    `string_hash()`, `binary_hash()`, and `value_hash()`.
+    `string_hash()`, `binary_hash()`, and `value_hash()`. Hashes may also
+    optionally be returned as binary strings.
 
   * EtaMOO supports fractional second delays in `suspend()` and `fork`.
 

@@ -4,10 +4,11 @@
 module MOO.Builtins.Values ( builtins ) where
 
 import Control.Applicative ((<$>), (<*>), (<|>))
-import Control.Monad (unless)
+import Control.Monad (unless, (<=<))
 import Data.ByteString (ByteString)
 import Data.Char (isDigit)
 import Data.Maybe (fromJust)
+import Data.Monoid ((<>))
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word8)
@@ -147,8 +148,8 @@ bf_equal = Builtin "equal" 2 (Just 2) [TAny, TAny] TInt $ \[value1, value2] ->
 bf_value_bytes = Builtin "value_bytes" 1 (Just 1) [TAny] TInt $ \[value] ->
   return $ Int $ fromIntegral $ storageBytes value
 
-bf_value_hash = Builtin "value_hash" 1 (Just 2)
-                [TAny, TStr] TStr $ \(value : optional) ->
+bf_value_hash = Builtin "value_hash" 1 (Just 3)
+                [TAny, TStr, TAny] TStr $ \(value : optional) ->
   builtinFunction bf_toliteral [value] >>=
   builtinFunction bf_string_hash . (: optional)
 
@@ -429,21 +430,24 @@ bf_crypt = Builtin "crypt" 1 (Just 2)
         saltStuff :: String
         saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
 
-bf_string_hash = Builtin "string_hash" 1 (Just 2)
-                 [TStr, TStr] TStr $ \(Str text : optional) ->
-  let [Str algorithm] = defaults optional [Str "MD5"]
-  in hash algorithm (encodeUtf8 $ Str.toText text)  -- XXX Unicode
+hashBuiltin :: Id -> ((ByteString -> MOO Value) -> StrT -> MOO Value) -> Builtin
+hashBuiltin name f = Builtin name 1 (Just 3)
+                     [TStr, TStr, TAny] TStr $ \(Str input : optional) ->
+  let (Str algorithm : optional') =        defaults optional  [Str "MD5"]
+      [wantBinary]                = booleanDefaults optional' [False]
+  in f (hash algorithm wantBinary) input
 
-bf_binary_hash = Builtin "binary_hash" 1 (Just 2)
-                 [TStr, TStr] TStr $ \(Str bin_string : optional) ->
-  let [Str algorithm] = defaults optional [Str "MD5"]
-  in hash algorithm =<< binaryString bin_string
+  where hash :: StrT -> Bool -> ByteString -> MOO Value
+        hash alg wantBinary bytes =
+          case hashBytesUsing (toId alg) wantBinary bytes of
+            Just digest -> return (Str digest)
+            Nothing     -> raiseException (Err E_INVARG)
+                           ("Unknown hash algorithm: " <> alg) (Str alg)
 
-hash :: StrT -> ByteString -> MOO Value
-hash alg bytes = case hashBytesUsing (toId alg) bytes of
-  Just digest -> return (Str $ Str.fromString digest)
-  Nothing     -> raiseException (Err E_INVIND)
-                 "Unknown hash algorithm" (Str alg)
+bf_string_hash = hashBuiltin "string_hash" $
+                 \hash -> hash . encodeUtf8 . Str.toText  -- XXX Unicode
+
+bf_binary_hash = hashBuiltin "binary_hash" (<=< binaryString)
 
 -- § 4.4.2.4 Operations on Lists
 

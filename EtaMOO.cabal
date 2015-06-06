@@ -121,6 +121,7 @@ executable etamoo
 
   build-depends:       array
                      , base ==4.*
+                     , byteable
                      , bytestring
                      , case-insensitive
                      , containers >= 0.4

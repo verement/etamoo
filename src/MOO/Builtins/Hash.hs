@@ -3,9 +3,8 @@
 
 module MOO.Builtins.Hash (hashBytesUsing) where
 
-import Control.Applicative ((<$>))
 import Crypto.Hash
-  ( HashAlgorithm, HashFunctionBS, hash
+  ( HashAlgorithm, Digest, hash
   , MD2(MD2), MD4(MD4), MD5(MD5)
   , RIPEMD160(RIPEMD160)
   , SHA1(SHA1), SHA224(SHA224), SHA256(SHA256), SHA384(SHA384), SHA512(SHA512)
@@ -16,6 +15,7 @@ import Crypto.Hash
   , Tiger(Tiger)
   , Whirlpool(Whirlpool)
   )
+import Data.Byteable (toBytes)
 import Data.ByteString (ByteString)
 import Data.Map (Map)
 
@@ -23,15 +23,18 @@ import qualified Data.Map as M
 
 import MOO.Types
 
-hashBytesUsing :: Id -> ByteString -> Maybe String
-hashBytesUsing alg bytes = ($ bytes) <$> M.lookup alg hashFunctions
+import qualified MOO.String as Str
 
-hashFunctions :: Map Id (ByteString -> String)
+hashBytesUsing :: Id -> Bool -> ByteString -> Maybe StrT
+hashBytesUsing algorithm wantBinary bytes =
+  M.lookup algorithm hashFunctions >>= \f -> return (f wantBinary bytes)
+
+type HashFunction = Bool -> ByteString -> StrT
+
+hashFunctions :: Map Id HashFunction
 hashFunctions = M.fromList algorithms
-  where alias :: Id -> ByteString -> String
-        alias = (hashFunctions M.!)
 
-        algorithms :: [(Id, ByteString -> String)]
+  where algorithms :: [(Id, HashFunction)]
         algorithms =
           [ ("MD2"          , hashWith MD2         )
           , ("MD4"          , hashWith MD4         )
@@ -72,7 +75,15 @@ hashFunctions = M.fromList algorithms
           , ("Whirlpool"    , hashWith Whirlpool   )
           ]
 
-hashWith :: HashAlgorithm a => a -> ByteString -> String
-hashWith alg = show . hash' alg
-  where hash' :: HashAlgorithm a => a -> HashFunctionBS a
+        alias :: Id -> HashFunction
+        alias = (hashFunctions M.!)
+
+hashWith :: HashAlgorithm a => a -> Bool -> ByteString -> StrT
+hashWith algorithm wantBinary = mkResult . hash' algorithm
+
+  where hash' :: HashAlgorithm a => a -> ByteString -> Digest a
         hash' _ = hash
+
+        mkResult :: Digest a -> StrT
+        mkResult | wantBinary = Str.fromBinary . toBytes
+                 | otherwise  = Str.fromString . show
