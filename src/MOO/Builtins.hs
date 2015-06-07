@@ -50,21 +50,21 @@ builtinFunctions =
 callBuiltin :: Id -> [Value] -> MOO Value
 callBuiltin func args = do
   isProtected <- (func `S.member`) <$> serverOption protectFunction
-  let call builtin = checkArgs builtin args >> builtinFunction builtin args
-
   case (func `M.lookup` builtinFunctions, isProtected) of
     (Just builtin, False) -> call builtin
     (Just builtin, True)  -> do
       this <- frame initialThis
       if this == systemObject then call builtin
-        else do result <- callSystemVerb ("bf_" <> fromId func) args
-                case result of
-                  Nothing    -> checkWizard >> call builtin
-                  Just value -> return value
-    (Nothing, _) -> raiseException (Err E_INVARG)
-                    "Unknown built-in function" (Str $ fromId func)
+        else callSystemVerb ("bf_" <> fromId func) args >>=
+             maybe (checkWizard >> call builtin) return
+    (Nothing, _) -> let name = fromId func
+                    in raiseException (Err E_INVARG)
+                       ("Unknown built-in function: " <> name) (Str name)
 
-  where checkArgs :: Builtin -> [Value] -> MOO ()
+  where call :: Builtin -> MOO Value
+        call builtin = checkArgs builtin args >> builtinFunction builtin args
+
+        checkArgs :: Builtin -> [Value] -> MOO ()
         checkArgs Builtin { builtinMinArgs  = min
                           , builtinMaxArgs  = max
                           , builtinArgTypes = types
