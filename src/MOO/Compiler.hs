@@ -530,11 +530,7 @@ Flt x `remain` Flt y = checkFloat   (x `fmod` y)
 _     `remain` _     = raise E_TYPE
 
 fmod :: FltT -> FltT -> FltT
-x `fmod` y = x - y * fromInteger (roundZero $ x / y)
-  where roundZero :: FltT -> Integer
-        roundZero q | q > 0     = floor   q
-                    | q < 0     = ceiling q
-                    | otherwise = round   q
+x `fmod` y = x - y * fromInteger (truncate $ x / y)
 
 power :: Value -> Value -> MOO Value
 Flt   x  `power` Flt y             = checkFloat   (x ** y)

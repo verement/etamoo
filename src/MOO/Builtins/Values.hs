@@ -108,10 +108,9 @@ bf_toliteral = Builtin "toliteral" 1 (Just 1) [TAny] TStr $ \[value] ->
 bf_toint = Builtin "toint" 1 (Just 1) [TAny] TInt $ \[value] -> toint value
   where toint value = case value of
           Int _ -> return value
-          Flt x | x >= 0    -> if x > fromIntegral (maxBound :: IntT)
-                               then raise E_FLOAT else return (Int $ floor   x)
-                | otherwise -> if x < fromIntegral (minBound :: IntT)
-                               then raise E_FLOAT else return (Int $ ceiling x)
+          Flt x | x < fromIntegral (minBound :: IntT) ||
+                  x > fromIntegral (maxBound :: IntT) -> raise E_FLOAT
+                | otherwise -> return (Int $ truncate x)
           Obj x -> return (Int $ fromIntegral x)
           Str x -> maybe (return $ Int 0) toint (parseNum $ Str.toText x)
           Err x -> return (Int $ fromIntegral $ fromEnum x)
@@ -122,10 +121,9 @@ bf_tonum = bf_toint { builtinName = "tonum" }
 bf_toobj = Builtin "toobj" 1 (Just 1) [TAny] TObj $ \[value] -> toobj value
   where toobj value = case value of
           Int x -> return (Obj $ fromIntegral x)
-          Flt x | x >= 0    -> if x > fromIntegral (maxBound :: ObjT)
-                               then raise E_FLOAT else return (Obj $ floor   x)
-                | otherwise -> if x < fromIntegral (minBound :: ObjT)
-                               then raise E_FLOAT else return (Obj $ ceiling x)
+          Flt x | x < fromIntegral (minBound :: ObjT) ||
+                  x > fromIntegral (maxBound :: ObjT) -> raise E_FLOAT
+                | otherwise -> return (Obj $ truncate x)
           Obj _ -> return value
           Str x -> maybe (return $ Obj 0) toobj $
                    parseNum (Str.toText x) <|> parseObj (Str.toText x)
@@ -219,8 +217,7 @@ bf_log10 = floatBuiltin "log10" (logBase 10)
 
 bf_ceil  = floatBuiltin "ceil"  $ fromInteger . ceiling
 bf_floor = floatBuiltin "floor" $ fromInteger . floor
-bf_trunc = floatBuiltin "trunc" $ \x ->
-  fromInteger $ if x < 0 then ceiling x else floor x
+bf_trunc = floatBuiltin "trunc" $ fromInteger . truncate
 
 -- § 4.4.2.3 Operations on Strings
 
