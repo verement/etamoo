@@ -678,7 +678,6 @@ bf_verb_code = Builtin "verb_code" 2 (Just 4) [TObj, TAny, TAny, TAny]
   obj <- checkValid object
   verb <- getVerb obj verb_desc
   unless (verbPermR verb) $ checkPermission (verbOwner verb)
-  checkProgrammer
 
   let code = init $ Str.splitOn "\n" $ Str.fromText $ TL.toStrict $
              unparse fully_paren indent (verbProgram verb)
