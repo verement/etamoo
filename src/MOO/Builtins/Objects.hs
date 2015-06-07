@@ -703,7 +703,7 @@ bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
 
   where addLine :: ([Text] -> [Text]) -> Value -> MOO ([Text] -> [Text])
         addLine add (Str line) = return (add [Str.toText line, "\n"] ++)
-        addLine _    _         = raise E_INVARG
+        addLine _    _         = raise E_TYPE
 
 bf_disassemble = Builtin "disassemble" 2 (Just 2)
                  [TObj, TAny] TLst $ \[Obj object, verb_desc] -> do
