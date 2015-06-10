@@ -427,9 +427,9 @@ listSet v i value = V.modify (\m -> VM.write m i value) v
 -- index.
 listInsert :: LstT -> Int -> Value -> LstT
 listInsert list index value
-  | index <= 0      = V.cons value list
-  | index > listLen = V.snoc list value
-  | otherwise       = V.create $ do
+  | index <= 0       = V.cons value list
+  | index >= listLen = V.snoc list value
+  | otherwise        = V.create $ do
       list' <- flip VM.grow 1 =<< V.thaw list
       let moveLen = listLen - index
           s = VM.slice  index      moveLen list'
