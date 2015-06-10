@@ -69,7 +69,6 @@ module MOO.Types (
 
   ) where
 
-import Control.Applicative ((<$>))
 import Control.Concurrent (ThreadId)
 import Control.Concurrent.STM (TVar)
 import Data.CaseInsensitive (CI)
@@ -442,15 +441,17 @@ listInsert list index value
 -- | Return a modified list with the value at the given 0-based index removed.
 listDelete :: LstT -> Int -> LstT
 listDelete list index
-  | index == 0           = V.create $ VM.tail <$> V.thaw list
-  | index == listLen - 1 = V.create $ VM.init <$> V.thaw list
-  | otherwise            = V.create $ do
-      list' <- V.thaw list
+  | index == 0           = V.tail list
+  | index == listLen - 1 = V.init list
+  | index * 2 < listLen  = V.tail $ (`V.modify` list) $ \list' ->
+      let s = VM.slice 0 index list'
+          t = VM.slice 1 index list'
+      in VM.move t s
+  | otherwise            = V.init $ (`V.modify` list) $ \list' ->
       let moveLen = listLen - index - 1
-          s = VM.slice  index      moveLen list'
-          t = VM.slice (index + 1) moveLen list'
-      VM.move s t
-      return $ VM.init list'
+          s = VM.slice (index + 1) moveLen list'
+          t = VM.slice  index      moveLen list'
+      in VM.move t s
   where listLen = V.length list
 
 -- | This is the last UTC time value representable as a signed 32-bit
