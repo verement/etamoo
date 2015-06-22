@@ -1,7 +1,5 @@
 
-module MOO.Parser ( Program, parse, runParser, initParserState
-                  , expression, between, whiteSpace, eof, program
-                  , parseInt, parseFlt, parseNum, parseObj, keywords ) where
+module MOO.Parser ( parseProgram, parseNum, parseObj, keywords ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ((&&&))
@@ -531,9 +529,9 @@ program = between whiteSpace eof $ Program <$> statements
 
 type Errors = [String]
 
-parse :: Text -> Either Errors Program
-parse input = either (Left . errors) Right $
-              runParser program initParserState "" input
+parseProgram :: Text -> Either Errors Program
+parseProgram input = either (Left . errors) Right $
+                     runParser program initParserState "" input
 
   where errors :: ParseError -> Errors
         errors err =

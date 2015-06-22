@@ -691,7 +691,7 @@ bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
   unless (verbPermW verb) $ checkPermission (verbOwner verb)
   checkProgrammer
 
-  case parse text of
+  case parseProgram text of
     Left errors   -> return $ fromListBy (Str . Str.fromString) errors
     Right program -> do
       modifyVerb (object, obj) verb_desc $ \verb ->

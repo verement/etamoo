@@ -28,7 +28,8 @@ import System.IO (Handle, withFile, IOMode(ReadMode, WriteMode),
                   Newline(CRLF, LF), hSetEncoding, utf8)
 import Text.Parsec (ParseError, ParsecT, runParserT, string, count,
                     getState, putState, many1, oneOf, manyTill, anyToken,
-                    digit, char, option, try, lookAhead, (<|>), (<?>))
+                    between, eof, digit, char, option, try, lookAhead,
+                    (<|>), (<?>))
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
@@ -36,6 +37,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy.IO as TL
 import qualified Data.Vector as V
 
+import MOO.AST
 import MOO.Compiler
 import MOO.Database
 import MOO.Object
@@ -483,7 +485,7 @@ read_program :: DBParser (Either [String] Program)
 read_program = (<?> "program") $ do
   source <- try (string ".\n" >> return "") <|>
             manyTill anyToken (try $ string "\n.\n")
-  return $ parse (T.pack source)
+  return $ parseProgram (T.pack source)
 
 read_task_queue :: DBParser ()
 read_task_queue = (<?> "task_queue") $ do

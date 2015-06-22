@@ -82,7 +82,7 @@ bf_function_info = Builtin "function_info" 0 (Just 1)
                    ]
 
 bf_eval = Builtin "eval" 1 (Just 1) [TStr] TLst $ \[Str string] ->
-  checkProgrammer >> case parse (Str.toText string) of
+  checkProgrammer >> case parseProgram (Str.toText string) of
     Left errors ->
       return $ fromList [truthValue False,
                          fromListBy (Str . Str.fromString) errors]
