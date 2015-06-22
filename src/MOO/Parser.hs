@@ -4,6 +4,7 @@ module MOO.Parser ( Program, parse, runParser, initParserState
                   , parseInt, parseFlt, parseNum, parseObj, keywords ) where
 
 import Control.Applicative ((<$>), (<*>))
+import Control.Arrow ((&&&))
 import Control.Monad (when, unless, mplus)
 import Control.Monad.Identity (Identity)
 import Data.List (find)
@@ -14,11 +15,14 @@ import Data.Text (Text)
 import Text.Parsec (try, many, many1, digit, letter, char, anyChar, alphaNum,
                     oneOf, noneOf, lookAhead, notFollowedBy, chainl1, chainr1,
                     option, optionMaybe, choice, between, getState, modifyState,
-                    eof, runParser, sourceLine, errorPos, (<|>), (<?>))
-import Text.Parsec.Error (Message(Message), errorMessages, messageString)
+                    eof, runParser, errorPos, sourceLine, sourceColumn,
+                    (<|>), (<?>))
+import Text.Parsec.Error (ParseError, Message(Message),
+                          errorMessages, messageString)
 import Text.Parsec.Text (GenParser)
 import Text.Parsec.Token (GenLanguageDef(LanguageDef))
 
+import qualified Data.Text as Text
 import qualified Text.Parsec.Token as T
 
 import MOO.AST
@@ -528,14 +532,40 @@ program = between whiteSpace eof $ Program <$> statements
 type Errors = [String]
 
 parse :: Text -> Either Errors Program
-parse input = case runParser program initParserState "MOO code" input of
-  Right prog -> Right prog
-  Left err   -> Left $ let line = sourceLine $ errorPos err
-                           msg = find message $ errorMessages err
-                           message Message{} = True
-                           message _         = False
-                       in ["Line " ++ show line ++ ":  " ++
-                           maybe "syntax error" messageString msg]
+parse input = either (Left . errors) Right $
+              runParser program initParserState "" input
+
+  where errors :: ParseError -> Errors
+        errors err =
+          let (line, column) = (sourceLine &&& sourceColumn) $ errorPos err
+              (source, point) = illustrate column $
+                                Text.unpack $ Text.lines input !! (line - 1)
+              message = find isMessage $ errorMessages err
+          in [ "Line " ++ show line ++ ":  " ++
+               maybe "syntax error" messageString message
+             , indent source
+             , indent point
+             ]
+
+        illustrate :: Int -> String -> (String, String)
+        illustrate col str
+          | overflowLeft  = illustrate colMid $ ellipsis ++
+                            drop (length ellipsis + col - colMid) str
+          | overflowRight = (take colMax str ++ ellipsis, point)
+          | otherwise     = (str, point)
+          where overflowLeft  = col > colMax || (col > colMid && overflowRight)
+                overflowRight = length str > colMax
+                colMax        = 70
+                colMid        = 50
+                ellipsis      = "..."
+                point         = replicate (col - 1) ' ' ++ "^"
+
+        isMessage :: Message -> Bool
+        isMessage Message{} = True
+        isMessage _         = False
+
+        indent :: String -> String
+        indent = ("  " ++)
 
 -- Auxiliary parser interface
 
