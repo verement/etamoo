@@ -226,12 +226,12 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
 
   BuiltinFunc func args -> expand args >>= callBuiltin func
 
-  a `Plus`   b -> binary plus   a b
-  a `Minus`  b -> binary minus  a b
-  a `Times`  b -> binary times  a b
-  a `Divide` b -> binary divide a b
-  a `Remain` b -> binary remain a b
-  a `Power`  b -> binary power  a b
+  x `Plus`   y -> binary plus   x y
+  x `Minus`  y -> binary minus  x y
+  x `Times`  y -> binary times  x y
+  x `Divide` y -> binary divide x y
+  x `Remain` y -> binary remain x y
+  x `Power`  y -> binary power  x y
 
   Negate x -> evaluate x >>= \x' -> case x' of
     Int n -> return (Int $ negate n)
@@ -278,7 +278,7 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
 
         equality :: (Value -> Value -> Bool) -> Expr -> Expr -> MOO Value
         equality op = binary test
-          where test a b = return $ truthValue (a `op` b)
+          where test x y = return $ truthValue (x `op` y)
 
         comparison :: (Value -> Value -> Bool) -> Expr -> Expr -> MOO Value
         comparison op = binary test
@@ -506,35 +506,35 @@ expand (x:xs) = case x of
 expand [] = return []
 
 plus :: Value -> Value -> MOO Value
-Int a `plus` Int b = return $ Int (a +  b)
-Flt a `plus` Flt b = checkFloat   (a +  b)
-Str a `plus` Str b = return $ Str (a <> b)
+Int x `plus` Int y = return $ Int (x +  y)
+Flt x `plus` Flt y = checkFloat   (x +  y)
+Str x `plus` Str y = return $ Str (x <> y)
 _     `plus` _     = raise E_TYPE
 
 minus :: Value -> Value -> MOO Value
-Int a `minus` Int b = return $ Int (a - b)
-Flt a `minus` Flt b = checkFloat   (a - b)
+Int x `minus` Int y = return $ Int (x - y)
+Flt x `minus` Flt y = checkFloat   (x - y)
 _     `minus` _     = raise E_TYPE
 
 times :: Value -> Value -> MOO Value
-Int a `times` Int b = return $ Int (a * b)
-Flt a `times` Flt b = checkFloat   (a * b)
+Int x `times` Int y = return $ Int (x * y)
+Flt x `times` Flt y = checkFloat   (x * y)
 _     `times` _     = raise E_TYPE
 
 divide :: Value -> Value -> MOO Value
 Int _ `divide` Int   0 = raise E_DIV
-Int a `divide` Int (-1)
-  | a == minBound      = return $ Int  a  -- avoid arithmetic overflow exception
-Int a `divide` Int   b = return $ Int (a `quot` b)
+Int x `divide` Int (-1)
+  | x == minBound      = return $ Int  x  -- avoid arithmetic overflow exception
+Int x `divide` Int   y = return $ Int (x `quot` y)
 Flt _ `divide` Flt   0 = raise E_DIV
-Flt a `divide` Flt   b = checkFloat   (a / b)
+Flt x `divide` Flt   y = checkFloat   (x / y)
 _     `divide` _       = raise E_TYPE
 
 remain :: Value -> Value -> MOO Value
 Int _ `remain` Int 0 = raise E_DIV
-Int a `remain` Int b = return $ Int (a `rem`  b)
+Int x `remain` Int y = return $ Int (x `rem`  y)
 Flt _ `remain` Flt 0 = raise E_DIV
-Flt a `remain` Flt b = checkFloat   (a `fmod` b)
+Flt x `remain` Flt y = checkFloat   (x `fmod` y)
 _     `remain` _     = raise E_TYPE
 
 fmod :: FltT -> FltT -> FltT
@@ -545,13 +545,13 @@ x `fmod` y = x - y * fromInteger (roundZero $ x / y)
                     | otherwise = round   q
 
 power :: Value -> Value -> MOO Value
-Flt   a  `power` Flt b             = checkFloat   (a ** b)
-Flt   a  `power` Int b             = checkFloat   (a ^^ b)
-Int   a  `power` Int b | b >= 0    = return $ Int (a ^  b)
---                     | b <  0 ...
+Flt   x  `power` Flt y             = checkFloat   (x ** y)
+Flt   x  `power` Int y             = checkFloat   (x ^^ y)
+Int   x  `power` Int y | y >= 0    = return $ Int (x ^  y)
+--                     | y <  0 ...
 Int   0  `power` Int _             = raise E_DIV
 Int   1  `power` Int _             = return $ Int   1
-Int (-1) `power` Int b | even b    = return $ Int   1
+Int (-1) `power` Int y | even y    = return $ Int   1
                        | otherwise = return $ Int (-1)
 Int   _  `power` Int _             = return $ Int   0
 _        `power` _                 = raise E_TYPE

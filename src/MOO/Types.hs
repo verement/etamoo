@@ -263,18 +263,18 @@ fromLst (Lst x) = x
 
 -- | Test two MOO values for indistinguishable (case-sensitive) equality.
 equal :: Value -> Value -> Bool
-(Str a) `equal` (Str b) = a `Str.equal` b
-(Lst a) `equal` (Lst b) = V.length a == V.length b &&
-                          V.and (V.zipWith equal a b)
+(Str x) `equal` (Str y) = x `Str.equal` y
+(Lst x) `equal` (Lst y) = V.length x == V.length y &&
+                          V.and (V.zipWith equal x y)
 x       `equal` y       = x == y
 
 -- Case-insensitive ordering
 instance Ord Value where
-  (Int a) `compare` (Int b) = a `compare` b
-  (Flt a) `compare` (Flt b) = a `compare` b
-  (Str a) `compare` (Str b) = a `compare` b
-  (Obj a) `compare` (Obj b) = a `compare` b
-  (Err a) `compare` (Err b) = a `compare` b
+  (Int x) `compare` (Int y) = x `compare` y
+  (Flt x) `compare` (Flt y) = x `compare` y
+  (Str x) `compare` (Str y) = x `compare` y
+  (Obj x) `compare` (Obj y) = x `compare` y
+  (Err x) `compare` (Err y) = x `compare` y
   _       `compare` _       = error "Illegal comparison"
 
 -- | Can the provided values be compared for relative ordering?
