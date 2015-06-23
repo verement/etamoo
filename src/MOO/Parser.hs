@@ -110,11 +110,11 @@ plusMinus parser = positive <|> signed parser
   where positive = char '+' >> parser
 
 integerLiteral :: MOOParser Value
-integerLiteral = try (lexeme $ signed decimal) >>= return . Int . fromIntegral
+integerLiteral = Int . fromIntegral <$> try (lexeme $ signed decimal)
                  <?> "integer literal"
 
 floatLiteral :: MOOParser Value
-floatLiteral = try (lexeme $ signed real) >>= checkRange >>= return . Flt
+floatLiteral = try (lexeme $ signed real) >>= checkRange
                <?> "floating-point literal"
   where real = try withDot <|> withoutDot
         withDot = do
@@ -141,10 +141,9 @@ floatLiteral = try (lexeme $ signed real) >>= checkRange >>= return . Flt
                    | e <    0  -> fromRational $ mantissa * (1 % (10 ^ (-e)))
                    | otherwise -> fromRational $ mantissa *      (10 ^   e)
 
-        checkRange flt =
-          if isInfinite flt
-          then fail "Floating-point literal out of range"
-          else return flt
+        checkRange flt
+          | isInfinite flt = fail "Floating-point literal out of range"
+          | otherwise      = return (Flt flt)
 
 stringLiteral :: MOOParser Value
 stringLiteral = lexeme mooString <?> "string literal"
@@ -153,8 +152,7 @@ stringLiteral = lexeme mooString <?> "string literal"
         stringChar = noneOf "\"\\" <|> (char '\\' >> anyChar <?> "")
 
 objectLiteral :: MOOParser Value
-objectLiteral = lexeme (char '#' >> signed decimal) >>=
-                return . Obj . fromIntegral
+objectLiteral = Obj . fromIntegral <$> lexeme (char '#' >> signed decimal)
                 <?> "object number"
 
 errorLiteral :: MOOParser Value
