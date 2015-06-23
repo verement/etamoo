@@ -10,8 +10,8 @@ import Data.Maybe (catMaybes)
 import Data.Ratio ((%))
 import Data.String (fromString)
 import Data.Text (Text)
-import Text.Parsec (try, many, many1, digit, letter, char, anyChar, alphaNum,
-                    oneOf, noneOf, lookAhead, notFollowedBy, chainl1, chainr1,
+import Text.Parsec (try, many, many1, digit, letter, char, satisfy, alphaNum,
+                    oneOf, lookAhead, notFollowedBy, chainl1, chainr1,
                     option, optionMaybe, choice, between, getState, modifyState,
                     eof, runParser, errorPos, sourceLine, sourceColumn,
                     (<|>), (<?>))
@@ -25,6 +25,8 @@ import qualified Text.Parsec.Token as T
 
 import MOO.AST
 import MOO.Types
+
+import qualified MOO.String as Str
 
 data ParserState = ParserState {
     dollarContext :: Int
@@ -149,7 +151,9 @@ stringLiteral :: MOOParser Value
 stringLiteral = lexeme mooString <?> "string literal"
   where mooString = between (char '"') (char '"' <?> "terminating quote") $
                     Str . fromString <$> many stringChar
-        stringChar = noneOf "\"\\" <|> (char '\\' >> anyChar <?> "")
+        stringChar = escapedChar <|> unescapedChar
+        escapedChar = char '\\' >> satisfy Str.validChar
+        unescapedChar = satisfy $ (&&) <$> (/= '"') <*> Str.validChar
 
 objectLiteral :: MOOParser Value
 objectLiteral = Obj . fromIntegral <$> lexeme (char '#' >> signed decimal)
