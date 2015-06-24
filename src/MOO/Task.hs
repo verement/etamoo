@@ -91,7 +91,6 @@ module MOO.Task (
   , modifyFrame
   , setLineNumber
   , mkVariables
-  , formatTraceback
 
   -- * Loop and Try/Finally Control Functions
   , pushTryFinallyContext
@@ -442,21 +441,23 @@ runTask task = do
               , exceptionCallStack = Stack frames
               } -> handleAbortedTask task' formatted putResult $
                    callSystemVerb "handle_uncaught_error"
-                   [code, Str message, value, traceback, stringList formatted]
+                   [ code, Str message, value, traceback
+                   , fromListBy (Str . Str.fromText) formatted ]
               where traceback = formatFrames True frames
                     formatted = formatTraceback exception
 
             Timeout resource stack@(Stack frames) ->
               handleAbortedTask task' formatted putResult $
                 callSystemVerb "handle_task_timeout"
-                [Str $ showResource resource, traceback, stringList formatted]
+                [ Str $ showResource resource, traceback
+                , fromListBy (Str . Str.fromText) formatted ]
               where traceback = formatFrames True frames
                     formatted = formatTraceback $
                                 timeoutException resource stack
 
             Suicide -> putResult Nothing
 
-        handleAbortedTask :: Task -> [StrT] -> (Maybe Value -> IO ()) ->
+        handleAbortedTask :: Task -> [Text] -> (Maybe Value -> IO ()) ->
                              MOO (Maybe Value) -> IO ()
         handleAbortedTask task traceback putResult call = do
           state <- newState
@@ -465,7 +466,7 @@ runTask task = do
             , taskComputation = fromMaybe zero <$> call
             }
 
-          where handleAbortedTask' :: [StrT] -> Task -> IO ()
+          where handleAbortedTask' :: [Text] -> Task -> IO ()
                 handleAbortedTask' traceback task = do
                   (disposition, task') <- stepTaskWithIO task
                   case disposition of
@@ -489,13 +490,13 @@ runTask task = do
                       putResult Nothing
                     Suicide -> putResult Nothing
 
-        informPlayer :: [StrT] -> IO ()
+        informPlayer :: [Text] -> IO ()
         informPlayer lines = atomically $ do
           world <- readTVar (taskWorld task)
-          forM_ lines $ writeLog world . Str.toText
+          forM_ lines $ writeLog world
 
           case M.lookup (taskPlayer task) (connections world) of
-            Just conn -> forM_ lines $ sendToConnection conn . Str.toText
+            Just conn -> forM_ lines $ sendToConnection conn
             Nothing   -> return ()
 
 defaultMaxStackDepth :: Num a => a
@@ -1445,9 +1446,9 @@ newRandomGen = do
 
 -- | Generate traceback lines for an exception, suitable for displaying to a
 -- user.
-formatTraceback :: Exception -> [StrT]
+formatTraceback :: Exception -> [Text]
 formatTraceback except@Exception { exceptionCallStack = Stack frames } =
-  map Str.fromText $ T.splitOn "\n" $ execWriter (traceback frames)
+  T.splitOn "\n" $ execWriter (traceback frames)
 
   where traceback :: [StackFrame] -> Writer Text ()
         traceback (frame:frames) = do
