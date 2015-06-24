@@ -1002,11 +1002,21 @@ setBuiltinProperty (oid, _) "programmer" bit = do
   db <- getDatabase
   liftSTM $ modifyObject oid db $ \obj ->
     return obj { objectProgrammer = truthOf bit }
-setBuiltinProperty (oid, _) "wizard" bit = do
+setBuiltinProperty (oid, obj) "wizard" bit = do
   checkWizard
-  db <- getDatabase
-  liftSTM $ modifyObject oid db $ \obj ->
-    return obj { objectWizard = truthOf bit }
+  when (objectWizard obj /= bit') $ do
+    writeLog' <- writeLog <$> getWorld
+    programmer <- frame permissions
+    liftSTM $ writeLog' $ (if bit' then "" else "DE") <> "WIZARDED: " <>
+      toText (Obj oid) <> " by programmer " <> toText (Obj programmer)
+    setWizardBit `catchException` (liftSTM . mapM_ writeLog' . formatTraceback)
+  where bit' = truthOf bit
+        setWizardBit = do
+          db <- getDatabase
+          liftSTM $ modifyObject oid db $ \obj ->
+            return obj { objectWizard = bit' }
+          let message = "Wizard bit " <> if bit' then "set." else "unset."
+          raiseException (Err E_NONE) message bit
 setBuiltinProperty (oid, obj) "r" bit = do
   checkPermission (objectOwner obj)
   db <- getDatabase
