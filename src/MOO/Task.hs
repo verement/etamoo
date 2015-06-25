@@ -984,24 +984,24 @@ writeProperty oid name value = do
           prop <- readTVar propTVar
           writeTVar propTVar prop { propertyValue = Just value }
 
+modifyObject' :: ObjId -> (Object -> Object) -> MOO ()
+modifyObject' oid f = getDatabase >>= \db ->
+  liftSTM $ modifyObject oid db $ return . f
+
 setBuiltinProperty :: (ObjId, Object) -> StrT -> Value -> MOO ()
 setBuiltinProperty (oid, obj) "name" (Str name) = do
   if objectIsPlayer obj
     then checkWizard
     else checkPermission (objectOwner obj)
-  db <- getDatabase
-  liftSTM $ modifyObject oid db $ \obj -> return obj { objectName = name }
+  modifyObject' oid $ \obj -> obj { objectName = name }
 setBuiltinProperty (oid, _) "owner" (Obj owner) = do
   checkWizard
-  db <- getDatabase
-  liftSTM $ modifyObject oid db $ \obj -> return obj { objectOwner = owner }
+  modifyObject' oid $ \obj -> obj { objectOwner = owner }
 setBuiltinProperty _ "location" (Obj _) = raise E_PERM
 setBuiltinProperty _ "contents" (Lst _) = raise E_PERM
 setBuiltinProperty (oid, _) "programmer" bit = do
   checkWizard
-  db <- getDatabase
-  liftSTM $ modifyObject oid db $ \obj ->
-    return obj { objectProgrammer = truthOf bit }
+  modifyObject' oid $ \obj -> obj { objectProgrammer = truthOf bit }
 setBuiltinProperty (oid, obj) "wizard" bit = do
   checkWizard
   when (objectWizard obj /= bit') $ do
@@ -1012,26 +1012,18 @@ setBuiltinProperty (oid, obj) "wizard" bit = do
     setWizardBit `catchException` (liftSTM . mapM_ writeLog' . formatTraceback)
   where bit' = truthOf bit
         setWizardBit = do
-          db <- getDatabase
-          liftSTM $ modifyObject oid db $ \obj ->
-            return obj { objectWizard = bit' }
+          modifyObject' oid $ \obj -> obj { objectWizard = bit' }
           let message = "Wizard bit " <> if bit' then "set." else "unset."
           raiseException (Err E_NONE) message bit
 setBuiltinProperty (oid, obj) "r" bit = do
   checkPermission (objectOwner obj)
-  db <- getDatabase
-  liftSTM $ modifyObject oid db $ \obj ->
-    return obj { objectPermR = truthOf bit }
+  modifyObject' oid $ \obj -> obj { objectPermR = truthOf bit }
 setBuiltinProperty (oid, obj) "w" bit = do
   checkPermission (objectOwner obj)
-  db <- getDatabase
-  liftSTM $ modifyObject oid db $ \obj ->
-    return obj { objectPermW = truthOf bit }
+  modifyObject' oid $ \obj -> obj { objectPermW = truthOf bit }
 setBuiltinProperty (oid, obj) "f" bit = do
   checkPermission (objectOwner obj)
-  db <- getDatabase
-  liftSTM $ modifyObject oid db $ \obj ->
-    return obj { objectPermF = truthOf bit }
+  modifyObject' oid $ \obj -> obj { objectPermF = truthOf bit }
 setBuiltinProperty _ _ _ = raise E_TYPE
 
 -- | The stack of verb and/or built-in function frames
