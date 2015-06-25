@@ -873,7 +873,7 @@ callVerb verbLoc this name args = do
     (Nothing     , _)         -> raise E_INVIND
     (_           , Nothing)   -> raise E_VERBNF
 
-callFromFunc :: StrT -> IntT -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
+callFromFunc :: StrT -> LineNo -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
 callFromFunc func index (oid, name) args = do
   maybeVerb <- findVerb verbPermX name oid
   case maybeVerb of
@@ -881,7 +881,7 @@ callFromFunc func index (oid, name) args = do
                                  callVerb' (verbOid, verb) oid name args
     _                         -> return Nothing
 
-evalFromFunc :: StrT -> IntT -> MOO Value -> MOO Value
+evalFromFunc :: StrT -> LineNo -> MOO Value -> MOO Value
 evalFromFunc func index code = do
   (depthLeft, player) <- frame (depthLeft &&& initialPlayer)
   pushFrame initFrame {
@@ -1072,7 +1072,7 @@ data StackFrame = Frame {
   , initialPlayer :: ObjId
 
   , builtinFunc   :: Bool
-  , lineNumber    :: IntT
+  , lineNumber    :: LineNo
   } deriving Show
 
 initFrame = Frame {
@@ -1111,12 +1111,12 @@ instance Sizeable StackFrame where
 formatFrames :: Bool -> [StackFrame] -> Value
 formatFrames includeLineNumbers = fromListBy formatFrame
   where formatFrame frame = fromList $
-                              Obj (initialThis   frame)
-                            : Str (verbName      frame)
-                            : Obj (permissions   frame)
-                            : Obj (verbLocation  frame)
-                            : Obj (initialPlayer frame)
-                            : [Int $ lineNumber frame | includeLineNumbers]
+            Obj (initialThis   frame)
+          : Str (verbName      frame)
+          : Obj (permissions   frame)
+          : Obj (verbLocation  frame)
+          : Obj (initialPlayer frame)
+          : [Int $ fromIntegral $ lineNumber frame | includeLineNumbers]
 
 pushFrame :: StackFrame -> MOO ()
 pushFrame frame = modify $ \state@State { stack = Stack frames } ->
@@ -1153,9 +1153,8 @@ modifyFrame :: (StackFrame -> StackFrame) -> MOO ()
 modifyFrame f = modify $ \state@State { stack = Stack (frame:stack) } ->
   state { stack = Stack (f frame : stack) }
 
-setLineNumber :: Int -> MOO ()
-setLineNumber lineNumber = modifyFrame $ \frame ->
-  frame { lineNumber = fromIntegral lineNumber }
+setLineNumber :: LineNo -> MOO ()
+setLineNumber lineNo = modifyFrame $ \frame -> frame { lineNumber = lineNo }
 
 pushContext :: Context -> MOO ()
 pushContext context = modifyFrame $ \frame ->

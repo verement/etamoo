@@ -219,7 +219,8 @@ bf_queued_tasks = Builtin "queued_tasks" 0 (Just 0) [] TLst $ \[] -> do
           , Obj . taskOwner                    -- programmer
           , Obj . verbLocation . activeFrame   -- verb-loc
           , Str . verbFullName . activeFrame   -- verb-name
-          , Int . lineNumber   . activeFrame   -- line
+          , Int . fromIntegral .
+                  lineNumber   . activeFrame   -- line
           , Obj . initialThis  . activeFrame   -- this
           , Int . fromIntegral . storageBytes  -- task-size
           ]
