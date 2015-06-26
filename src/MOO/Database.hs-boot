@@ -13,6 +13,7 @@ module MOO.Database ( Database
                     , bgTicks
                     , maxStackDepth
                     , queuedTaskLimit
+                    , supportNumericVerbnameStrings
                     ) where
 
 import Control.Concurrent.STM (STM)
@@ -40,3 +41,5 @@ bgTicks :: ServerOptions -> Int
 
 maxStackDepth :: ServerOptions -> Int
 queuedTaskLimit :: ServerOptions -> Maybe Int
+
+supportNumericVerbnameStrings :: ServerOptions -> Bool

@@ -760,12 +760,13 @@ getProperty obj name = do
 
 getVerb :: Object -> Value -> MOO Verb
 getVerb obj desc@Str{} = do
-  maybeVerb <- liftSTM $ lookupVerb obj desc
+  numericStrings <- serverOption supportNumericVerbnameStrings
+  maybeVerb <- liftSTM $ lookupVerb numericStrings obj desc
   maybe (raise E_VERBNF) return maybeVerb
 getVerb obj desc@(Int index)
   | index < 1 = raise E_INVARG
   | otherwise = do
-    maybeVerb <- liftSTM $ lookupVerb obj desc
+    maybeVerb <- liftSTM $ lookupVerb False obj desc
     maybe (raise E_VERBNF) return maybeVerb
 getVerb _ _ = raise E_TYPE
 
@@ -941,8 +942,9 @@ modifyProperty obj name f =
       liftSTM $ writeTVar propTVar prop'
 
 modifyVerb :: (ObjId, Object) -> Value -> (Verb -> MOO Verb) -> MOO ()
-modifyVerb (oid, obj) desc f =
-  case lookupVerbRef obj desc of
+modifyVerb (oid, obj) desc f = do
+  numericStrings <- serverOption supportNumericVerbnameStrings
+  case lookupVerbRef numericStrings obj desc of
     Nothing                -> raise E_VERBNF
     Just (index, verbTVar) -> do
       verb  <- liftSTM $ readTVar verbTVar

@@ -291,7 +291,7 @@ installProgram (oid, vnum, program) = do
   maybeObj <- liftIO $ atomically $ dbObject oid db
   case maybeObj of
     Nothing  -> fail $ doesNotExist "Object"
-    Just obj -> case lookupVerbRef obj (Int $ 1 + fromIntegral vnum) of
+    Just obj -> case lookupVerbRef False obj (Int $ 1 + fromIntegral vnum) of
       Nothing            -> fail $ doesNotExist "Verb"
       Just (_, verbTVar) -> liftIO $ atomically $ do
         verb <- readTVar verbTVar

@@ -37,8 +37,6 @@
 *** § 5.2.11 Restricting Access to Built-in Properties and Functions
 **** $server_options.protect_/prop/
      - IGNORE_PROP_PROTECTED
-*** § 5.2.14 Temporarily Enabling Obsolete Server Features
-**** $server_options.support_numeric_verbname_strings
 * Other
 ** Gather constants into a single location?
    - oob prefix, default port, etc.

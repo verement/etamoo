@@ -278,9 +278,8 @@ loadServerOptions = do
              Just _         -> ""
              Nothing        -> ".flush"
 
-        , supportNumericVerbnameStrings = case supportNumericVerbnameStrings of
-             Just v -> truthOf v
-             _      -> False
+        , supportNumericVerbnameStrings =
+             maybe False truthOf supportNumericVerbnameStrings
 
         , protectProperty = protectProperty
         , protectFunction = protectFunction

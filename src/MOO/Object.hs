@@ -257,11 +257,13 @@ deleteProperty :: StrT -> Object -> STM Object
 deleteProperty name obj =
   return obj { objectProperties = HM.delete name (objectProperties obj) }
 
-lookupVerbRef :: Object -> Value -> Maybe (Int, TVar Verb)
-lookupVerbRef obj (Str name) =
+lookupVerbRef :: Bool -> Object -> Value -> Maybe (Int, TVar Verb)
+lookupVerbRef numericStrings obj (Str name) =
   second snd <$> find matchVerb (zip [0..] $ objectVerbs obj)
-  where matchVerb (_, (names, _)) = verbNameMatch name names
-lookupVerbRef obj (Int index)
+  where matchVerb (i, (names, _)) = verbNameMatch name names ||
+                                    (numericStrings && nameString == show i)
+        nameString = Str.toString name
+lookupVerbRef _ obj (Int index)
   | index' < 1        = Nothing
   | index' > numVerbs = Nothing
   | otherwise         = Just (index'', snd $ verbs !! index'')
@@ -269,11 +271,12 @@ lookupVerbRef obj (Int index)
         index''  = index' - 1
         verbs    = objectVerbs obj
         numVerbs = length verbs
-lookupVerbRef _ _ = Nothing
+lookupVerbRef _ _ _ = Nothing
 
-lookupVerb :: Object -> Value -> STM (Maybe Verb)
-lookupVerb obj desc = maybe (return Nothing) (fmap Just . readTVar . snd) $
-                      lookupVerbRef obj desc
+lookupVerb :: Bool -> Object -> Value -> STM (Maybe Verb)
+lookupVerb numericStrings obj desc =
+  maybe (return Nothing) (fmap Just . readTVar . snd) $
+  lookupVerbRef numericStrings obj desc
 
 replaceVerb :: Int -> Verb -> Object -> STM Object
 replaceVerb index verb obj =

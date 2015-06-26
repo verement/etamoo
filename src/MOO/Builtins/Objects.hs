@@ -663,7 +663,8 @@ bf_delete_verb = Builtin "delete_verb" 2 (Just 2)
   getVerb obj verb_desc
   unless (objectPermW obj) $ checkPermission (objectOwner obj)
 
-  case lookupVerbRef obj verb_desc of
+  numericStrings <- serverOption supportNumericVerbnameStrings
+  case lookupVerbRef numericStrings obj verb_desc of
     Nothing         -> raise E_VERBNF
     Just (index, _) -> do
       db <- getDatabase
