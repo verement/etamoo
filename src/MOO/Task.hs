@@ -575,10 +575,10 @@ forkTask taskId usecs code = do
 
 -- | Wait for the given number of microseconds to elapse.
 delay :: Integer -> IO ()
-delay usecs =
-  if usecs <= fromIntegral (maxBound :: Int)
-  then threadDelay (fromIntegral usecs)
-  else nanosleep (usecs * 1000)
+delay usecs
+  | usecs <= maxInt = threadDelay (fromIntegral usecs)
+  | otherwise       = nanosleep (usecs * 1000)
+  where maxInt = fromIntegral (maxBound :: Int)
 
 -- | A continuation for returning to the task dispatcher to handle an
 -- interrupt request. Note that calling this continuation implies a commit to
@@ -692,35 +692,30 @@ newState = do
 -- | Reset the number of ticks and seconds available for the current task
 -- based on the latest values obtained from @$server_options@.
 resetLimits :: Bool -> MOO ()
-resetLimits foreground = withServerOptions $ \option -> modify $ \state ->
-    state { ticksLeft    = option $ if foreground then fgTicks   else bgTicks
-          , secondsLimit = option $ if foreground then fgSeconds else bgSeconds
+resetLimits foreground = getServerOptions >>= \options -> modify $ \state ->
+    state { ticksLeft    = (if foreground then fgTicks   else bgTicks  ) options
+          , secondsLimit = (if foreground then fgSeconds else bgSeconds) options
           }
 
-withServerOptions :: (((ServerOptions -> a) -> a) -> MOO b) -> MOO b
-withServerOptions f = do
-  world <- getWorld
-  let option what = what (serverOptions $ database world)
-  f option
+getServerOptions :: MOO ServerOptions
+getServerOptions = serverOptions <$> getDatabase
 
+-- | Fetch the current setting of a server option obtained from
+-- @$server_options@.
 serverOption :: (ServerOptions -> a) -> MOO a
-serverOption what = withServerOptions $ \option -> return (option what)
-
-getWorld :: MOO World
-getWorld = liftSTM . readTVar . taskWorld =<< asks task
+serverOption = (<$> getServerOptions)
 
 getWorld' :: MOO (TVar World)
 getWorld' = asks (taskWorld . task)
 
+getWorld :: MOO World
+getWorld = liftSTM . readTVar =<< getWorld'
+
 putWorld :: World -> MOO ()
-putWorld world = do
-  world' <- getWorld'
-  liftSTM $ writeTVar world' world
+putWorld world = liftSTM . flip writeTVar world =<< getWorld'
 
 modifyWorld :: (World -> World) -> MOO ()
-modifyWorld f = do
-  world' <- getWorld'
-  liftSTM $ modifyTVar world' f
+modifyWorld f = liftSTM . flip modifyTVar f =<< getWorld'
 
 getTask :: TaskId -> MOO (Maybe Task)
 getTask taskId = M.lookup taskId . tasks <$> getWorld
@@ -746,28 +741,22 @@ getObject :: ObjId -> MOO (Maybe Object)
 getObject oid = liftSTM . dbObject oid =<< getDatabase
 
 getObjectName :: ObjId -> MOO StrT
-getObjectName oid = do
-  obj <- getObject oid
-  let objNum = Str.fromText (toText $ Obj oid)
-
-  return $ maybe objNum (\obj -> Str.concat [objectName obj,
-                                             " (", objNum, ")"]) obj
+getObjectName oid = maybe objNum objNameNum <$> getObject oid
+  where objNum = Str.fromText (toText $ Obj oid)
+        objNameNum obj = Str.concat [objectName obj, " (", objNum, ")"]
 
 getProperty :: Object -> StrT -> MOO Property
-getProperty obj name = do
-  maybeProp <- liftSTM $ lookupProperty obj name
-  maybe (raise E_PROPNF) return maybeProp
+getProperty obj name = liftSTM (lookupProperty obj name) >>=
+                       maybe (raise E_PROPNF) return
 
 getVerb :: Object -> Value -> MOO Verb
 getVerb obj desc@Str{} = do
   numericStrings <- serverOption supportNumericVerbnameStrings
-  maybeVerb <- liftSTM $ lookupVerb numericStrings obj desc
-  maybe (raise E_VERBNF) return maybeVerb
+  liftSTM (lookupVerb numericStrings obj desc) >>= maybe (raise E_VERBNF) return
 getVerb obj desc@(Int index)
   | index < 1 = raise E_INVARG
-  | otherwise = do
-    maybeVerb <- liftSTM $ lookupVerb False obj desc
-    maybe (raise E_VERBNF) return maybeVerb
+  | otherwise = liftSTM (lookupVerb False obj desc) >>=
+                maybe (raise E_VERBNF) return
 getVerb _ _ = raise E_TYPE
 
 findVerb :: (Verb -> Bool) -> StrT -> ObjId -> MOO (Maybe ObjId, Maybe Verb)
@@ -775,33 +764,28 @@ findVerb acceptable name = findVerb'
   where findVerb' oid = do
           maybeObj <- getObject oid
           case maybeObj of
-            Nothing  -> return (Nothing, Nothing)
             Just obj -> do
-              maybeVerb <- searchVerbs (objectVerbs obj)
+              maybeVerb <- liftSTM $ searchVerbs (objectVerbs obj)
               case maybeVerb of
                 Just verb -> return (Just oid, Just verb)
                 Nothing   -> maybe (return (Just oid, Nothing))
                              findVerb' (objectParent obj)
+            Nothing -> return (Nothing, Nothing)
 
-        searchVerbs ((names,verbTVar):rest) =
-          if verbNameMatch name names
-          then do
-            verb <- liftSTM $ readTVar verbTVar
-            if acceptable verb
-              then return (Just verb)
-              else searchVerbs rest
-          else searchVerbs rest
+        searchVerbs :: [([StrT], TVar Verb)] -> STM (Maybe Verb)
+        searchVerbs ((names,verbTVar):rest)
+          | verbNameMatch name names = readTVar verbTVar >>= \verb ->
+            if acceptable verb then return (Just verb) else searchVerbs rest
+          | otherwise = searchVerbs rest
         searchVerbs [] = return Nothing
 
 callSystemVerb :: StrT -> [Value] -> MOO (Maybe Value)
 callSystemVerb name args = callSystemVerb' systemObject name args Str.empty
 
 callSystemVerb' :: ObjId -> StrT -> [Value] -> StrT -> MOO (Maybe Value)
-callSystemVerb' object name args argstr = do
-  player <- getPlayer
-  maybeVerb <- findVerb verbPermX name object
-  case maybeVerb of
-    (Just verbOid, Just verb) -> do
+callSystemVerb' object name args argstr = getPlayer >>= \player ->
+  findVerb verbPermX name object >>= \found -> case found of
+    (Just verbOid, Just verb) ->
       let vars = mkVariables [
               ("player", Obj player)
             , ("this"  , Obj object)
@@ -809,7 +793,7 @@ callSystemVerb' object name args argstr = do
             , ("args"  , fromList args)
             , ("argstr", Str argstr)
             ]
-      Just <$> runVerb verb initFrame {
+      in Just <$> runVerb verb initFrame {
           variables     = vars
         , verbName      = name
         , verbLocation  = verbOid
@@ -820,7 +804,7 @@ callSystemVerb' object name args argstr = do
 
 callCommandVerb :: ObjId -> (ObjId, Verb) -> ObjId ->
                    Command -> (ObjId, ObjId) -> MOO Value
-callCommandVerb player (verbOid, verb) this command (dobj, iobj) = do
+callCommandVerb player (verbOid, verb) this command (dobj, iobj) =
   let vars = mkVariables [
           ("player" , Obj player)
         , ("this"   , Obj this)
@@ -834,8 +818,7 @@ callCommandVerb player (verbOid, verb) this command (dobj, iobj) = do
         , ("iobjstr", Str        $ commandIObjStr command)
         , ("iobj"   , Obj iobj)
         ]
-
-  runVerb verb initFrame {
+  in runVerb verb initFrame {
       variables     = vars
     , verbName      = commandVerb command
     , verbLocation  = verbOid
@@ -850,8 +833,8 @@ callVerb' (verbOid, verb) this name args = do
   let player = case (wizard, vars M.! "player") of
         (True, Obj oid) -> oid
         _               -> initialPlayer thisFrame
-      vars   = variables thisFrame
-      vars'  = mkVariables [
+      vars  = variables thisFrame
+      vars' = mkVariables [
           ("this"   , Obj this)
         , ("verb"   , Str name)
         , ("args"   , fromList args)
@@ -874,17 +857,15 @@ callVerb' (verbOid, verb) this name args = do
     }
 
 callVerb :: ObjId -> ObjId -> StrT -> [Value] -> MOO Value
-callVerb verbLoc this name args = do
-  maybeVerb <- findVerb verbPermX name verbLoc
-  case maybeVerb of
+callVerb verbLoc this name args =
+  findVerb verbPermX name verbLoc >>= \found -> case found of
     (Just verbOid, Just verb) -> callVerb' (verbOid, verb) this name args
     (Nothing     , _)         -> raise E_INVIND
     (_           , Nothing)   -> raise E_VERBNF
 
 callFromFunc :: StrT -> LineNo -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
-callFromFunc func index (oid, name) args = do
-  maybeVerb <- findVerb verbPermX name oid
-  case maybeVerb of
+callFromFunc func index (oid, name) args =
+  findVerb verbPermX name oid >>= \found -> case found of
     (Just verbOid, Just verb) -> fmap Just $ evalFromFunc func index $
                                  callVerb' (verbOid, verb) oid name args
     _                         -> return Nothing
@@ -933,19 +914,17 @@ runTick = do
   modify $ \state -> state { ticksLeft = ticksLeft - 1 }
 
 modifyProperty :: Object -> StrT -> (Property -> MOO Property) -> MOO ()
-modifyProperty obj name f =
-  case lookupPropertyRef obj name of
-    Nothing       -> raise E_PROPNF
-    Just propTVar -> do
-      prop  <- liftSTM $ readTVar propTVar
-      prop' <- f prop
-      liftSTM $ writeTVar propTVar prop'
+modifyProperty obj name f = case lookupPropertyRef obj name of
+  Just propTVar -> do
+    prop  <- liftSTM $ readTVar propTVar
+    prop' <- f prop
+    liftSTM $ writeTVar propTVar prop'
+  Nothing -> raise E_PROPNF
 
 modifyVerb :: (ObjId, Object) -> Value -> (Verb -> MOO Verb) -> MOO ()
 modifyVerb (oid, obj) desc f = do
   numericStrings <- serverOption supportNumericVerbnameStrings
   case lookupVerbRef numericStrings obj desc of
-    Nothing                -> raise E_VERBNF
     Just (index, verbTVar) -> do
       verb  <- liftSTM $ readTVar verbTVar
       verb' <- f verb
@@ -953,38 +932,37 @@ modifyVerb (oid, obj) desc f = do
       unless (verbNames verb `Str.equal` verbNames verb') $ do
         db <- getDatabase
         liftSTM $ modifyObject oid db $ replaceVerb index verb'
+    Nothing -> raise E_VERBNF
 
 readProperty :: ObjId -> StrT -> MOO (Maybe Value)
-readProperty oid name = do
-  maybeObj <- getObject oid
+readProperty oid name = getObject oid >>= \maybeObj ->
   case maybeObj of
-    Nothing  -> return Nothing
     Just obj -> maybe (search obj) (return . Just . ($ obj)) $
                 builtinProperty name
-  where search obj = do
+    Nothing  -> return Nothing
+
+  where search :: Object -> MOO (Maybe Value)
+        search obj = do
           maybeProp <- liftSTM $ lookupProperty obj name
           case maybeProp of
-            Nothing   -> return Nothing
             Just prop -> case propertyValue prop of
               Nothing -> do
                 parentObj <- maybe (return Nothing) getObject (objectParent obj)
                 maybe (error $ "No inherited value for property " ++
                        Str.toString name) search parentObj
               just -> return just
+            Nothing -> return Nothing
 
 writeProperty :: ObjId -> StrT -> Value -> MOO ()
-writeProperty oid name value = do
-  maybeObj <- getObject oid
+writeProperty oid name value = getObject oid >>= \maybeObj ->
   case maybeObj of
-    Nothing  -> return ()
-    Just obj ->
-      if isBuiltinProperty name
-      then setBuiltinProperty (oid, obj) name value
-      else case lookupPropertyRef obj name of
-        Nothing       -> return ()
-        Just propTVar -> liftSTM $ do
-          prop <- readTVar propTVar
-          writeTVar propTVar prop { propertyValue = Just value }
+    Just obj
+      | isBuiltinProperty name -> setBuiltinProperty (oid, obj) name value
+      | otherwise -> case lookupPropertyRef obj name of
+        Just propTVar -> liftSTM $ modifyTVar propTVar $
+                         \prop -> prop { propertyValue = Just value }
+        Nothing -> return ()
+    Nothing -> return ()
 
 modifyObject' :: ObjId -> (Object -> Object) -> MOO ()
 modifyObject' oid f = getDatabase >>= \db ->
@@ -1121,7 +1099,9 @@ instance Sizeable StackFrame where
 
 formatFrames :: Bool -> [StackFrame] -> Value
 formatFrames includeLineNumbers = fromListBy formatFrame
-  where formatFrame frame = fromList $
+
+  where formatFrame :: StackFrame -> Value
+        formatFrame frame = fromList $
             Obj (initialThis   frame)
           : Str (verbName      frame)
           : Obj (permissions   frame)
@@ -1197,23 +1177,26 @@ unwindContexts p = do
   stack <- unwind =<< frame contextStack
   modifyFrame $ \frame -> frame { contextStack = stack }
   return stack
-  where unwind stack@(this:next) =
-          if p this
-          then return stack
-          else do
-            case this of
-              TryFinally { finally = finally } -> do
-                modifyFrame $ \frame -> frame { contextStack = next }
-                void finally
-              _ -> return ()
-            unwind next
+
+  where unwind :: [Context] -> MOO [Context]
+        unwind stack@(this:next)
+          | p this    = return stack
+          | otherwise = do
+              case this of
+                TryFinally { finally = finally } -> do
+                  modifyFrame $ \frame -> frame { contextStack = next }
+                  void finally
+                _ -> return ()
+              unwind next
         unwind [] = return []
 
 unwindLoopContext :: Maybe Id -> MOO Context
 unwindLoopContext maybeName = do
   loop:_ <- unwindContexts testContext
   return loop
-  where testContext Loop { loopName = name } =
+
+  where testContext :: Context -> Bool
+        testContext Loop { loopName = name } =
           isNothing maybeName || maybeName == name
         testContext _ = False
 
