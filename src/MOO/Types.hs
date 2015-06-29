@@ -135,7 +135,7 @@ instance Sizeable s => Sizeable (CI s) where
   storageBytes = (* 2) . storageBytes . CI.original
 
 instance Sizeable a => Sizeable (Vector a) where
-  storageBytes v = V.sum (V.map storageBytes v)
+  storageBytes = V.sum . V.map storageBytes
 
 instance Sizeable a => Sizeable [a] where
   storageBytes = foldr bytes (storageBytes ())

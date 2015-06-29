@@ -19,7 +19,8 @@ import Network.Socket (PortNumber, Socket, SockAddr,
                                 addrProtocol, addrAddress),
                        AddrInfoFlag(AI_PASSIVE, AI_NUMERICSERV,
                                     AI_ADDRCONFIG, AI_V4MAPPED),
-                       NameInfoFlag(NI_NAMEREQD, NI_NUMERICHOST, NI_NUMERICSERV),
+                       NameInfoFlag(NI_NAMEREQD,
+                                    NI_NUMERICHOST, NI_NUMERICSERV),
                        HostName, ServiceName, maxListenQueue,
                        defaultHints, getAddrInfo, setSocketOption,
                        socket, bind, listen, accept, close,
@@ -112,5 +113,4 @@ addrName addr = do
   return $ AddrName nameVar numericHost port
 
 hostName :: AddrName -> STM HostName
-hostName addr =
-  return . fromMaybe (addrNumeric addr) =<< readTMVar (addrHostName addr)
+hostName addr = fromMaybe (addrNumeric addr) <$> readTMVar (addrHostName addr)

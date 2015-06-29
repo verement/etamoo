@@ -206,21 +206,19 @@ runCommand command = do
                mapM (locateVerb dobj iobj) [player, room, dobj, iobj]
   case maybeVerb of
     Just (this, spec) -> callCommandVerb player spec this command (dobj, iobj)
-    Nothing           -> do
-      maybeVerb <- findVerb verbPermX "huh" room
-      case maybeVerb of
-        (Just oid, Just verb) ->
-          callCommandVerb player (oid, verb) room command (dobj, iobj)
-        _ -> notify player "I couldn't understand that." >> return zero
+    Nothing -> findVerb verbPermX "huh" room >>= \found -> case found of
+      (Just oid, Just verb) ->
+        callCommandVerb player (oid, verb) room command (dobj, iobj)
+      _ -> notify player "I couldn't understand that." >> return zero
 
   where locateVerb :: ObjId -> ObjId -> ObjId ->
                       MOO (Maybe (ObjId, (ObjId, Verb)))
-        locateVerb dobj iobj this = do
-          location <- findVerb acceptable (commandVerb command) this
-          case location of
+        locateVerb dobj iobj this =
+          let acceptable verb =
+                objMatch this (verbDirectObject   verb) dobj &&
+                objMatch this (verbIndirectObject verb) iobj &&
+                prepMatch (verbPreposition verb) (commandPrepSpec command)
+          in findVerb acceptable (commandVerb command) this >>= \found ->
+          case found of
             (Just oid, Just verb) -> return $ Just (this, (oid, verb))
             _                     -> return Nothing
-          where acceptable verb =
-                  objMatch this (verbDirectObject   verb) dobj &&
-                  objMatch this (verbIndirectObject verb) iobj &&
-                  prepMatch (verbPreposition verb) (commandPrepSpec command)

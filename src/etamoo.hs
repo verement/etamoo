@@ -80,8 +80,8 @@ options = [
       (ReqArg (\ip opts -> opts { optBindAddress = Just ip }) "IP-ADDR")
       "Bind address for connections"
   , Option "p" ["port"]
-      (ReqArg (\port opts -> opts { optPort = fromInteger $ read port,
-                                    optPortSpecified = True }) "PORT")
+      (ReqArg (\port opts -> opts { optPort = fromInteger $ read port
+                                  , optPortSpecified = True }) "PORT")
       $ "Listening port (default: " ++ show (optPort defaultOptions) ++ ")"
   , Option "V" ["version"]
       (NoArg (\opts -> opts { optVersion = True }))
@@ -137,6 +137,6 @@ parseArgs = do
             | isNothing (optOutputDB opts) ->
                 return opts { optOutputDB = Just arg }
             | not (optPortSpecified opts) ->
-                return opts { optPort = fromInteger $ read arg,
-                              optPortSpecified = True }
+                return opts { optPort = fromInteger $ read arg
+                            , optPortSpecified = True }
             | otherwise -> usageError $ "unknown argument `" ++ arg ++ "'"

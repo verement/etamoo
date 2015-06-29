@@ -337,7 +337,7 @@ runMatch match subject pattern caseMatters =
     Left (err, at) -> raiseException (Err E_INVARG)
                       (Str.fromString $ "Invalid pattern: " ++ err)
                       (Int $ fromIntegral at)
-    Right regexp -> case match regexp (Str.toText subject) of
+    Right regexp -> case regexp `match` Str.toText subject of
       MatchSucceeded offsets ->
         let (m : offs)   = offsets
             (start, end) = convert m
@@ -438,8 +438,8 @@ hashBuiltin name f = Builtin name 1 (Just 3)
         hash alg wantBinary bytes =
           case hashBytesUsing (toId alg) wantBinary bytes of
             Just digest -> return (Str digest)
-            Nothing     -> raiseException (Err E_INVARG)
-                           ("Unknown hash algorithm: " <> alg) (Str alg)
+            Nothing     -> let message = "Unknown hash algorithm: " <> alg
+                           in raiseException (Err E_INVARG) message (Str alg)
 
 bf_string_hash = hashBuiltin "string_hash" $
                  \hash -> hash . encodeUtf8 . Str.toText  -- XXX Unicode

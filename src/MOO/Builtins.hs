@@ -58,8 +58,8 @@ callBuiltin func args = do
         else callSystemVerb ("bf_" <> fromId func) args >>=
              maybe (checkWizard >> call builtin) return
     (Nothing, _) -> let name = fromId func
-                    in raiseException (Err E_INVARG)
-                       ("Unknown built-in function: " <> name) (Str name)
+                        message = "Unknown built-in function: " <> name
+                    in raiseException (Err E_INVARG) message (Str name)
 
   where call :: Builtin -> MOO Value
         call builtin = checkArgs builtin args >> builtinFunction builtin args
