@@ -189,7 +189,8 @@ bf_ctime = Builtin "ctime" 0 (Just 1) [TInt] TStr $ \arg -> case arg of
 
 ctime :: IntT -> MOO Value
 ctime time = do
-  zonedTime <- unsafeIOtoMOO (utcToLocalZonedTime utcTime)
+  zonedTime <- utcToLocalZonedTime utcTime `catchUnsafeIOtoMOO` \_ ->
+    raise E_INVARG
   return $ Str $ Str.fromString $ formatTime defaultTimeLocale format zonedTime
   where utcTime = posixSecondsToUTCTime (fromIntegral time)
         format  = "%a %b %_d %T %Y %Z"

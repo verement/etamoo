@@ -51,6 +51,7 @@ module MOO.Task (
   , requestIO
   , delayIO
   , unsafeIOtoMOO
+  , catchUnsafeIOtoMOO
   , getTask
   , putTask
   , purgeTask
@@ -139,7 +140,7 @@ import Control.Concurrent (MVar, ThreadId, myThreadId, forkIO, threadDelay,
 import Control.Concurrent.STM (STM, TVar, atomically, retry, throwSTM,
                                newEmptyTMVar, putTMVar, takeTMVar,
                                newTVarIO, readTVar, writeTVar, modifyTVar)
-import Control.Exception (SomeException, catch)
+import Control.Exception (SomeException, try)
 import Control.Monad (when, unless, join, void, (>=>), forM_)
 import Control.Monad.Cont (ContT, runContT, callCC)
 import Control.Monad.Reader (ReaderT, runReaderT, local, asks)
@@ -618,23 +619,28 @@ delayIO :: IO () -> MOO ()
 delayIO io = modify $ \state ->
   state { delayedIO = delayedIO state <> DelayedIO io }
 
--- | Unsafely perform the given IO computation within the current 'STM'
--- transaction.
+-- | Unsafely perform the given IO action within the current 'STM'
+-- transaction, using the supplied exception handler in case the IO throws an
+-- exception.
 --
 -- Since 'STM' transactions may be aborted at any time, the IO is performed in
 -- a separate thread in order to guarantee consistency with any finalizers,
 -- brackets, and so forth. The IO must be idempotent as it may be run more
 -- than once.
+--
+-- Note that all the hazards of 'unsafePerformIO' apply; in particular, it is
+-- incumbent upon the caller to ensure the IO action is executed at least as
+-- many times as desired (and not, say, optimized to a single execution).
+catchUnsafeIOtoMOO :: IO a -> (SomeException -> MOO a) -> MOO a
+catchUnsafeIOtoMOO io catchFunc = either catchFunc return $ unsafePerformIO $ do
+  r <- newEmptyMVar
+  forkIO $ try io >>= putMVar r
+  takeMVar r
+
+-- | A version of 'catchUnsafeIOtoMOO' that simply propagates any thrown
+-- exception into the calling thread, most likely aborting its execution.
 unsafeIOtoMOO :: IO a -> MOO a
-unsafeIOtoMOO io = liftSTM $ do
-  let result = unsafePerformIO $ do
-        r <- newEmptyMVar
-        forkIO $ (io >>= putMVar r . Right) `catch` \e ->
-          putMVar r $ Left (e :: SomeException)
-        takeMVar r
-  case result of
-    Right x -> return x
-    Left  e -> throwSTM e
+unsafeIOtoMOO io = catchUnsafeIOtoMOO io $ liftSTM . throwSTM
 
 -- | A 'Reader' environment for state that either doesn't change, or can be
 -- locally modified for subcomputations
