@@ -35,7 +35,6 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
 import qualified Data.Text as T
 import qualified Data.Text.Lazy.IO as TL
-import qualified Data.Vector as V
 
 import MOO.AST
 import MOO.Compiler
@@ -46,6 +45,7 @@ import MOO.Types
 import MOO.Unparser
 import MOO.Verb
 
+import qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
@@ -825,8 +825,8 @@ tellValue value = case value of
   Str x -> tellLn (decimal _type_str)   >> tellLn (string2builder x)
   Obj x -> tellLn (decimal  type_obj)   >> tellLn (decimal x)
   Err x -> tellLn (decimal  type_err)   >> tellLn (decimal $ fromEnum x)
-  Lst x -> tellLn (decimal _type_list)  >> tellLn (decimal $ V.length x) >>
-           V.forM_ x tellValue
+  Lst x -> tellLn (decimal _type_list)  >> tellLn (decimal $ Lst.length x) >>
+           Lst.forM_ x tellValue
 
 tellVerbs :: (ObjId, [Verb]) -> DBWriter ()
 tellVerbs (oid, verbs) = forM_ (zip [0..] verbs) $ \(vnum, verb) -> do

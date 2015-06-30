@@ -79,6 +79,7 @@ executable etamoo
                        MOO.Connection
                        MOO.Database
                        MOO.Database.LambdaMOO
+                       MOO.List
                        MOO.Network
                        MOO.Network.Console
                        MOO.Network.TCP

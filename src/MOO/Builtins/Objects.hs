@@ -15,7 +15,6 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
-import qualified Data.Vector as V
 
 import MOO.AST
 import MOO.Builtins.Common
@@ -29,6 +28,7 @@ import MOO.Types
 import MOO.Unparser
 import MOO.Verb
 
+import qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
@@ -413,7 +413,7 @@ checkPerms valid perms = do
 bf_set_property_info = Builtin "set_property_info" 3 (Just 3)
                        [TObj, TStr, TLst]
                        TAny $ \[Obj object, Str prop_name, Lst info] -> do
-  (owner, perms, new_name) <- case V.toList info of
+  (owner, perms, new_name) <- case Lst.toList info of
     [Obj owner, Str perms]               -> return (owner, perms, Nothing)
     [_        , _        ]               -> raise E_TYPE
     [Obj owner, Str perms, Str new_name] -> return (owner, perms, Just new_name)
@@ -462,7 +462,7 @@ bf_set_property_info = Builtin "set_property_info" 3 (Just 3)
 
 bf_add_property = Builtin "add_property" 4 (Just 4) [TObj, TStr, TAny, TLst]
                   TAny $ \[Obj object, Str prop_name, value, Lst info] -> do
-  (owner, perms) <- case V.toList info of
+  (owner, perms) <- case Lst.toList info of
     [Obj owner, Str perms] -> return (owner, perms)
     [_        , _        ] -> raise E_TYPE
     _                      -> raise E_INVARG
@@ -555,7 +555,7 @@ bf_verb_info = Builtin "verb_info" 2 (Just 2)
 
 verbInfo :: LstT -> MOO (ObjId, Set Char, StrT)
 verbInfo info = do
-  (owner, perms, names) <- case V.toList info of
+  (owner, perms, names) <- case Lst.toList info of
     [Obj owner, Str perms, Str names] -> return (owner, perms, names)
     [_        , _        , _        ] -> raise E_TYPE
     _                                 -> raise E_INVARG
@@ -603,7 +603,7 @@ bf_verb_args = Builtin "verb_args" 2 (Just 2)
 
 verbArgs :: LstT -> MOO (ObjSpec, PrepSpec, ObjSpec)
 verbArgs args = do
-  (dobj, prep, iobj) <- case V.toList args of
+  (dobj, prep, iobj) <- case Lst.toList args of
     [Str dobj, Str prep, Str iobj] -> return (dobj, breakSlash prep, iobj)
       where breakSlash = fst . Str.breakOn "/"
     [_       , _       , _       ] -> raise E_TYPE
@@ -688,7 +688,7 @@ bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
                    TLst $ \[Obj object, verb_desc, Lst code] -> do
   obj <- checkValid object
   verb <- getVerb obj verb_desc
-  text <- T.concat . ($ []) <$> V.foldM addLine id code
+  text <- T.concat . ($ []) <$> Lst.foldM addLine id code
   unless (verbPermW verb) $ checkPermission (verbOwner verb)
   checkProgrammer
 

@@ -15,7 +15,6 @@ import Data.Word (Word8)
 import Text.Printf (printf)
 
 import qualified Data.ByteString as BS
-import qualified Data.Vector as V
 import qualified Data.Text as T
 
 import MOO.Builtins.Common
@@ -26,6 +25,7 @@ import MOO.Parser (parseNum, parseObj)
 import MOO.Task
 import MOO.Types
 
+import qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
@@ -223,7 +223,7 @@ bf_trunc = floatBuiltin "trunc" $ fromInteger . truncate
 
 bf_length = Builtin "length" 1 (Just 1) [TAny] TInt $ \[arg] -> case arg of
   Str string -> return $ Int $ fromIntegral $ Str.length string
-  Lst list   -> return $ Int $ fromIntegral $   V.length list
+  Lst list   -> return $ Int $ fromIntegral $ Lst.length list
   _          -> raise E_TYPE
 
 bf_strsub = Builtin "strsub" 3 (Just 4) [TStr, TStr, TStr, TAny]
@@ -306,10 +306,10 @@ encodeBinary :: [Value] -> MOO ByteString
 encodeBinary = maybe (raise E_INVARG) (return . BS.pack) . encode
   where encode :: [Value] -> Maybe [Word8]
         encode (Int n : rest)
-          | n >= 0 && n <= 255 = (fromIntegral n :)           <$> encode rest
+          | n >= 0 && n <= 255 = (fromIntegral n :)             <$> encode rest
           | otherwise          = Nothing
-        encode (Str s : rest)  = (++) <$> encodeStr s         <*> encode rest
-        encode (Lst v : rest)  = (++) <$> encode (V.toList v) <*> encode rest
+        encode (Str s : rest)  = (++) <$> encodeStr s           <*> encode rest
+        encode (Lst v : rest)  = (++) <$> encode (Lst.toList v) <*> encode rest
         encode (_     : _   )  = Nothing
         encode []              = Just []
 
@@ -360,7 +360,7 @@ runMatch match subject pattern caseMatters =
 
 bf_substitute = Builtin "substitute" 2 (Just 2)
                 [TStr, TLst] TStr $ \[Str template, Lst subs] ->
-  case V.toList subs of
+  case Lst.toList subs of
     [Int start', Int end', Lst replacements', Str subject'] -> do
       let start      = fromIntegral start'   :: Int
           end        = fromIntegral end'     :: Int
@@ -377,7 +377,7 @@ bf_substitute = Builtin "substitute" 2 (Just 2)
             in take len $ drop (start - 1) subject
 
           substitution :: Value -> MOO String
-          substitution (Lst sub) = case V.toList sub of
+          substitution (Lst sub) = case Lst.toList sub of
             [Int start', Int end'] -> do
               let start = fromIntegral start'
                   end   = fromIntegral end'
@@ -386,9 +386,9 @@ bf_substitute = Builtin "substitute" 2 (Just 2)
             _ -> raise E_INVARG
           substitution _ = raise E_INVARG
 
-      unless (valid start end && V.length replacements' == 9) $ raise E_INVARG
+      unless (valid start end && Lst.length replacements' == 9) $ raise E_INVARG
       replacements <- (substr start end :) <$>
-                      mapM substitution (V.toList replacements')
+                      mapM substitution (Lst.toList replacements')
 
       let walk :: String -> MOO String
           walk ('%':c:cs)
@@ -453,34 +453,34 @@ bf_binary_hash = hashBuiltin "binary_hash" (<=< binaryString)
 bf_is_member = Builtin "is_member" 2 (Just 2)
                [TAny, TLst] TInt $ \[value, Lst list] ->
   return $ Int $ maybe 0 (fromIntegral . succ) $
-  V.findIndex (`equal` value) list
+  Lst.findIndex (`equal` value) list
 
 bf_listinsert = Builtin "listinsert" 2 (Just 3)
                 [TLst, TAny, TInt] TLst $ \(Lst list : value : optional) ->
   let [Int index] = defaults optional [Int 1]
-  in return $ Lst $ listInsert list (fromIntegral index - 1) value
+  in return $ Lst $ Lst.insert list (fromIntegral index - 1) value
 
 bf_listappend = Builtin "listappend" 2 (Just 3)
                 [TLst, TAny, TInt] TLst $ \(Lst list : value : optional) ->
-  let [Int index] = defaults optional [Int $ fromIntegral $ V.length list]
-  in return $ Lst $ listInsert list (fromIntegral index) value
+  let [Int index] = defaults optional [Int $ fromIntegral $ Lst.length list]
+  in return $ Lst $ Lst.insert list (fromIntegral index) value
 
 bf_listdelete = Builtin "listdelete" 2 (Just 2)
                 [TLst, TInt] TLst $ \[Lst list, Int index] ->
   let index' = fromIntegral index
-  in if index' < 1 || index' > V.length list then raise E_RANGE
-     else return $ Lst $ listDelete list (index' - 1)
+  in if index' < 1 || index' > Lst.length list then raise E_RANGE
+     else return $ Lst $ Lst.delete list (index' - 1)
 
 bf_listset = Builtin "listset" 3 (Just 3)
              [TLst, TAny, TInt] TLst $ \[Lst list, value, Int index] ->
   let index' = fromIntegral index
-  in if index' < 1 || index' > V.length list then raise E_RANGE
-     else return $ Lst $ listSet list (index' - 1) value
+  in if index' < 1 || index' > Lst.length list then raise E_RANGE
+     else return $ Lst $ Lst.set list (index' - 1) value
 
 bf_setadd = Builtin "setadd" 2 (Just 2)
             [TLst, TAny] TLst $ \[Lst list, value] ->
-  return $ Lst $ if value `V.elem` list then list else V.snoc list value
+  return $ Lst $ if value `Lst.elem` list then list else Lst.snoc list value
 
 bf_setremove = Builtin "setremove" 2 (Just 2)
                [TLst, TAny] TLst $ \[Lst list, value] ->
-  return $ Lst $ maybe list (listDelete list) $ value `V.elemIndex` list
+  return $ Lst $ maybe list (Lst.delete list) $ value `Lst.elemIndex` list

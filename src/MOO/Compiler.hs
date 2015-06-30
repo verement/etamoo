@@ -10,7 +10,6 @@ import Control.Monad.State (gets)
 import Data.Monoid ((<>))
 
 import qualified Data.Map as M
-import qualified Data.Vector as V
 
 import MOO.AST
 import MOO.Builtins
@@ -18,6 +17,7 @@ import MOO.Object
 import MOO.Task
 import MOO.Types
 
+import qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 -- | Compile a complete MOO program into a computation in the 'MOO' monad that
@@ -253,7 +253,7 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
   item `In` list -> do
     elt <- evaluate item
     evaluate list >>= usingList
-      (return . Int . maybe 0 (fromIntegral . succ) . V.elemIndex elt)
+      (return . Int . maybe 0 (fromIntegral . succ) . Lst.elemIndex elt)
 
   Catch expr codes (Default dv) -> do
     codes' <- case codes of
@@ -317,7 +317,7 @@ storeProperty (oid, name) value = do
 withIndexLength :: Value -> MOO a -> MOO a
 withIndexLength expr = local $ \env -> env { indexLength = len }
   where len = Int . fromIntegral <$> case expr of
-          Lst v -> return   (V.length v)
+          Lst v -> return (Lst.length v)
           Str t -> return (Str.length t)
           _     -> raise E_TYPE
 
@@ -326,14 +326,14 @@ usingList f (Lst v) = f v
 usingList _  _      = raise E_TYPE
 
 getList :: Value -> MOO [Value]
-getList = usingList (return . V.toList)
+getList = usingList (return . Lst.toList)
 
 getIndex :: Value -> MOO Int
 getIndex (Int i) = return (fromIntegral i)
 getIndex _       = raise E_TYPE
 
 checkLstRange :: LstT -> Int -> MOO ()
-checkLstRange v i = when (i < 1 || i > V.length v) $ raise E_RANGE
+checkLstRange v i = when (i < 1 || i > Lst.length v) $ raise E_RANGE
 
 checkStrRange :: StrT -> Int -> MOO ()
 checkStrRange t i = when (i < 1 || t `Str.compareLength` i == LT) $
@@ -380,7 +380,7 @@ lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
           (value, changeExpr) <- change (lValue expr)
           index' <- getIndex =<< withIndexLength value (evaluate index)
           value' <- case value of
-            Lst v -> checkLstRange v index' >> return (v V.! (index' - 1))
+            Lst v -> checkLstRange v index' >> return (v Lst.! (index' - 1))
             Str t -> checkStrRange t index' >>
                      return (Str $ Str.singleton $ t `Str.index` (index' - 1))
             _     -> raise E_TYPE
@@ -388,7 +388,7 @@ lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
 
         changeValue :: Value -> Int -> (Value -> MOO a) -> Value -> MOO a
         changeValue (Lst v) index changeExpr newValue =
-          changeExpr $ Lst $ listSet v (index - 1) newValue
+          changeExpr $ Lst $ Lst.set v (index - 1) newValue
         changeValue (Str t) index changeExpr (Str c) = do
           when (c `Str.compareLength` 1 /= EQ) $ raise E_INVARG
           let (s, r) = Str.splitAt (index - 1) t
@@ -406,7 +406,7 @@ lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
               _     -> raise E_TYPE
             else let len = end' - start' + 1 in case value of
               Lst v -> do checkLstRange v start' >> checkLstRange v end'
-                          return $ Lst $ V.slice (start' - 1) len v
+                          return $ Lst $ Lst.slice (start' - 1) len v
               Str t -> do checkStrRange t start' >> checkStrRange t end'
                           return $ Str $ Str.take len $ Str.drop (start' - 1) t
               _     -> raise E_TYPE
@@ -426,14 +426,14 @@ lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
 
         changeValue :: Value -> (Int, Int) -> (Value -> MOO a) -> Value -> MOO a
         changeValue (Lst v) (start, end) changeExpr (Lst r) = do
-          let len = V.length v
+          let len = Lst.length v
           when (end < 0 || start > len + 1) $ raise E_RANGE
           let pre  = sublist v 1 (start - 1)
               post = sublist v (end + 1) len
               sublist v s e
-                | e < s     = V.empty
-                | otherwise = V.slice (s - 1) (e - s + 1) v
-          changeExpr $ Lst $ V.concat [pre, r, post]
+                | e < s     = Lst.empty
+                | otherwise = Lst.slice (s - 1) (e - s + 1) v
+          changeExpr $ Lst $ Lst.concat [pre, r, post]
         changeValue (Str t) (start, end) changeExpr (Str r) = do
           when (end < 0 || t `Str.compareLength` (start - 1) == LT) $
             raise E_RANGE
@@ -456,7 +456,7 @@ scatterAssign items args = do
   walk items args (nargs - nreqs)
   return (Lst args)
 
-  where nargs = V.length args
+  where nargs = Lst.length args
         nreqs = count required items
         nopts = count optional items
         ntarg = nreqs + nopts
@@ -476,17 +476,17 @@ scatterAssign items args = do
         walk :: [ScatterItem] -> LstT -> Int -> MOO ()
         walk (item:items) args noptAvail = case item of
           ScatRequired var -> do
-            storeVariable var (V.head args)
-            walk items (V.tail args) noptAvail
+            storeVariable var (Lst.head args)
+            walk items (Lst.tail args) noptAvail
           ScatOptional var opt
             | noptAvail > 0 -> do
-                storeVariable var (V.head args)
-                walk items (V.tail args) (noptAvail - 1)
+                storeVariable var (Lst.head args)
+                walk items (Lst.tail args) (noptAvail - 1)
             | otherwise     -> do
                 maybe (return zero) (storeVariable var <=< evaluate) opt
                 walk items args noptAvail
           ScatRest var -> do
-            let (s, r) = V.splitAt nrest args
+            let (s, r) = Lst.splitAt nrest args
             storeVariable var (Lst s)
             walk items r noptAvail
         walk [] _ _ = return ()

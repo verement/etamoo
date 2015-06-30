@@ -57,10 +57,6 @@ module MOO.Types (
   , stringList
   , objectList
 
-  , listSet
-  , listInsert
-  , listDelete
-
   -- * Miscellaneous
   , endOfTime
 
@@ -80,7 +76,6 @@ import Data.Text (Text)
 import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import Data.Vector (Vector)
 import Foreign.Storable (sizeOf)
 import System.Random (StdGen)
 
@@ -90,10 +85,11 @@ import qualified Data.IntSet as IS
 import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Text.Lazy.Builder as TLB
-import qualified Data.Vector as V
-import qualified Data.Vector.Mutable as VM
 
+import {-# SOURCE #-} MOO.List (MOOList)
 import MOO.String (MOOString)
+
+import {-# SOURCE #-} qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 -- | The 'Sizeable' class is used to estimate the storage requirements of
@@ -134,8 +130,8 @@ instance Sizeable MOOString where
 instance Sizeable s => Sizeable (CI s) where
   storageBytes = (* 2) . storageBytes . CI.original
 
-instance Sizeable a => Sizeable (Vector a) where
-  storageBytes = V.sum . V.map storageBytes
+instance Sizeable MOOList where
+  storageBytes = Lst.storageBytes
 
 instance Sizeable a => Sizeable [a] where
   storageBytes = foldr bytes (storageBytes ())
@@ -181,7 +177,7 @@ type FltT = Double        -- ^ MOO floating-point number
 type StrT = MOOString     -- ^ MOO string
 type ObjT = ObjId         -- ^ MOO object number
 type ErrT = Error         -- ^ MOO error
-type LstT = Vector Value  -- ^ MOO list
+type LstT = MOOList       -- ^ MOO list
 
 type ObjId = Int          -- ^ MOO object number
 type Id    = CI Text      -- ^ MOO identifier (string lite)
@@ -241,7 +237,7 @@ emptyString = Str Str.empty
 
 -- | An empty MOO list
 emptyList :: Value
-emptyList = Lst V.empty
+emptyList = Lst Lst.empty
 
 fromInt :: Value -> IntT
 fromInt (Int x) = x
@@ -264,8 +260,7 @@ fromLst (Lst x) = x
 -- | Test two MOO values for indistinguishable (case-sensitive) equality.
 equal :: Value -> Value -> Bool
 (Str x) `equal` (Str y) = x `Str.equal` y
-(Lst x) `equal` (Lst y) = V.length x == V.length y &&
-                          V.and (V.zipWith equal x y)
+(Lst x) `equal` (Lst y) = x `Lst.equal` y
 x       `equal` y       = x == y
 
 -- Case-insensitive ordering
@@ -321,7 +316,7 @@ truthOf :: Value -> Bool
 truthOf (Int x) = x /= 0
 truthOf (Flt x) = x /= 0.0
 truthOf (Str t) = not (Str.null t)
-truthOf (Lst v) = not (V.null v)
+truthOf (Lst v) = not (Lst.null v)
 truthOf _       = False
 
 -- | Return a default MOO value (integer) having the given boolean value.
@@ -366,7 +361,7 @@ toText (Lst _) = "{list}"
 toLiteral :: Value -> Text
 toLiteral (Lst vs) = T.concat
                      [ "{"
-                     , T.intercalate ", " $ map toLiteral (V.toList vs)
+                     , T.intercalate ", " $ map toLiteral (Lst.toList vs)
                      , "}"]
 toLiteral (Str x) = T.concat ["\"", T.concatMap escape $ Str.toText x, "\""]
   where escape '"'  = "\\\""
@@ -402,7 +397,7 @@ error2text E_FLOAT   = "Floating-point arithmetic error"
 
 -- | Turn a Haskell list into a MOO list.
 fromList :: [Value] -> Value
-fromList = Lst . V.fromList
+fromList = Lst . Lst.fromList
 
 -- | Turn a Haskell list into a MOO list, using a function to map Haskell
 -- values to MOO values.
@@ -416,43 +411,6 @@ stringList = fromListBy Str
 -- | Turn a list of object numbers into a MOO list.
 objectList :: [ObjT] -> Value
 objectList = fromListBy Obj
-
--- | Return a modified list with the given 0-based index replaced with the
--- given value.
-listSet :: LstT -> Int -> Value -> LstT
-listSet v i value = V.modify (\m -> VM.write m i value) v
-
--- | Return a modified list with the given value inserted at the given 0-based
--- index.
-listInsert :: LstT -> Int -> Value -> LstT
-listInsert list index value
-  | index <= 0       = V.cons value list
-  | index >= listLen = V.snoc list value
-  | otherwise        = V.create $ do
-      list' <- flip VM.grow 1 =<< V.thaw list
-      let moveLen = listLen - index
-          s = VM.slice  index      moveLen list'
-          t = VM.slice (index + 1) moveLen list'
-      VM.move t s
-      VM.write list' index value
-      return list'
-  where listLen = V.length list
-
--- | Return a modified list with the value at the given 0-based index removed.
-listDelete :: LstT -> Int -> LstT
-listDelete list index
-  | index == 0           = V.tail list
-  | index == listLen - 1 = V.init list
-  | index * 2 < listLen  = V.tail $ (`V.modify` list) $ \list' ->
-      let s = VM.slice 0 index list'
-          t = VM.slice 1 index list'
-      in VM.move t s
-  | otherwise            = V.init $ (`V.modify` list) $ \list' ->
-      let moveLen = listLen - index - 1
-          s = VM.slice (index + 1) moveLen list'
-          t = VM.slice  index      moveLen list'
-      in VM.move t s
-  where listLen = V.length list
 
 -- | This is the last UTC time value representable as a signed 32-bit
 -- seconds-since-1970 value. Unfortunately it is used as a sentinel value in

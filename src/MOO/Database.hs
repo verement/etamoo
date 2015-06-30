@@ -44,6 +44,7 @@ import MOO.Object
 import MOO.Task
 import MOO.Types
 
+import qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 data Database = Database {
@@ -293,7 +294,7 @@ getServerMessage oid msg def = do
   maybeValue <- getServerOption' oid msg
   case maybeValue of
     Just (Str s) -> return [Str.toText s]
-    Just (Lst v) -> maybe (return []) return $ strings (V.toList v)
+    Just (Lst v) -> maybe (return []) return $ strings (Lst.toList v)
     Just _       -> return []
     Nothing      -> def
   where strings :: [Value] -> Maybe [Text]

@@ -72,7 +72,6 @@ import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
-import qualified Data.Vector as V
 
 import MOO.Command
 import MOO.Database
@@ -80,6 +79,7 @@ import MOO.Object
 import MOO.Task
 import MOO.Types
 
+import qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 data Connection = Connection {
@@ -165,7 +165,7 @@ coIntrinsicCommands = Option "intrinsic-commands" get set
   where get = fromListBy (Str . Str.fromText) . M.keys . optionIntrinsicCommands
         set _ v options = do
           commands <- case v of
-            Lst vs -> foldM addCommand M.empty (V.toList vs)
+            Lst vs -> foldM addCommand M.empty (Lst.toList vs)
             Int 0  -> return M.empty
             Int _  -> return allIntrinsicCommands
             _      -> raise E_INVARG
@@ -403,7 +403,7 @@ runConnection world' printMessages conn = loop
                       callSystemVerb "do_login_command" (cmdWords line) line
             return $ fromList [Obj maxObject, player]
           case result of
-            Just (Lst v) -> case V.toList v of
+            Just (Lst v) -> case Lst.toList v of
               [Obj maxObject, Obj player] -> connectPlayer player maxObject
               _                           -> return ()
             _            -> return ()

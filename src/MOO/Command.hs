@@ -27,7 +27,6 @@ import Text.Parsec.Text (Parser)
 
 import qualified Data.IntSet as IS
 import qualified Data.Text as T
-import qualified Data.Vector as V
 
 import {-# SOURCE #-} MOO.Connection
 import MOO.Object
@@ -35,6 +34,7 @@ import {-# SOURCE #-} MOO.Task
 import MOO.Types
 import MOO.Verb
 
+import qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 commandWord :: Parser Text
@@ -159,7 +159,7 @@ matchObject player str
           maybeAliases <- readProperty oid "aliases"
           maybeObj <- getObject oid
           let aliases = case maybeAliases of
-                Just (Lst v) -> V.toList v
+                Just (Lst v) -> Lst.toList v
                 _            -> []
               names = maybe id ((:) . Str . objectName) maybeObj aliases
           return $ case searchNames str names of
