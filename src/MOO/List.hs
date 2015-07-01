@@ -48,26 +48,35 @@ module MOO.List (
   , storageBytes
   , equal
 
+  -- * Association list interface
+  , assocLens
+
   -- * Convenience functions
   , set
   , insert
   , delete
   ) where
 
+import Control.Applicative ((<$>))
 import Data.Function (on)
+import Data.HashMap.Lazy (HashMap)
 import Data.Monoid (Monoid(mempty, mappend, mconcat), (<>))
 import Data.Vector (Vector)
 import Prelude hiding (concat, head, length, null, tail, elem, splitAt, (++))
 
+import qualified Data.HashMap.Lazy as HM
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
 
-import MOO.Types (Value)
+import MOO.Types (Value(Lst, Str), StrT)
 
 import qualified MOO.Types as Value
 
+type AssocMap = HashMap StrT (Int, Value)
+
 data MOOList = MOOList {
-    toVector :: Vector Value
+    toVector   :: Vector Value
+  , toAssocMap :: Maybe AssocMap
   }
 
 instance Eq MOOList where
@@ -83,7 +92,8 @@ instance Show MOOList where
 
 fromVector :: Vector Value -> MOOList
 fromVector vec = MOOList {
-    toVector = vec
+    toVector   = vec
+  , toAssocMap = vectorToAssocMap vec
   }
 
 fromList :: [Value] -> MOOList
@@ -150,6 +160,50 @@ foldM f acc = V.foldM f acc . toVector
 forM_ :: Monad m => MOOList -> (Value -> m b) -> m ()
 forM_ = V.forM_ . toVector
 
+-- Association list interface
+
+vectorToAssocMap :: Vector Value -> Maybe AssocMap
+vectorToAssocMap = fmap snd . V.foldM mkAssocMap (0, HM.empty)
+
+  where mkAssocMap :: (Int, AssocMap) -> Value -> Maybe (Int, AssocMap)
+        mkAssocMap (i, map) (Lst lst) = case toList lst of
+          [Str k, value] -> let map' = assocMapInsert k (i, value) map
+                            in i `seq` Just (succ i, map')
+          [_    , _    ] ->    i `seq` Just (succ i, map)
+          _              -> Nothing
+        mkAssocMap _ _ = Nothing
+
+        -- Preserve the first value associated with duplicate keys
+        assocMapInsert :: StrT -> (Int, Value) -> AssocMap -> AssocMap
+        assocMapInsert = HM.insertWith (flip const)
+
+-- | Return the current value (if any) associated with the given key, and a
+-- function to associate the key with a new value. Returns 'Nothing' if the
+-- list is not a proper association list.
+assocLens :: StrT -> MOOList -> Maybe (Maybe Value, Value -> MOOList)
+assocLens key lst = mkLens <$> toAssocMap lst
+
+  where mkLens :: AssocMap -> (Maybe Value, Value -> MOOList)
+        mkLens map = (snd <$> current, setValue)
+
+          where current :: Maybe (Int, Value)
+                current = HM.lookup key map
+
+                setValue :: Value -> MOOList
+                setValue newValue =
+                  let vec    = toVector lst
+                      assoc  = Lst $ fromList [Str key, newValue]
+                      map' i = HM.insert key (i, newValue) map
+                  in case current of
+                       Nothing -> lst {
+                           toVector   = V.snoc vec assoc
+                         , toAssocMap = Just $ map' (V.length vec)
+                         }
+                       Just (i, _) -> lst {
+                           toVector   = vectorSet vec i assoc
+                         , toAssocMap = Just $ map' i
+                         }
+
 -- Convenience functions
 
 -- | Return a modified list with the given 0-based index replaced with the
@@ -157,8 +211,8 @@ forM_ = V.forM_ . toVector
 set :: MOOList -> Int -> Value -> MOOList
 set lst i = fromVector . vectorSet (toVector lst) i
 
-  where vectorSet :: Vector Value -> Int -> Value -> Vector Value
-        vectorSet vec i value = V.modify (\vec' -> VM.write vec' i value) vec
+vectorSet :: Vector Value -> Int -> Value -> Vector Value
+vectorSet vec i value = V.modify (\vec' -> VM.write vec' i value) vec
 
 -- | Return a modified list with the given value inserted at the given 0-based
 -- index.

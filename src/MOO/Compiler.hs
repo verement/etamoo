@@ -369,31 +369,57 @@ lValue (PropertyRef objExpr nameExpr) = LValue fetch store change
             _                   -> raise E_TYPE
 
 lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
-  where fetchIndex = fst <$> changeIndex
+  where fetchIndex = fst <$> getLens'
 
         storeIndex newValue = do
-          (_, change) <- changeIndex
+          (_, change) <- getLens
           change newValue
           return newValue
 
-        changeIndex = do
-          (value, changeExpr) <- change (lValue expr)
-          index' <- getIndex =<< withIndexLength value (evaluate index)
-          value' <- case value of
-            Lst v -> checkLstRange v index' >> return (v Lst.! (index' - 1))
-            Str t -> checkStrRange t index' >>
-                     return (Str $ Str.singleton $ t `Str.index` (index' - 1))
-            _     -> raise E_TYPE
-          return (value', changeValue value index' changeExpr)
+        changeIndex = getLens'
 
-        changeValue :: Value -> Int -> (Value -> MOO a) -> Value -> MOO a
-        changeValue (Lst v) index changeExpr newValue =
-          changeExpr $ Lst $ Lst.set v (index - 1) newValue
-        changeValue (Str t) index changeExpr (Str c) = do
-          when (c `Str.compareLength` 1 /= EQ) $ raise E_INVARG
-          let (s, r) = Str.splitAt (index - 1) t
-          changeExpr $ Str $ Str.concat [s, c, Str.tail r]
-        changeValue _ _ _ _ = raise E_TYPE
+        getLens :: MOO (Maybe Value, Value -> MOO Value)
+        getLens = do
+          (value, changeExpr) <- change (lValue expr)
+          index' <- withIndexLength value (evaluate index)
+          case index' of
+            Int i -> getIntLens value (fromIntegral i) changeExpr
+            Str k -> getStrLens value               k  changeExpr
+            _     -> raise E_TYPE
+
+        getLens' :: MOO (Value, Value -> MOO Value)
+        getLens' = getLens >>= \(maybeValue, setValue) -> case maybeValue of
+          Just value -> return (value, setValue)
+          Nothing    -> raise E_RANGE
+
+        getIntLens :: Value -> Int -> (Value -> MOO Value) ->
+                      MOO (Maybe Value, Value -> MOO Value)
+        getIntLens value index' changeExpr = do
+          let i = index' - 1
+          value' <- case value of
+            Lst v -> checkLstRange v index' >> return (v Lst.! i)
+            Str t -> checkStrRange t index' >> return (Str $ Str.singleton $
+                                                       t `Str.index` i)
+            _     -> raise E_TYPE
+          return (Just value', changeValue value i changeExpr)
+
+          where changeValue :: Value -> Int -> (Value -> MOO Value) ->
+                               Value -> MOO Value
+                changeValue (Lst v) i changeExpr newValue =
+                  changeExpr $ Lst $ Lst.set v i newValue
+                changeValue (Str t) i changeExpr (Str c) = do
+                  when (c `Str.compareLength` 1 /= EQ) $ raise E_INVARG
+                  let (s, r) = Str.splitAt i t
+                  changeExpr $ Str $ Str.concat [s, c, Str.tail r]
+                changeValue _ _ _ _ = raise E_TYPE
+
+        getStrLens :: Value -> StrT -> (Value -> MOO Value) ->
+                      MOO (Maybe Value, Value -> MOO Value)
+        getStrLens (Lst lst) key changeExpr = case Lst.assocLens key lst of
+          Just (maybeValue, changeList) -> return (maybeValue,
+                                                   changeExpr . Lst . changeList)
+          Nothing -> raise E_INVIND
+        getStrLens _ _ _ = raise E_TYPE
 
 lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
   where fetchRange = do

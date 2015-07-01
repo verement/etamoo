@@ -36,6 +36,11 @@ EtaMOO differs from LambdaMOO in a few significant ways:
 
   * EtaMOO supports 64-bit MOO integers via compile-time build option.
 
+  * EtaMOO natively supports string-key association lists with efficient
+    lookup and update operations; the list index syntax has been extended to
+    allow _`alist`_`[`_`key`_`]` and _`alist`_`[`_`key`_`] = `_`value`_ for
+    string _`key`_s whenever _`alist`_ is a well-formed association list.
+
   * EtaMOO supports several additional hashing algorithms besides MD5,
     including SHA-1, SHA-2, and RIPEMD-160, via optional argument to
     `string_hash()`, `binary_hash()`, and `value_hash()`. Hashes may also
