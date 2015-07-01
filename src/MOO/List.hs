@@ -178,19 +178,19 @@ vectorToAssocMap = fmap snd . V.foldM mkAssocMap (0, HM.empty)
         assocMapInsert = HM.insertWith (flip const)
 
 -- | Return the current value (if any) associated with the given key, and a
--- function to associate the key with a new value. Returns 'Nothing' if the
--- list is not a proper association list.
-assocLens :: StrT -> MOOList -> Maybe (Maybe Value, Value -> MOOList)
+-- function to associate the key with a new value (or remove it). Returns
+-- 'Nothing' if the list is not a proper association list.
+assocLens :: StrT -> MOOList -> Maybe (Maybe Value, Maybe Value -> MOOList)
 assocLens key lst = mkLens <$> toAssocMap lst
 
-  where mkLens :: AssocMap -> (Maybe Value, Value -> MOOList)
+  where mkLens :: AssocMap -> (Maybe Value, Maybe Value -> MOOList)
         mkLens map = (snd <$> current, setValue)
 
           where current :: Maybe (Int, Value)
                 current = HM.lookup key map
 
-                setValue :: Value -> MOOList
-                setValue newValue =
+                setValue :: Maybe Value -> MOOList
+                setValue (Just newValue) =
                   let vec    = toVector lst
                       assoc  = Lst $ fromList [Str key, newValue]
                       map' i = HM.insert key (i, newValue) map
@@ -203,6 +203,7 @@ assocLens key lst = mkLens <$> toAssocMap lst
                            toVector   = vectorSet vec i assoc
                          , toAssocMap = Just $ map' i
                          }
+                setValue Nothing = maybe lst (delete lst . fst) current
 
 -- Convenience functions
 

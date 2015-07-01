@@ -4,7 +4,7 @@
 module MOO.Builtins.Values ( builtins ) where
 
 import Control.Applicative ((<$>), (<*>), (<|>))
-import Control.Monad (unless, (<=<))
+import Control.Monad (unless, when, (<=<))
 import Data.ByteString (ByteString)
 import Data.Char (isDigit)
 import Data.Maybe (fromJust)
@@ -465,17 +465,25 @@ bf_listappend = Builtin "listappend" 2 (Just 3)
   let [Int index] = defaults optional [Int $ fromIntegral $ Lst.length list]
   in return $ Lst $ Lst.insert list (fromIntegral index) value
 
-bf_listdelete = Builtin "listdelete" 2 (Just 2)
-                [TLst, TInt] TLst $ \[Lst list, Int index] ->
-  let index' = fromIntegral index
-  in if index' < 1 || index' > Lst.length list then raise E_RANGE
-     else return $ Lst $ Lst.delete list (index' - 1)
+bf_listdelete = Builtin "listdelete" 2 (Just 2) [TLst, TAny]
+                TLst $ \[Lst list, index] -> case index of
+  Int index -> do let index' = fromIntegral index
+                  when (index' < 1 || index' > Lst.length list) $ raise E_RANGE
+                  return $ Lst $ Lst.delete list (index' - 1)
+  Str key   -> case Lst.assocLens key list of
+                 Just (_, change) -> return (Lst $ change Nothing)
+                 Nothing          -> raise E_INVIND
+  _         -> raise E_TYPE
 
-bf_listset = Builtin "listset" 3 (Just 3)
-             [TLst, TAny, TInt] TLst $ \[Lst list, value, Int index] ->
-  let index' = fromIntegral index
-  in if index' < 1 || index' > Lst.length list then raise E_RANGE
-     else return $ Lst $ Lst.set list (index' - 1) value
+bf_listset = Builtin "listset" 3 (Just 3) [TLst, TAny, TAny]
+             TLst $ \[Lst list, value, index] -> case index of
+  Int index -> do let index' = fromIntegral index
+                  when (index' < 1 || index' > Lst.length list) $ raise E_RANGE
+                  return $ Lst $ Lst.set list (index' - 1) value
+  Str key   -> case Lst.assocLens key list of
+                 Just (_, change) -> return (Lst $ change $ Just value)
+                 Nothing          -> raise E_INVIND
+  _         -> raise E_TYPE
 
 bf_setadd = Builtin "setadd" 2 (Just 2)
             [TLst, TAny] TLst $ \[Lst list, value] ->

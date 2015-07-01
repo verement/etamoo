@@ -416,8 +416,8 @@ lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
         getStrLens :: Value -> StrT -> (Value -> MOO Value) ->
                       MOO (Maybe Value, Value -> MOO Value)
         getStrLens (Lst lst) key changeExpr = case Lst.assocLens key lst of
-          Just (maybeValue, changeList) -> return (maybeValue,
-                                                   changeExpr . Lst . changeList)
+          Just (maybeValue, changeList) ->
+            return (maybeValue, changeExpr . Lst . changeList . Just)
           Nothing -> raise E_INVIND
         getStrLens _ _ _ = raise E_TYPE
 
