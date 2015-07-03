@@ -21,14 +21,31 @@ main = parseArgs >>= run
 
 run :: Options -> IO ()
 run opts
-  | optHelp      opts = putStrLn =<< usage
-  | optVersion   opts = putStrLn $ "EtaMOO " ++ showVersion version
+  | optHelp      opts = putStr =<< usage
+  | optVersion   opts = putStr versionDetails
   | optEmergency opts = error "Emergency Wizard Mode not yet implemented"
   | otherwise         = startServer (optLogFile opts)
                         (fromJust $ optInputDB opts)
                         (fromJust $ optOutputDB opts)
                         (optOutboundNetwork opts)
                         (const $ TCP (optBindAddress opts) (optPort opts))
+
+versionDetails :: String
+versionDetails = unlines [
+    "EtaMOO " ++ showVersion version
+  , ""
+  , "Build options:"
+# ifdef MOO_64BIT_INTEGER
+  , "  64-bit MOO integers"
+# else
+  , "  32-bit MOO integers"
+# endif
+# ifdef MOO_OUTBOUND_NETWORK
+  , "  open_network_connection() enabled by default"
+# else
+  , "  open_network_connection() disabled by default"
+# endif
+  ]
 
 data Options = Options {
     optHelp            :: Bool
@@ -85,7 +102,7 @@ options = [
       $ "Listening port (default: " ++ show (optPort defaultOptions) ++ ")"
   , Option "V" ["version"]
       (NoArg (\opts -> opts { optVersion = True }))
-      "Show server code version"
+      "Show server version and build details"
   , Option "h?" ["help"]
       (NoArg (\opts -> opts { optHelp = True }))
       "Show this usage"
@@ -98,7 +115,7 @@ usage = do
   let header = "Usage: " ++ argv0 ++ " [-e] [-l FILE] " ++
                "INPUT-DB OUTPUT-DB [+O|-O] [-a IP-ADDR] [[-p] PORT]"
   return $ patchUsage (usageInfo header options) ++
-    "* Default outbound network option"
+    unlines ("* Default outbound network option" : "" : rtsOptions)
 
   where patchUsage :: String -> String
         patchUsage = unlines . map patch . lines
@@ -107,8 +124,16 @@ usage = do
                     "      " `isPrefixOf` str = take 2 str ++ "+O" ++ drop 4 str
                   | otherwise                 = str
 
+        rtsOptions :: [String]
+        rtsOptions = [
+            "Run time system options (use between +RTS and -RTS):"
+          , "  -N<n>  Use <n> processors for multithreading (default: all)"
+          , "  -T     Enable statistics for memory_usage() built-in function"
+          , "  -?     Show other run time system options"
+          ]
+
 usageError :: String -> IO a
-usageError msg = usage >>= error . ((msg ++ "\n") ++)
+usageError msg = error . (msg ++) . ('\n' :) . init =<< usage
 
 serverOpts :: IO (Options, [String])
 serverOpts = do
