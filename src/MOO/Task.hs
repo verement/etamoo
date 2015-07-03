@@ -149,6 +149,7 @@ import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (Writer, execWriter, tell)
 import Data.ByteString (ByteString)
 import Data.Function (on)
+import Data.HashMap.Lazy (HashMap)
 import Data.Int (Int32)
 import Data.List (find)
 import Data.Map (Map)
@@ -162,6 +163,7 @@ import System.Posix (nanosleep)
 import System.Random (Random, StdGen, newStdGen, mkStdGen, split,
                       randomR, randomRs)
 
+import qualified Data.HashMap.Lazy as HM
 import qualified Data.Map as M
 import qualified Data.Text as T
 
@@ -836,7 +838,7 @@ callVerb' :: (ObjId, Verb) -> ObjId -> StrT -> [Value] -> MOO Value
 callVerb' (verbOid, verb) this name args = do
   thisFrame <- frame id
   wizard <- isWizard (permissions thisFrame)
-  let player = case (wizard, vars M.! "player") of
+  let player = case (wizard, vars HM.! "player") of
         (True, Obj oid) -> oid
         _               -> initialPlayer thisFrame
       vars  = variables thisFrame
@@ -846,12 +848,12 @@ callVerb' (verbOid, verb) this name args = do
         , ("args"   , fromList args)
         , ("caller" , Obj $ initialThis thisFrame)
         , ("player" , Obj player)
-        , ("argstr" , vars M.! "argstr")
-        , ("dobjstr", vars M.! "dobjstr")
-        , ("dobj"   , vars M.! "dobj")
-        , ("prepstr", vars M.! "prepstr")
-        , ("iobjstr", vars M.! "iobjstr")
-        , ("iobj"   , vars M.! "iobj")
+        , ("argstr" , vars HM.! "argstr")
+        , ("dobjstr", vars HM.! "dobjstr")
+        , ("dobj"   , vars HM.! "dobj")
+        , ("prepstr", vars HM.! "prepstr")
+        , ("iobjstr", vars HM.! "iobjstr")
+        , ("iobj"   , vars HM.! "iobj")
         ]
 
   runVerb verb initFrame {
@@ -1056,7 +1058,7 @@ data StackFrame = Frame {
     depthLeft     :: Int
 
   , contextStack  :: [Context]
-  , variables     :: Map Id Value
+  , variables     :: HashMap Id Value
   , debugBit      :: Bool
   , permissions   :: ObjId
 
@@ -1217,8 +1219,8 @@ continueLoop maybeName = do
   continue ()
 
 -- | The default collection of verb variables
-initVariables :: Map Id Value
-initVariables = M.fromList $ [
+initVariables :: HashMap Id Value
+initVariables = HM.fromList $ [
     ("player" , Obj nothing)
   , ("this"   , Obj nothing)
   , ("caller" , Obj nothing)
@@ -1245,8 +1247,8 @@ initVariables = M.fromList $ [
           ]
 
 -- | Create a variable block for a verb by overriding the default.
-mkVariables :: [(Id, Value)] -> Map Id Value
-mkVariables = foldr (uncurry M.insert) initVariables
+mkVariables :: [(Id, Value)] -> HashMap Id Value
+mkVariables = foldr (uncurry HM.insert) initVariables
 
 newtype ExceptionHandler = Handler (Exception -> MOO Value)
 

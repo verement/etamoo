@@ -9,7 +9,7 @@ import Control.Monad.Reader (asks, local)
 import Control.Monad.State (gets)
 import Data.Monoid ((<>))
 
-import qualified Data.Map as M
+import qualified Data.HashMap.Lazy as HM
 
 import MOO.AST
 import MOO.Builtins
@@ -279,12 +279,12 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
 
 fetchVariable :: Id -> MOO Value
 fetchVariable var =
-  maybe (raise E_VARNF) return . M.lookup var =<< frame variables
+  maybe (raise E_VARNF) return . HM.lookup var =<< frame variables
 
 storeVariable :: Id -> Value -> MOO Value
 storeVariable var value = do
   modifyFrame $ \frame ->
-    frame { variables = M.insert var value (variables frame) }
+    frame { variables = HM.insert var value (variables frame) }
   return value
 
 fetchProperty :: (ObjT, StrT) -> MOO Value
