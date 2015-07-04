@@ -46,6 +46,12 @@ EtaMOO differs from LambdaMOO in a few significant ways:
     `string_hash()`, `binary_hash()`, and `value_hash()`. Hashes may also
     optionally be returned as binary strings.
 
+  * EtaMOO internally handles binary strings in an efficient manner, and only
+    translates to and from the special MOO *binary string* syntax upon demand.
+    For example, passing a binary string read from the network directly to
+    `decode_binary()` does not suffer a round trip through the *binary string*
+    representation.
+
   * EtaMOO supports fractional second delays in `suspend()` and `fork`.
 
   * EtaMOO supports IPv6.

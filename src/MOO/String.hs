@@ -74,13 +74,24 @@ import MOO.Builtins.Match (Regexp, newRegexp)
 
 type CompiledRegexp = Either (String, Int) Regexp
 
+data CachedReps = CachedReps {
+    binaryData            :: Maybe ByteString
+  , caseInsensitiveRegexp :: CompiledRegexp
+  , caseSensitiveRegexp   :: CompiledRegexp
+  }
+
+mkCachedReps :: Text -> CachedReps
+mkCachedReps text = CachedReps {
+    binaryData            = decodeBinary text
+  , caseInsensitiveRegexp = newRegexp text False
+  , caseSensitiveRegexp   = newRegexp text True
+  }
+
 data MOOString = MOOString {
     toText         :: Text
   , toCaseFold     :: Text
-  , toBinary       :: Maybe ByteString
   , length         :: Int
-  , regexp         :: CompiledRegexp
-  , regexpCaseless :: CompiledRegexp
+  , cachedReps     :: CachedReps
   }
 
 instance IsString MOOString where
@@ -105,24 +116,27 @@ instance Show MOOString where
 
 fromText :: Text -> MOOString
 fromText text = MOOString {
-    toText         = text
-  , toCaseFold     = caseFold text
-  , toBinary       = decodeBinary text
-  , length         = T.length text
-  , regexp         = newRegexp text True
-  , regexpCaseless = newRegexp text False
+    toText     = text
+  , toCaseFold = caseFold text
+  , length     = T.length text
+  , cachedReps = mkCachedReps text
   }
 
 fromBinary :: ByteString -> MOOString
-fromBinary bytes = (fromText $ encodeBinary bytes) { toBinary = Just bytes }
+fromBinary bytes =
+  let str = fromText (encodeBinary bytes)
+  in str { cachedReps = (cachedReps str) { binaryData = Just bytes } }
 
 toString :: MOOString -> String
 toString = T.unpack . toText
 
+toBinary :: MOOString -> Maybe ByteString
+toBinary = binaryData . cachedReps
+
 toRegexp :: Bool  -- ^ case-matters
          -> MOOString -> CompiledRegexp
-toRegexp True  = regexp
-toRegexp False = regexpCaseless
+toRegexp False = caseInsensitiveRegexp . cachedReps
+toRegexp True  = caseSensitiveRegexp   . cachedReps
 
 -- | Case-fold the argument, returning the same argument if the result is
 -- unchanged to avoid wasting memory.
