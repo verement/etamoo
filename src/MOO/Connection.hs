@@ -65,8 +65,7 @@ import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Pipes (Producer, Consumer, Pipe, await, yield, runEffect,
               for, cat, (>->))
-import Pipes.Concurrent (Output, send, spawn, spawn', unbounded,
-                         fromInput, toOutput)
+import Pipes.Concurrent (send, spawn, unbounded, fromInput, toOutput)
 
 import qualified Data.ByteString as BS
 import qualified Data.Map as M
@@ -559,35 +558,16 @@ connectionRead conn = do
 -- the network until the queue is closed, which is our signal to close the
 -- connection.
 connectionWrite :: Connection -> Producer ByteString IO ()
-connectionWrite conn = do
-  (outputBinary, inputBinary, sealBinary) <- lift $ spawn' unbounded
-  (outputLines,  inputLines,  sealLines)  <- lift $ spawn' unbounded
+connectionWrite conn = loop
+  where loop = do
+          message <- lift $ atomically $ readTBMQueue (connectionOutput conn)
+          case message of
+            Just (Line text)    -> yield (encodeUtf8 text) >> yield crlf >> loop
+            Just (Binary bytes) -> yield bytes                           >> loop
+            Nothing             -> return ()
 
-  lift $ forkIO $ do
-    runEffect $ fromInput inputLines >-> writeLines >-> writeUtf8 >->
-      toOutput outputBinary
-    atomically sealBinary
-
-  lift $ forkIO $ processQueue outputLines outputBinary sealLines
-
-  fromInput inputBinary
-
-  where writeLines :: Monad m => Pipe Text Text m ()
-        writeLines = forever $ await >>= yield >> yield "\r\n"
-
-        writeUtf8 :: Monad m => Pipe Text ByteString m ()
-        writeUtf8 = for cat (yield . encodeUtf8)
-
-        processQueue :: Output Text -> Output ByteString -> STM () -> IO ()
-        processQueue outputLines outputBinary sealLines = loop
-          where loop = do
-                  message <- atomically $ readTBMQueue (connectionOutput conn)
-                  case message of
-                    Just (Line text) ->
-                      atomically (send outputLines  text)  >> loop
-                    Just (Binary bytes) ->
-                      atomically (send outputBinary bytes) >> loop
-                    Nothing -> atomically sealLines
+        crlf :: ByteString
+        crlf = encodeUtf8 "\r\n"
 
 -- | The first un-logged-in connection ID. Avoid conflicts with #-1
 -- ($nothing), #-2 ($ambiguous_match), and #-3 ($failed_match).
