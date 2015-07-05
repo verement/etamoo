@@ -72,7 +72,7 @@ import qualified Prelude
 
 import MOO.Builtins.Match (Regexp, newRegexp)
 
-type CompiledRegexp = Either (String, Int) Regexp
+type CompiledRegexp = Either String Regexp
 
 data CachedReps = CachedReps {
     binaryData            :: Maybe ByteString

@@ -160,12 +160,10 @@ translate = T.pack . concat . rewrite . T.unpack
     wordEnd    = lbehind word ++ alt "$" (lahead nonword)
 
 -- | Compile a regular expression pattern into a 'Regexp' value, or return an
--- error description if the pattern is malformed. The returned 'Int' is a byte
--- offset into an internally translated pattern, and thus is probably not very
--- useful.
+-- error description if the pattern is malformed.
 newRegexp :: Text -- ^ pattern
           -> Bool -- ^ case matters?
-          -> Either (String, Int) Regexp
+          -> Either String Regexp
 newRegexp regexp caseMatters =
   unsafePerformIO     $
   useAsCString string $ \pattern        ->
@@ -174,10 +172,7 @@ newRegexp regexp caseMatters =
 
     code <- pcre_compile pattern options errorPtr errorOffsetPtr nullPtr
     if code == nullPtr
-      then do
-        error <- peekCString =<< peek errorPtr
-        errorOffset <- peek errorOffsetPtr
-        return $ Left (patchError error, fromIntegral errorOffset)
+      then Left . patchError <$> (peekCString =<< peek errorPtr)
       else do
         extraFP <- mkExtra code
         setExtraFlags extraFP

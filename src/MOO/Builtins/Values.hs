@@ -334,9 +334,8 @@ bf_rmatch = matchBuiltin "rmatch" rmatch
 runMatch :: (Regexp -> Text -> MatchResult) -> StrT -> StrT -> Bool -> MOO Value
 runMatch match subject pattern caseMatters =
   case Str.toRegexp caseMatters pattern of
-    Left (err, at) -> raiseException (Err E_INVARG)
-                      (Str.fromString $ "Invalid pattern: " ++ err)
-                      (Int $ fromIntegral at)
+    Left err -> raiseException (Err E_INVARG)
+                (Str.fromString $ "Invalid pattern: " ++ err) zero
     Right regexp -> case regexp `match` Str.toText subject of
       MatchSucceeded offsets ->
         let (m : offs)   = offsets
