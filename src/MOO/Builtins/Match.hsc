@@ -46,7 +46,7 @@ foreign import ccall safe "static pcre.h"
   pcre_compile :: CString -> CInt -> Ptr CString -> Ptr CInt ->
                   Ptr CharacterTables -> IO (Ptr PCRE)
 
-foreign import ccall unsafe "static pcre.h"
+foreign import ccall safe "static pcre.h"
   pcre_study :: Ptr PCRE -> CInt -> Ptr CString -> IO (Ptr PCREExtra)
 
 foreign import ccall unsafe "static pcre.h &"
@@ -184,7 +184,7 @@ newRegexp regexp caseMatters =
 
         mkExtra :: Ptr PCRE -> IO (ForeignPtr PCREExtra)
         mkExtra code = alloca $ \errorPtr -> do
-          extra <- pcre_study code 0 errorPtr
+          extra <- pcre_study code studyOptions errorPtr
           if extra == nullPtr
             then do
               extraFP <- mallocForeignPtrBytes #{const sizeof(pcre_extra)}
@@ -192,6 +192,9 @@ newRegexp regexp caseMatters =
                 #{poke pcre_extra, flags} extra (0 :: CULong)
               return extraFP
             else newForeignPtr pcre_free_study extra
+
+          where studyOptions :: CInt
+                studyOptions = #{const PCRE_STUDY_JIT_COMPILE}
 
         setExtraFlags :: ForeignPtr PCREExtra -> IO ()
         setExtraFlags extraFP = withForeignPtr extraFP $ \extra -> do
