@@ -23,7 +23,8 @@ import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Foreign (Ptr, FunPtr, ForeignPtr, alloca, allocaArray, nullPtr,
                 peek, peekArray, peekByteOff, pokeByteOff,
-                newForeignPtr, mallocForeignPtrBytes, withForeignPtr, (.|.))
+                newForeignPtr, mallocForeignPtrBytes, withForeignPtr,
+                (.|.), (.&.), complement)
 import Foreign.C (CString, CInt(CInt), CULong, peekCString)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -41,7 +42,7 @@ data CharacterTables
 type Helper = Ptr PCRE -> Ptr PCREExtra -> CString -> CInt ->
               CInt -> Ptr CInt -> IO CInt
 
-foreign import ccall unsafe "static pcre.h"
+foreign import ccall safe "static pcre.h"
   pcre_compile :: CString -> CInt -> Ptr CString -> Ptr CInt ->
                   Ptr CharacterTables -> IO (Ptr PCRE)
 
@@ -54,14 +55,10 @@ foreign import ccall unsafe "static pcre.h &"
 foreign import ccall unsafe "static pcre.h &"
   pcre_free :: Ptr (FunPtr (Ptr a -> IO ()))
 
--- This must be /unsafe/ to block other threads while it executes, since it
--- relies on being able to modify and use some PCRE global state.
-foreign import ccall unsafe "static match.h"
+foreign import ccall safe "static match.h"
   match_helper :: Helper
 
--- This must be /unsafe/ to block other threads while it executes, since it
--- relies on being able to modify and use some PCRE global state.
-foreign import ccall unsafe "static match.h"
+foreign import ccall safe "static match.h"
   rmatch_helper :: Helper
 
 data Regexp = Regexp {
@@ -200,8 +197,11 @@ newRegexp regexp caseMatters =
         setExtraFlags extraFP = withForeignPtr extraFP $ \extra -> do
           #{poke pcre_extra, match_limit}           extra matchLimit
           #{poke pcre_extra, match_limit_recursion} extra matchLimitRecursion
+
           flags <- #{peek pcre_extra, flags} extra
-          #{poke pcre_extra, flags} extra $ flags .|. matchLimitFlags
+          let extraFlags = (flags .|. matchLimitFlags) .&.
+                           complement calloutDataFlag
+          #{poke pcre_extra, flags} extra extraFlags
 
           where matchLimit, matchLimitRecursion :: CULong
                 matchLimit          = 100000
@@ -210,6 +210,9 @@ newRegexp regexp caseMatters =
                 matchLimitFlags :: CULong
                 matchLimitFlags = #{const PCRE_EXTRA_MATCH_LIMIT} .|.
                                   #{const PCRE_EXTRA_MATCH_LIMIT_RECURSION}
+
+                calloutDataFlag :: CULong
+                calloutDataFlag = #{const PCRE_EXTRA_CALLOUT_DATA}
 
         patchError :: String -> String
         patchError = concatMap patch

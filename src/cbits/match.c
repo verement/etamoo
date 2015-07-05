@@ -2,7 +2,7 @@
 # include <string.h>
 # include "match.h"
 
-# define MAX_CAPTURES   10
+# define MAX_CAPTURES  10
 
 /*
  * Structure for capturing rmatch results
@@ -15,16 +15,22 @@ typedef struct {
 /*
  * PCRE callout function used to capture rmatch results
  *
- * This function may be called by PCRE each time the (?C) pattern is
+ * This function will be called by PCRE each time the (?C) pattern is
  * encountered, which we have arranged to occur at the end of each successful
- * pattern match. To find the rightmost match, we record the match found so
- * far if it is further right and/or longer than the last found match, then
- * tell PCRE to continue matching as if the match had failed.
+ * pattern match. To find the rightmost match for rmatch, we record the match
+ * found so far if it is further right and/or longer than the last found
+ * match, then tell PCRE to continue matching as if the match had failed.
+ *
+ * This function is a no-op unless passed rmatch callout_data, allowing it to
+ * be kept as the global PCRE callout function even for normal matches.
  */
 static
-int rmatch_callout(pcre_callout_block *block)
+int global_callout(pcre_callout_block *block)
 {
   rmatch_data_t *rmatch = block->callout_data;
+
+  if (!rmatch)
+    return 0;  /* proceed as normal; not using rmatch */
 
   if (!rmatch->valid || block->start_match > rmatch->ovec[0] ||
       (block->start_match == rmatch->ovec[0] &&
@@ -45,17 +51,17 @@ int rmatch_callout(pcre_callout_block *block)
 /*
  * match() helper function
  *
- * This function exists so that it can be called by the Haskell runtime
- * without any other threads running. This is necessary because it needs to
- * convey callout information to PCRE via global variable.
+ * Arrange to call pcre_exec() with a callout that does nothing. We use the
+ * same callout function as rmatch_helper() so that we can run simultaneously
+ * with it, as pcre_callout is a global variable.
  */
-int match_helper(const pcre *code, pcre_extra *extra,
+int match_helper(const pcre *code, const pcre_extra *extra,
                  const char *subject, int length,
                  int options, int ovector[MAX_CAPTURES * 3])
 {
-  extra->flags &= ~PCRE_EXTRA_CALLOUT_DATA;
+  /* we rely on the fact that *extra has no callout_data by default */
 
-  pcre_callout = 0;
+  pcre_callout = global_callout;
 
   return pcre_exec(code, extra, subject, length, 0,
 		   options, ovector, MAX_CAPTURES * 3);
@@ -64,25 +70,27 @@ int match_helper(const pcre *code, pcre_extra *extra,
 /*
  * rmatch() helper function
  *
- * This function exists so that it can be called by the Haskell runtime
- * without any other threads running. This is necessary because it needs to
- * convey callout information to PCRE via global variable.
+ * Arrange to call pcre_exec() with a callout that records the rightmost
+ * match. We use the same callout function as match_helper() so that we can
+ * run simultaneously with it, as pcre_callout is a global variable.
  */
-int rmatch_helper(const pcre *code, pcre_extra *extra,
+int rmatch_helper(const pcre *code, const pcre_extra *extra,
                   const char *subject, int length,
                   int options, int ovector[MAX_CAPTURES * 3])
 {
+  pcre_extra local_extra = *extra;
   rmatch_data_t rmatch;
   int rc;
 
   rmatch.valid = 0;
 
-  extra->callout_data = &rmatch;
-  extra->flags |= PCRE_EXTRA_CALLOUT_DATA;
+  /* modify a local copy to avoid interfering with any other threads */
+  local_extra.callout_data = &rmatch;
+  local_extra.flags |= PCRE_EXTRA_CALLOUT_DATA;
 
-  pcre_callout = rmatch_callout;
+  pcre_callout = global_callout;
 
-  rc = pcre_exec(code, extra, subject, length, 0,
+  rc = pcre_exec(code, &local_extra, subject, length, 0,
 		 options, ovector, MAX_CAPTURES * 3);
   if (rc == PCRE_ERROR_NOMATCH && rmatch.valid) {
     rc = rmatch.valid;
