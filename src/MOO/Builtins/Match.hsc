@@ -167,7 +167,7 @@ newRegexp regexp caseMatters =
   alloca              $ \errorPtr       ->
   alloca              $ \errorOffsetPtr -> do
 
-    code <- pcre_compile pattern options errorPtr errorOffsetPtr nullPtr
+    code <- pcre_compile pattern compileOptions errorPtr errorOffsetPtr nullPtr
     if code == nullPtr
       then Left . patchError <$> (peekCString =<< peek errorPtr)
       else do
@@ -181,6 +181,12 @@ newRegexp regexp caseMatters =
                               }
   where string :: ByteString
         string = encodeUtf8 (translate regexp)
+
+        compileOptions :: CInt
+        compileOptions = #{const PCRE_UTF8 | PCRE_NO_UTF8_CHECK}
+        -- allow PCRE to optimize .* at beginning of pattern by implicit anchor
+          .|. #{const PCRE_DOTALL | PCRE_DOLLAR_ENDONLY}
+          .|. if caseMatters then 0 else #{const PCRE_CASELESS}
 
         mkExtra :: Ptr PCRE -> IO (ForeignPtr PCREExtra)
         mkExtra code = alloca $ \errorPtr -> do
@@ -208,11 +214,11 @@ newRegexp regexp caseMatters =
 
           where matchLimit, matchLimitRecursion :: CULong
                 matchLimit          = 100000
-                matchLimitRecursion =   5000
+                matchLimitRecursion = matchLimit
 
                 matchLimitFlags :: CULong
-                matchLimitFlags = #{const PCRE_EXTRA_MATCH_LIMIT} .|.
-                                  #{const PCRE_EXTRA_MATCH_LIMIT_RECURSION}
+                matchLimitFlags = #{const PCRE_EXTRA_MATCH_LIMIT |
+                                          PCRE_EXTRA_MATCH_LIMIT_RECURSION}
 
                 calloutDataFlag :: CULong
                 calloutDataFlag = #{const PCRE_EXTRA_CALLOUT_DATA}
@@ -223,12 +229,6 @@ newRegexp regexp caseMatters =
                 patch '('  = "%("
                 patch ')'  = "%)"
                 patch  c   = [c]
-
-        options :: CInt
-        options = #{const PCRE_UTF8 | PCRE_NO_UTF8_CHECK}
-        -- allow PCRE to optimize .* at beginning of pattern by implicit anchor
-          .|. #{const PCRE_DOTALL}
-          .|. if caseMatters then 0 else #{const PCRE_CASELESS}
 
 maxCaptures, ovecLen :: Num a => a
 maxCaptures = 10
