@@ -2,11 +2,11 @@
 
 module MOO.Builtins ( builtinFunctions, callBuiltin ) where
 
-import Data.Map (Map)
+import Data.HashMap.Lazy (HashMap)
 
 import MOO.Types
 import MOO.Task
 import MOO.Builtins.Common
 
-builtinFunctions :: Map Id Builtin
+builtinFunctions :: HashMap Id Builtin
 callBuiltin :: Id -> [Value] -> MOO Value

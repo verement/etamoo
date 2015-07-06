@@ -6,8 +6,8 @@ module MOO.Builtins ( builtinFunctions, callBuiltin, verifyBuiltins ) where
 import Control.Applicative ((<$>))
 import Control.Monad (foldM, join)
 import Control.Monad.State (gets)
+import Data.HashMap.Lazy (HashMap)
 import Data.List (transpose, inits)
-import Data.Map (Map)
 import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
 import Data.Time (formatTime, utcToLocalZonedTime, defaultTimeLocale)
@@ -18,7 +18,7 @@ import GHC.Stats (GCStats(currentBytesUsed, maxBytesUsed),
                   getGCStats, getGCStatsEnabled)
 # endif
 
-import qualified Data.Map as M
+import qualified Data.HashMap.Lazy as HM
 import qualified Data.Set as S
 
 import MOO.Builtins.Common
@@ -37,10 +37,10 @@ import qualified MOO.String as Str
 
 {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
 
--- | A 'Map' of all built-in functions, keyed by name
-builtinFunctions :: Map Id Builtin
+-- | A 'HashMap' of all built-in functions, keyed by name
+builtinFunctions :: HashMap Id Builtin
 builtinFunctions =
-  M.fromList $ map assoc $ miscBuiltins ++
+  HM.fromList $ map assoc $ miscBuiltins ++
   Values.builtins ++ Objects.builtins ++ Network.builtins ++ Tasks.builtins
   where assoc builtin = (builtinName builtin, builtin)
 
@@ -50,7 +50,7 @@ builtinFunctions =
 callBuiltin :: Id -> [Value] -> MOO Value
 callBuiltin func args = do
   isProtected <- (func `S.member`) <$> serverOption protectFunction
-  case (func `M.lookup` builtinFunctions, isProtected) of
+  case (func `HM.lookup` builtinFunctions, isProtected) of
     (Just builtin, False) -> call builtin
     (Just builtin, True)  -> do
       this <- frame initialThis
@@ -94,7 +94,7 @@ callBuiltin func args = do
 -- describing an inconsistency, or an integer giving the total number of
 -- (verified) built-in functions.
 verifyBuiltins :: Either String Int
-verifyBuiltins = foldM accum 0 $ M.elems builtinFunctions
+verifyBuiltins = foldM accum 0 $ HM.elems builtinFunctions
 
   where accum :: Int -> Builtin -> Either String Int
         accum a b = valid b >>= Right . (+ a)

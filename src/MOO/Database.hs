@@ -34,8 +34,8 @@ import Data.Set (Set)
 import Data.Text (Text)
 import Data.Vector (Vector)
 
+import qualified Data.HashMap.Lazy as HM
 import qualified Data.IntSet as IS
-import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Vector as V
 
@@ -241,7 +241,7 @@ loadServerOptions = do
   supportNumericVerbnameStrings <- option "support_numeric_verbname_strings"
 
   protectProperty <- getProtected option builtinProperties
-  protectFunction <- getProtected option (M.keys builtinFunctions)
+  protectFunction <- getProtected option (HM.keys builtinFunctions)
 
   let options = Options {
           bgSeconds = case bgSeconds of

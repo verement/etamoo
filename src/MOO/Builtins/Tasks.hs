@@ -15,7 +15,7 @@ import Data.List (sort)
 import Data.Time (getCurrentTime, addUTCTime, diffUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
-import qualified Data.Map as M
+import qualified Data.HashMap.Lazy as HM
 import qualified Data.Set as S
 
 import MOO.Builtins.Common
@@ -64,8 +64,8 @@ bf_call_function = Builtin "call_function" 1 Nothing
 
 bf_function_info = Builtin "function_info" 0 (Just 1)
                    [TStr] TLst $ \args -> case args of
-  []         -> return $ fromListBy formatInfo $ M.elems builtinFunctions
-  [Str name] -> case M.lookup (toId name) builtinFunctions of
+  []         -> return $ fromListBy formatInfo $ HM.elems builtinFunctions
+  [Str name] -> case HM.lookup (toId name) builtinFunctions of
     Just builtin -> return $ formatInfo builtin
     Nothing      -> raise E_INVARG
 
