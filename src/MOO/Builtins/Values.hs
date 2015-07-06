@@ -404,9 +404,9 @@ bf_substitute = Builtin "substitute" 2 (Just 2)
 bf_crypt = Builtin "crypt" 1 (Just 2)
            [TStr, TStr] TStr $ \(Str text : optional) ->
   let (saltArg : _) = maybeDefaults optional
-      go salt = case crypt (Str.toString text) (Str.toString salt) of
-        Just encrypted -> return $ Str $ Str.fromString encrypted
-        Nothing        -> raise E_QUOTA
+      go salt = do
+        result <- unsafeIOtoMOO $ crypt (Str.toString text) (Str.toString salt)
+        maybe (raise E_QUOTA) (return . Str . Str.fromString) result
   in if maybe True invalidSalt saltArg
      then generateSalt >>= go
      else go $ fromStr $ fromJust saltArg

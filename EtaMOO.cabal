@@ -117,8 +117,7 @@ executable etamoo
 
   includes:            unistd.h pcre.h
 
-  c-sources:           src/cbits/crypt.c
-                       src/cbits/match.c
+  c-sources:           src/cbits/match.c
 
   build-depends:       array
                      , base ==4.*
