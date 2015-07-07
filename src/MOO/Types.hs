@@ -359,12 +359,11 @@ toText (Lst _) = "{list}"
 -- | Return a literal representation of the given MOO value, using the same
 -- rules as the @toliteral()@ built-in function.
 toLiteral :: Value -> Text
-toLiteral (Lst vs) = T.concat
-                     [ "{"
-                     , T.intercalate ", " $ map toLiteral (Lst.toList vs)
-                     , "}"]
+toLiteral (Lst x) = T.concat ["{", T.intercalate ", " $
+                                   map toLiteral (Lst.toList x), "}"]
 toLiteral (Str x) = T.concat ["\"", T.concatMap escape $ Str.toText x, "\""]
-  where escape '"'  = "\\\""
+  where escape :: Char -> Text
+        escape '"'  = "\\\""
         escape '\\' = "\\\\"
         escape c    = T.singleton c
 toLiteral (Err x) = T.pack (show x)

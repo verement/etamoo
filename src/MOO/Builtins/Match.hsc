@@ -55,11 +55,8 @@ foreign import ccall unsafe "static pcre.h &"
 foreign import ccall unsafe "static pcre.h &"
   pcre_free :: Ptr (FunPtr (Ptr a -> IO ()))
 
-foreign import ccall safe "static match.h"
-  match_helper :: Helper
-
-foreign import ccall safe "static match.h"
-  rmatch_helper :: Helper
+foreign import ccall safe "static match.h"  match_helper :: Helper
+foreign import ccall safe "static match.h" rmatch_helper :: Helper
 
 data Regexp = Regexp {
     pattern     :: Text

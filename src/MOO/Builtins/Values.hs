@@ -334,8 +334,6 @@ bf_rmatch = matchBuiltin "rmatch" rmatch
 runMatch :: (Regexp -> Text -> MatchResult) -> StrT -> StrT -> Bool -> MOO Value
 runMatch match subject pattern caseMatters =
   case Str.toRegexp caseMatters pattern of
-    Left err -> raiseException (Err E_INVARG)
-                (Str.fromString $ "Invalid pattern: " ++ err) zero
     Right regexp -> case regexp `match` Str.toText subject of
       MatchSucceeded offsets ->
         let (m : offs)   = offsets
@@ -345,6 +343,8 @@ runMatch match subject pattern caseMatters =
            [Int start, Int end, fromList replacements, Str subject]
       MatchFailed  -> return emptyList
       MatchAborted -> raise E_QUOTA
+    Left err -> let message = Str.fromString $ "Invalid pattern: " ++ err
+                in raiseException (Err E_INVARG) message zero
 
   where convert :: (Int, Int) -> (IntT, IntT)
         convert (s, e) = (1 + fromIntegral s, fromIntegral e)

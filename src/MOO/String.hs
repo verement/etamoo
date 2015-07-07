@@ -88,10 +88,10 @@ mkCachedReps text = CachedReps {
   }
 
 data MOOString = MOOString {
-    toText         :: Text
-  , toCaseFold     :: Text
-  , length         :: Int
-  , cachedReps     :: CachedReps
+    toText     :: Text
+  , toCaseFold :: Text
+  , length     :: Int
+  , cachedReps :: CachedReps
   }
 
 instance IsString MOOString where
@@ -203,7 +203,7 @@ tail :: MOOString -> MOOString
 tail = fromText . T.tail . toText
 
 append :: MOOString -> MOOString -> MOOString
-append str1 str2 = fromText $ T.append (toText str1) (toText str2)
+append str1 str2 = fromText $ toText str1 `T.append` toText str2
 
 null :: MOOString -> Bool
 null = T.null . toText

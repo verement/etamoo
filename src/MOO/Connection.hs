@@ -171,6 +171,8 @@ coIntrinsicCommands = Option "intrinsic-commands" get set
 
           return options { optionIntrinsicCommands = commands }
 
+        addCommand :: Map Text IntrinsicCommand -> Value
+                   -> MOO (Map Text IntrinsicCommand)
         addCommand cmds value = case value of
           Str cmd -> do
             ic <- maybe (raise E_INVARG) return $
@@ -512,19 +514,17 @@ connectionRead conn = do
         readLines = readLines' TL.empty
           where readLines' prev = await >>= yieldLines prev >>= readLines'
 
-                yieldLines :: Monad m => TL.Text -> Text ->
-                              Pipe Text Text m TL.Text
-                yieldLines prev text =
-                  let concatenate = TL.append prev . TL.fromStrict
-                      (end, rest) = T.break (== '\n') text
-                      line  = TL.toStrict (concatenate end)
-                      line' = if not (T.null line) && T.last line == '\r'
-                              then T.init line else line
-                  in if T.null rest
-                     then return $ concatenate text
-                     else do
-                       yield line'
-                       yieldLines TL.empty (T.tail rest)
+                yieldLines :: Monad m => TL.Text -> Text
+                           -> Pipe Text Text m TL.Text
+                yieldLines prev text
+                  | T.null rest = return (concatenate text)
+                  | otherwise   = yield line' >>
+                                  yieldLines TL.empty (T.tail rest)
+                  where (end, rest) = T.break (== '\n') text
+                        concatenate = TL.append prev . TL.fromStrict
+                        line  = TL.toStrict (concatenate end)
+                        line' = if not (T.null line) && T.last line == '\r'
+                                then T.init line else line
 
         sanitize :: Monad m => Pipe Text Text m ()
         sanitize = for cat (yield . T.filter Str.validChar)
@@ -535,13 +535,13 @@ connectionRead conn = do
         deliverMessages :: Consumer ConnectionMessage IO ()
         deliverMessages = forever $ do
           message <- await
-          case message of
+          lift $ case message of
             Line line -> do
-              options <- lift $ readTVarIO (connectionOptions conn)
+              options <- readTVarIO (connectionOptions conn)
               let flushCmd = optionFlushCommand options
-              lift $ if not (T.null flushCmd) && line == flushCmd
+              if not (T.null flushCmd) && line == flushCmd
                      then flushQueue else enqueue message
-            Binary _ -> lift $ enqueue message
+            Binary _ -> enqueue message
 
         enqueue :: ConnectionMessage -> IO ()
         enqueue = atomically . writeTBMQueue (connectionInput conn) . stringize
@@ -684,7 +684,7 @@ bufferedOutputLength (Just conn) =
 forceInput :: Bool -> ObjId -> StrT -> MOO ()
 forceInput atFront oid line =
   withConnection oid $ \conn -> do
-    let queue   = connectionInput conn
+    let queue = connectionInput conn
     success <- liftSTM $
       if atFront then unGetTBMQueue queue line >> return True
       else fromMaybe True <$> tryWriteTBMQueue queue line
@@ -701,14 +701,12 @@ flushInput showMessages conn = do
             flushQueue queue notify
             notify ">> (Done flushing)"
 
-    where flushQueue queue notify = loop
-            where loop = do
-                    item <- join <$> tryReadTBMQueue queue
-                    case item of
-                      Just line -> do
-                        notify $ ">>     " <> Str.toText line
-                        loop
-                      Nothing -> return ()
+  where flushQueue queue notify = loop
+          where loop = do
+                  item <- join <$> tryReadTBMQueue queue
+                  case item of
+                    Just line -> notify (">>     " <> Str.toText line) >> loop
+                    Nothing   -> return ()
 
 -- | Initiate the closing of a connection by closing its output queue.
 closeConnection :: Connection -> STM ()

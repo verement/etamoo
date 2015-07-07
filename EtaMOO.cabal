@@ -140,9 +140,9 @@ executable etamoo
                      , stm-chans
                      , text >= 1.2
                      , time >= 1.5
+                     , transformers
                      , unix
                      , unordered-containers
-                     , transformers
                      , vector
 
   build-tools:         hsc2hs
