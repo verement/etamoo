@@ -10,13 +10,13 @@ import Control.Monad (unless, (<=<))
 import Control.Monad.Reader (ReaderT, runReaderT, asks, local)
 import Control.Monad.Writer (Writer, execWriter, tell)
 import Data.Char (isAlpha, isAlphaNum)
+import Data.HashSet (HashSet)
 import Data.List (intersperse)
 import Data.Monoid ((<>), mconcat)
-import Data.Set (Set)
 import Data.Text.Lazy (Text)
 import Data.Text.Lazy.Builder (Builder, toLazyText, fromText)
 
-import qualified Data.Set as S
+import qualified Data.HashSet as HS
 
 import MOO.AST
 import MOO.Parser (keywords)
@@ -300,7 +300,7 @@ isIdentifier name = isIdentifier' (Str.toString name) && not (isKeyword name)
         isIdentChar  c = isAlphaNum c || c == '_'
 
 isKeyword :: StrT -> Bool
-isKeyword = (`S.member` keywordsSet) . toId
+isKeyword = (`HS.member` keywordsSet) . toId
 
-keywordsSet :: Set Id
-keywordsSet = S.fromList $ map toId keywords
+keywordsSet :: HashSet Id
+keywordsSet = HS.fromList (map toId keywords)
