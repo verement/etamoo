@@ -27,16 +27,16 @@ import Control.Applicative ((<$>))
 import Control.Concurrent.STM (STM, TVar, newTVarIO, newTVar,
                                readTVar, writeTVar)
 import Control.Monad (forM, forM_, when)
+import Data.HashSet (HashSet)
 import Data.IntSet (IntSet)
 import Data.Maybe (isJust)
 import Data.Monoid ((<>))
-import Data.Set (Set)
 import Data.Text (Text)
 import Data.Vector (Vector)
 
 import qualified Data.HashMap.Lazy as HM
+import qualified Data.HashSet as HS
 import qualified Data.IntSet as IS
-import qualified Data.Set as S
 import qualified Data.Vector as V
 
 import {-# SOURCE #-} MOO.Builtins (builtinFunctions)
@@ -192,10 +192,10 @@ data ServerOptions = Options {
     -- ^ The maximum number of seconds to wait for an outbound network
     -- connection to successfully open
 
-  , protectProperty :: Set Id
+  , protectProperty :: HashSet Id
     -- ^ Restrict reading of built-in property to wizards
 
-  , protectFunction :: Set Id
+  , protectFunction :: HashSet Id
     -- ^ Restrict use of built-in function to wizards
 
   , supportNumericVerbnameStrings :: Bool
@@ -215,10 +215,10 @@ getServerOptions oid = do
     Just (Obj oid) -> readProperty oid . fromId
     _              -> const (return Nothing)
 
-getProtected :: (Id -> MOO (Maybe Value)) -> [Id] -> MOO (Set Id)
+getProtected :: (Id -> MOO (Maybe Value)) -> [Id] -> MOO (HashSet Id)
 getProtected getOption ids = do
   maybes <- forM ids $ fmap (fmap truthOf) . getOption . ("protect_" <>)
-  return $ S.fromList [ id | (id, Just True) <- zip ids maybes ]
+  return $ HS.fromList [ id | (id, Just True) <- zip ids maybes ]
 
 loadServerOptions :: MOO ()
 loadServerOptions = do
