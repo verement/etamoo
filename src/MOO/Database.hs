@@ -27,7 +27,6 @@ import Control.Applicative ((<$>))
 import Control.Concurrent.STM (STM, TVar, newTVarIO, newTVar,
                                readTVar, writeTVar)
 import Control.Monad (forM, forM_, when)
-import Data.HashSet (HashSet)
 import Data.IntSet (IntSet)
 import Data.Maybe (isJust)
 import Data.Monoid ((<>))
@@ -192,10 +191,10 @@ data ServerOptions = Options {
     -- ^ The maximum number of seconds to wait for an outbound network
     -- connection to successfully open
 
-  , protectProperty :: HashSet Id
+  , protectProperty :: Id -> Bool
     -- ^ Restrict reading of built-in property to wizards
 
-  , protectFunction :: HashSet Id
+  , protectFunction :: Id -> Bool
     -- ^ Restrict use of built-in function to wizards
 
   , supportNumericVerbnameStrings :: Bool
@@ -215,10 +214,11 @@ getServerOptions oid = do
     Just (Obj oid) -> readProperty oid . fromId
     _              -> const (return Nothing)
 
-getProtected :: (Id -> MOO (Maybe Value)) -> [Id] -> MOO (HashSet Id)
+getProtected :: (Id -> MOO (Maybe Value)) -> [Id] -> MOO (Id -> Bool)
 getProtected getOption ids = do
   maybes <- forM ids $ fmap (fmap truthOf) . getOption . ("protect_" <>)
-  return $ HS.fromList [ id | (id, Just True) <- zip ids maybes ]
+  let set = HS.fromList [ id | (id, Just True) <- zip ids maybes ]
+  return (`HS.member` set)
 
 loadServerOptions :: MOO ()
 loadServerOptions = do

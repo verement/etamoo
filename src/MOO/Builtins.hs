@@ -19,7 +19,6 @@ import GHC.Stats (GCStats(currentBytesUsed, maxBytesUsed),
 # endif
 
 import qualified Data.HashMap.Lazy as HM
-import qualified Data.HashSet as HS
 
 import MOO.Builtins.Common
 import MOO.Database
@@ -49,7 +48,7 @@ builtinFunctions =
 -- built-in function is unknown.
 callBuiltin :: Id -> [Value] -> MOO Value
 callBuiltin func args = do
-  isProtected <- (func `HS.member`) <$> serverOption protectFunction
+  isProtected <- ($ func) <$> serverOption protectFunction
   case (func `HM.lookup` builtinFunctions, isProtected) of
     (Just builtin, False) -> call builtin
     (Just builtin, True)  -> do
