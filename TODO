@@ -41,7 +41,6 @@
 ** Gather constants into a single location?
    - oob prefix, default port, etc.
 ** Emergency Wizard Mode
-** Fix 'off/off of' preposition problem
 ** Database dumps
 ** L.server_options.connect_timeout
 ** $user_disconnected() on db users

@@ -108,7 +108,7 @@ data PrepSpec = PrepAny                     -- ^ any
               | PrepForAbout                -- ^ for\/about
               | PrepIs                      -- ^ is
               | PrepAs                      -- ^ as
-              | PrepOffOffof                -- ^ off\/off of
+              | PrepOffofOff                -- ^ off of\/off
               deriving (Enum, Bounded, Eq, Show)
 
 instance Sizeable PrepSpec where
@@ -131,7 +131,7 @@ prep2string PrepBeside                 = "beside"
 prep2string PrepForAbout               = "for/about"
 prep2string PrepIs                     = "is"
 prep2string PrepAs                     = "as"
-prep2string PrepOffOffof               = "off/off of"
+prep2string PrepOffofOff               = "off of/off"
 
 string2prep :: StrT -> Maybe PrepSpec
 string2prep = flip lookup $ concatMap mkAssoc [minBound ..]
