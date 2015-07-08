@@ -290,7 +290,7 @@ storeVariable var value = do
 fetchProperty :: (ObjT, StrT) -> MOO Value
 fetchProperty (oid, name) = do
   obj <- maybe (raise E_INVIND) return =<< getObject oid
-  maybe (search False obj) (return . ($ obj)) $ builtinProperty name
+  maybe (search False obj) (handleBuiltin obj) $ builtinProperty name
 
   where search :: Bool -> Object -> MOO Value
         search skipPermCheck obj = do
@@ -304,11 +304,16 @@ fetchProperty (oid, name) = do
               maybe (error $ "No inherited value for property " ++
                      Str.toString name) (search True) parentObj
 
+        handleBuiltin :: Object -> (Object -> Value) -> MOO Value
+        handleBuiltin obj prop = checkProtectedProperty (toId name) >>
+                                 return (prop obj)
+
 storeProperty :: (ObjT, StrT) -> Value -> MOO Value
 storeProperty (oid, name) value = do
   obj <- maybe (raise E_INVIND) return =<< getObject oid
   if isBuiltinProperty name
-    then setBuiltinProperty (oid, obj) name value
+    then checkProtectedProperty (toId name) >>
+         setBuiltinProperty (oid, obj) name value
     else modifyProperty obj name $ \prop -> do
       unless (propertyPermW prop) $ checkPermission (propertyOwner prop)
       return prop { propertyValue = Just value }

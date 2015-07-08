@@ -13,6 +13,7 @@ module MOO.Database ( Database
                     , bgTicks
                     , maxStackDepth
                     , queuedTaskLimit
+                    , protectProperty
                     , supportNumericVerbnameStrings
                     ) where
 
@@ -41,5 +42,7 @@ bgTicks :: ServerOptions -> Int
 
 maxStackDepth :: ServerOptions -> Int
 queuedTaskLimit :: ServerOptions -> Maybe Int
+
+protectProperty :: ServerOptions -> Id -> Bool
 
 supportNumericVerbnameStrings :: ServerOptions -> Bool

@@ -120,6 +120,7 @@ module MOO.Task (
   , checkPermission
   , checkValid
   , checkFertile
+  , checkProtectedProperty
   , checkRecurrence
   , checkQueuedTaskLimit
 
@@ -1387,6 +1388,14 @@ checkFertile oid = do
   case maybeObj of
     Nothing  -> raise E_PERM
     Just obj -> unless (objectPermF obj) $ checkPermission (objectOwner obj)
+
+-- | Verify that the named built-in property is not protected by
+-- @$server_options.protect_/prop/@, or that the current task permissions have
+-- wizard privileges if it is, raising 'E_PERM' otherwise.
+checkProtectedProperty :: Id -> MOO ()
+checkProtectedProperty name = do
+  protected <- ($ name) <$> serverOption protectProperty
+  when protected checkWizard
 
 -- | Verify that the given /object/ does not have a recursive relationship
 -- with the given /subject/, raising 'E_RECMOVE' if so.

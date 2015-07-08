@@ -34,9 +34,6 @@
 *** § 5.2.7 The First Tasks Run By the Server
 **** $dump_interval
 **** $user_disconnected()
-*** § 5.2.11 Restricting Access to Built-in Properties and Functions
-**** $server_options.protect_/prop/
-     - IGNORE_PROP_PROTECTED
 * Other
 ** Gather constants into a single location?
    - oob prefix, default port, etc.
