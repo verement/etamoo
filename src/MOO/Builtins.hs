@@ -27,6 +27,7 @@ import MOO.Task
 import MOO.Types
 import MOO.Version
 
+import MOO.Builtins.Extra   as Extra
 import MOO.Builtins.Network as Network
 import MOO.Builtins.Objects as Objects
 import MOO.Builtins.Tasks   as Tasks
@@ -39,7 +40,7 @@ import qualified MOO.String as Str
 -- | A 'HashMap' of all built-in functions, keyed by name
 builtinFunctions :: HashMap Id Builtin
 builtinFunctions =
-  HM.fromList $ map assoc $ miscBuiltins ++
+  HM.fromList $ map assoc $ Extra.builtins ++ miscBuiltins ++
   Values.builtins ++ Objects.builtins ++ Network.builtins ++ Tasks.builtins
   where assoc builtin = (builtinName builtin, builtin)
 

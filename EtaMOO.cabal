@@ -68,6 +68,7 @@ executable etamoo
                        MOO.Builtins
                        MOO.Builtins.Common
                        MOO.Builtins.Crypt
+                       MOO.Builtins.Extra
                        MOO.Builtins.Hash
                        MOO.Builtins.Match
                        MOO.Builtins.Network
