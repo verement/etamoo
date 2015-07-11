@@ -406,7 +406,7 @@ bf_crypt = Builtin "crypt" 1 (Just 2)
   let (saltArg : _) = maybeDefaults optional
       go salt = do
         result <- unsafeIOtoMOO $ crypt (Str.toString text) (Str.toString salt)
-        maybe (raise E_QUOTA) (return . Str . Str.fromString) result
+        maybe (raise E_INVARG) (return . Str . Str.fromString) result
   in if maybe True invalidSalt saltArg
      then generateSalt >>= go
      else go $ fromStr $ fromJust saltArg
