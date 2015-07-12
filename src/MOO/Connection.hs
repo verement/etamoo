@@ -324,18 +324,19 @@ connectionHandler world' object printMessages connectionName (input, output) =
 
         deleteConnection :: Connection -> IO ()
         deleteConnection conn = do
-          atomically $ do
-            connectionId <- readTVar (connectionPlayer conn)
-            modifyTVar world' $ \world ->
-              world { connections = M.delete connectionId (connections world) }
-
           how <- atomically $ takeTMVar (connectionDisconnect conn)
           player <- readTVarIO (connectionPlayer conn)
           let systemVerb = case how of
                 Disconnected       -> "user_disconnected"
                 ClientDisconnected -> "user_client_disconnected"
-              comp = fromMaybe zero <$>
-                     callSystemVerb' object systemVerb [Obj player] Str.empty
+              comp = do
+                liftSTM $ do
+                  connectionId <- readTVar (connectionPlayer conn)
+                  modifyTVar world' $ \world ->
+                    world { connections = M.delete connectionId
+                                          (connections world) }
+                fromMaybe zero <$>
+                  callSystemVerb' object systemVerb [Obj player] Str.empty
           void $ runTask =<< newTask world' player (resetLimits True >> comp)
 
 runConnection :: TVar World -> Bool -> Connection -> IO ()

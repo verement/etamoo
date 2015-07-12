@@ -4,8 +4,9 @@
 module MOO.Server ( startServer ) where
 
 import Control.Concurrent (takeMVar, forkIO, getNumCapabilities)
-import Control.Concurrent.STM (STM, TVar, atomically, readTVarIO, readTVar)
-import Control.Monad (forM_, void)
+import Control.Concurrent.STM (STM, TVar, atomically, retry,
+                               readTVarIO, readTVar)
+import Control.Monad (forM_, void, unless)
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import Data.Text.IO (hPutStrLn)
@@ -80,8 +81,10 @@ shutdownServer world' message = do
       sendToConnection conn $ "*** Shutting down: " <> message <> " ***"
       closeConnection conn
 
-  -- Give connections time to close
-  delay 5000000
+  -- Wait for all connections to close
+  atomically $ do
+    world <- readTVar world'
+    unless (M.null $ connections world) retry
 
   return ()
 
