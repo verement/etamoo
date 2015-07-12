@@ -3,9 +3,11 @@
 
 module MOO.Server ( startServer ) where
 
-import Control.Concurrent (takeMVar, forkIO, getNumCapabilities)
+import Control.Concurrent (newEmptyMVar, takeMVar, putMVar,
+                           forkIO, getNumCapabilities)
 import Control.Concurrent.STM (STM, TVar, atomically, retry,
                                readTVarIO, readTVar)
+import Control.Exception (finally)
 import Control.Monad (forM_, void, unless)
 import Data.Monoid ((<>))
 import Data.Text (Text)
@@ -14,9 +16,9 @@ import Data.Time (getCurrentTime, utcToLocalZonedTime, formatTime,
                   defaultTimeLocale)
 import Network (withSocketsDo)
 import Pipes (Pipe, runEffect, (>->), for, cat, lift, yield)
-import Pipes.Concurrent (spawn, unbounded, send, fromInput)
+import Pipes.Concurrent (spawn', unbounded, send, fromInput)
 import System.IO (IOMode(AppendMode), BufferMode(LineBuffering),
-                  openFile, stderr, hSetBuffering)
+                  openFile, stderr, hSetBuffering, hClose)
 import System.Posix (installHandler, sigPIPE, Handler(Ignore))
 
 import qualified Data.Map as M
@@ -38,7 +40,7 @@ startServer logFile inputDB outputDB outboundNet pf = withSocketsDo $ do
   either error return verifyBuiltins
   installHandler sigPIPE Ignore Nothing
 
-  stmLogger <- startLogger logFile
+  (stmLogger, stopLogger) <- startLogger logFile
   let writeLog = atomically . stmLogger
 
   numCapabilities <- getNumCapabilities
@@ -66,6 +68,8 @@ startServer logFile inputDB outputDB outboundNet pf = withSocketsDo $ do
   world <- readTVarIO world'
   takeMVar (shutdownMessage world) >>= shutdownServer world'
 
+  stopLogger
+
   where pluralize :: Int -> Text -> Text
         pluralize n what = T.concat $
                            [ T.pack (show n), " ", what ] ++ [ "s" | n /= 1 ]
@@ -88,7 +92,7 @@ shutdownServer world' message = do
 
   return ()
 
-startLogger :: Maybe FilePath -> IO (Text -> STM ())
+startLogger :: Maybe FilePath -> IO (Text -> STM (), IO ())
 startLogger dest = do
   handle <- case dest of
     Just path -> openFile path AppendMode
@@ -96,12 +100,18 @@ startLogger dest = do
 
   hSetBuffering handle LineBuffering
 
-  (output, input) <- spawn unbounded
+  (output, input, seal) <- spawn' unbounded
+  done <- newEmptyMVar
 
-  forkIO $ runEffect $
-    fromInput input >-> timestamp >-> for cat (lift . hPutStrLn handle)
+  forkIO $ (`finally` putMVar done ()) $ do
+    runEffect $
+      fromInput input >-> timestamp >-> for cat (lift . hPutStrLn handle)
+    hClose handle
 
-  return (void . send output)
+  let writeLog   = void . send output
+      stopLogger = atomically seal >> takeMVar done
+
+  return (writeLog, stopLogger)
 
   where timestamp :: Pipe Text Text IO ()
         timestamp = for cat $ \line -> do
