@@ -12,10 +12,10 @@ differences include:
   * Assignment expressions behave somewhat differently in EtaMOO than they do
     in LambdaMOO. Assuming `x = {1, 2}`:
 
-      | Expression        | LambdaMOO       | EtaMOO           |
-      | ----------------- | --------------- | ---------------- |
-      | `x[1] = x[2] = 3` | `x` => `{3, 2}` | `x` => `{3, 3}`  |
-      | `x[1] = (x = 0)`  | `x` => `{0, 2}` | (error) `E_TYPE` |
+| Expression        | LambdaMOO       | EtaMOO           |
+| ----------------- | --------------- | ---------------- |
+| `x[1] = x[2] = 3` | `x` => `{3, 2}` | `x` => `{3, 3}`  |
+| `x[1] = (x = 0)`  | `x` => `{0, 2}` | (error) `E_TYPE` |
 
     It is hoped that EtaMOO's results make better sense.
 
