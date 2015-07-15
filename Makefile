@@ -1,5 +1,5 @@
 
-all: FORCE etamoo
+default: FORCE etamoo
 
 test: FORCE etamoo-test
 
@@ -17,24 +17,26 @@ DOCS          = dist/doc/html/EtaMOO/etamoo/index.html
 HACKAGE       = hackage.haskell.org
 HACKAGE_DOCS  = http://$(HACKAGE)/packages/archive/$$pkg/latest/doc/html
 
+BUILD         = cabal build -j
+
 etamoo: FORCE
-	@cabal build --builddir=dist
+	@$(BUILD) --builddir=dist
 	ln -sf dist/build/etamoo/etamoo $@
 
 etamoo-test: FORCE
-	@cabal build --builddir=dist/.test
+	@$(BUILD) --builddir=dist/.test
 	ln -sf dist/.test/build/etamoo/etamoo $@
 
 etamoo-prof: FORCE
-	@cabal build --builddir=dist/.prof
+	@$(BUILD) --builddir=dist/.prof
 	ln -sf dist/.prof/build/etamoo/etamoo $@
 
 etamoo-llvm: FORCE
-	@cabal build --builddir=dist/.llvm
+	@$(BUILD) --builddir=dist/.llvm
 	ln -sf dist/.llvm/build/etamoo/etamoo $@
 
 $(BUILT_SOURCES): $(HSC_SOURCES)
-	$(MAKE) etamoo-test
+	$(MAKE) test
 
 hlint.html: $(HS_SOURCES) $(BUILT_SOURCES)
 	-hlint --report=$@ $^ >/dev/null
@@ -55,6 +57,6 @@ install: FORCE
 
 clean: FORCE
 	-@cabal clean --builddir=dist
-	rm -f etamoo etamoo-* *.prof hlint.html
+	rm -f etamoo etamoo-* *.prof *.aux *.hp *.ps hlint.html
 
 FORCE:
