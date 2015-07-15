@@ -83,11 +83,11 @@ distributions and platforms.
 There are a few options you can give to `cabal install` to customize your
 build:
 
-  | Option                | Feature                                       |
-  | --------------------- | --------------------------------------------- |
-  | `-j`                  | Build in parallel using multiple processors   |
-  | `-f llvm`             | Use GHC's LLVM backend to compile the code    |
-  | `-f 64bit`            | Enable 64-bit MOO integers                    |
+| Option                | Feature                                       |
+| --------------------- | --------------------------------------------- |
+| `-j`                  | Build in parallel using multiple processors   |
+| `-f llvm`             | Use GHC's LLVM backend to compile the code    |
+| `-f 64bit`            | Enable 64-bit MOO integers                    |
 
 EtaMOO has non-Haskell dependencies on two external libraries: _libpcre_ (with
 UTF-8 support enabled) for regular expression matching, and, possibly,
