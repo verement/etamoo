@@ -37,7 +37,6 @@ homepage:            http://verement.github.io/etamoo
 bug-reports:         https://github.com/verement/etamoo/issues
 
 extra-source-files:  README.md
-                     src/cbits/crypt.h
                      src/cbits/match.h
 
 source-repository head
