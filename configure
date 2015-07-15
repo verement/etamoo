@@ -1,5 +1,7 @@
 #! /bin/sh -e
 
+ghc --version
+
 cabal configure "$@" --builddir=dist
 
 case "$1" in
@@ -11,7 +13,7 @@ cabal configure "$@" --builddir=dist/.test --verbose=0  \
     --disable-optimization
 
 cabal configure "$@" --builddir=dist/.prof --verbose=0  \
-    --enable-executable-profiling
+    --enable-profiling
 
 cabal configure "$@" --builddir=dist/.llvm --verbose=0  \
     --flags=llvm

@@ -30,8 +30,8 @@ stability:           alpha
 category:            Network
 
 build-type:          Simple
-cabal-version:       >=1.8
-tested-with:         GHC == 7.6.3
+cabal-version:       >= 1.22
+tested-with:         GHC == 7.10.1
 
 homepage:            http://verement.github.io/etamoo
 bug-reports:         https://github.com/verement/etamoo/issues
@@ -61,6 +61,8 @@ flag outbound-network
   default:     False
 
 executable etamoo
+  default-language:    Haskell2010
+
   hs-source-dirs:      src
   main-is:             etamoo.hs
 
@@ -99,7 +101,8 @@ executable etamoo
   if flag(llvm)
     ghc-options:       -fllvm
 
-  extensions:          CPP
+  default-extensions:
+  other-extensions:    CPP
                        EmptyDataDecls
                        ExistentialQuantification
                        FlexibleInstances
