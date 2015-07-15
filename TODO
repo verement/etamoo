@@ -30,31 +30,57 @@
 **** $checkpoint_started()
 **** $checkpoint_finished()
 *** § 5.2.6 Player Input Handlers
-**** $do_command exceptions
+**** $do_command uncaught exceptions
 *** § 5.2.7 The First Tasks Run By the Server
 **** $dump_interval
 **** $user_disconnected()
+
 * Other
 ** Gather constants into a single location?
    - oob prefix, default port, etc.
-** Emergency Wizard Mode
-** Database dumps
-** L.server_options.connect_timeout
-** $user_disconnected() on db users
-** MOO string and list size limits?
+   - merge MOO.Database.LambdaMOO.default_max_stack_depth
+** queue_info() includes owner of current task?
+** recycle() object which is a target of a listening point
+** PREFIX/SUFFIX on empty input line, uncaught exception
+** Handle 'read' parsing errors
+** Revisit read() invariant
+** Enhance version number with git commit info
+** Unicode strings in database file
+** Close stdin/stdout
+
+* Before v1.0
+** Fix read() and OOB
+** Log connected players
 ** Finish built-in function implementations
+** Database dumps
+** $user_disconnected() on db users
+** Emergency Wizard Mode
+** L.server_options.connect_timeout
 ** Top-level Haskell exception handling
+** open_network_connection()
+** hold-input
+** Trap ^C interrupts
+
+* For v2.0 or later
+** General Unicode support
+** TLS connection option
+** Buffer outgoing data into larger chunks
+** Task time limits?
+** Optimize MOO AST for compilation
+   - Bind built-in functions directly to implementations
+** Alternative input languages?
+** JIT compilation to LLVM?
+** Use acid-state instead of STM?
 ** Read and write queued tasks and active connections
 ** Intern strings on parsing and database load
 ** Rewrite database reading using Attoparsec
 ** Rewrite parser using Happy
 ** Rewrite regexp translator using Writer monad
-** Optimize MOO AST for compilation
-** JIT compilation to LLVM?
-** Use acid-state instead of STM?
-** Use forkIO workaround to solve aborted STM problem
-** Task time limits?
-** queue_info() includes owner of current task?
-** recycle() object which is a target of a listening point
-** PREFIX/SUFFIX on empty input line, uncaught exception
-** Revisit read() invariant
+** MOO string and list size limits?
+** .program
+** Release unused memory upon storing property values
+** Binary database format
+** $server_options.{max_list_concat,max_string_concat}
+** $server_options.max_concat_catchable
+   - to govern whether violating new size limits causes out-of-seconds or
+     E_QUOTA error

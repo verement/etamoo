@@ -7,9 +7,9 @@ fully usable, although with further development it is hoped that it soon will
 be.**
 
 _At present, the code will load a database and listen for network
-connections. You can connect using any `telnet` client and interact with the
-MOO environment, however no changes to the database will be saved, and a few
-other features have also yet to be implemented._
+connections. You can connect using `telnet` or your favorite MUD client and
+interact with the MOO environment, however no changes to the database will be
+saved, and a few other features have also yet to be implemented._
 
 About
 =====
@@ -74,18 +74,27 @@ case, running:
 should automatically download, build, and install the `etamoo` executable
 after doing the same for all of its Haskell dependencies.
 
-  [Cabal]: http://www.haskell.org/cabal/
-
 Cabal itself is part of the [Haskell Platform][] which is available for many
 distributions and platforms.
 
+  [Cabal]: http://www.haskell.org/cabal/
   [Haskell Platform]: http://www.haskell.org/platform/
+
+There are a few options you can give to `cabal install` to customize your
+build:
+
+  | Option                | Feature                                       |
+  | --------------------- | --------------------------------------------- |
+  | `-j`                  | Build in parallel using multiple processors   |
+  | `-f llvm`             | Use GHC's LLVM backend to compile the code    |
+  | `-f 64bit`            | Enable 64-bit MOO integers                    |
 
 EtaMOO has non-Haskell dependencies on two external libraries: _libpcre_ (with
 UTF-8 support enabled) for regular expression matching, and, possibly,
 _libcrypt_ (often part of the standard libraries) for the MOO `crypt()`
-built-in function. You may need to ensure you have these available before
-installing EtaMOO.
+built-in function. You should ensure you have these available before
+installing EtaMOO (e.g. on Debian-derived systems, `sudo apt-get install
+libpcre3-dev`).
 
 Hacking
 -------
