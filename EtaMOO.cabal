@@ -141,7 +141,7 @@ executable etamoo
                      , random
                      , stm
                      , stm-chans
-                     , text >= 1.2
+                     , text >= 1.2.1.2
                      , time >= 1.5
                      , transformers
                      , unix
