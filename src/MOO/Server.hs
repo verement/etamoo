@@ -82,6 +82,7 @@ shutdownServer world' message = do
     writeLog world "SHUTDOWN: shutdown signal received"
 
     forM_ (M.elems $ connections world) $ \conn -> do
+      -- XXX probably not good to send to ALL connections
       sendToConnection conn $ "*** Shutting down: " <> message <> " ***"
       closeConnection conn
 
