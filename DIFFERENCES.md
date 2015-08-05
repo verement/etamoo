@@ -7,7 +7,7 @@ differences include:
 
   * EtaMOO fixes a long-standing bug in LambdaMOO that prevents commands using
     the "off of" preposition from being parsed correctly. To accomplish this,
-    it was necessary to change the "off/off of" preposition to "off of/off".
+    the "off/off of" preposition has been changed to "off of/off".
 
   * Assignment expressions behave somewhat differently in EtaMOO than they do
 	in LambdaMOO.
@@ -20,7 +20,7 @@ differences include:
 | `x[1] = (x = 0)`  | `x` => `{0, 2}` | (error) `E_TYPE` |
 
   * EtaMOO provides a visual indication of the point at which MOO code
-    compilation fails as part of the list of strings returned by
+    compilation failed as part of the list of strings returned by
     `set_verb_code()` and `eval()`.
 
   * To mirror and complement the native support for string-key association
@@ -40,7 +40,7 @@ differences include:
   * In both EtaMOO and LambdaMOO, the `crypt()` built-in is a thin wrapper
     around the host system's `crypt()` library function. LambdaMOO doesn't
     check the return value from this function to see if it failed; it ends up
-    returning an empty string in this case. EtaMOO raises E_INVARG instead.
+    returning an empty string in this case. EtaMOO raises `E_INVARG` instead.
     Note that `crypt()` can fail if an unsupported salt parameter is used.
 
   * In LambdaMOO, the `buffered_output_length()` built-in returns the number
