@@ -202,9 +202,9 @@ reparentObject (object, obj) (new_parent, maybeNewParent) = do
 
         findCommon :: [ObjId] -> [ObjId] -> Maybe ObjId
         findCommon xs ys = findCommon' (reverse xs) (reverse ys) Nothing
-        findCommon' (x:xs) (y:ys) _
-          | x == y = findCommon' xs ys (Just x)
-        findCommon' _ _ common = common
+          where findCommon' (x:xs) (y:ys) _
+                  | x == y = findCommon' xs ys (Just x)
+                findCommon' _ _ common = common
 
         allDefinedProperties :: [ObjId] -> MOO [StrT]
         allDefinedProperties = fmap ($ []) . foldM concatProps id

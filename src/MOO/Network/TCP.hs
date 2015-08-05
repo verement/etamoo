@@ -61,7 +61,7 @@ createTCPListener listener handler = do
 
     acceptThread <- forkIO $ acceptConnections sock handler
 
-    return $ listener {
+    return listener {
         listenerPoint  = TCP host boundPort
       , listenerCancel = killThread acceptThread >> close sock
       }
