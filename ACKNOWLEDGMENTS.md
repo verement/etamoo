@@ -29,6 +29,9 @@ these people and their contributions, with my gratitude...
     many years, and his contributions to the MOO community -- particularly in
     building and enhancing various databases -- are greatly appreciated.
 
+  * __Ben Jackson__ wrote the original WAIF datatype patches for the LambdaMOO
+    server upon which I based the WAIF implementation for EtaMOO.
+
   * __Kenny Root__ and __James Deikun__ were effective collaborators with me
     in the creation of Codepoint, a fork of LambdaMOO (based on the initial
     work of __H. Peter Anvin__) to support Unicode.

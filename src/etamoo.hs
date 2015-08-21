@@ -47,6 +47,9 @@ versionDetails = unlines [
 # else
   , "  32-bit MOO integers"
 # endif
+# ifdef MOO_WAIF
+  , "  WAIF support"
+# endif
 # ifdef MOO_OUTBOUND_NETWORK
   , "  open_network_connection() enabled by default"
 # else

@@ -33,10 +33,13 @@
 ** Enhance version number with git commit info
 ** Unicode strings in database file
 ** User reconnecting to different listening points
+** Circular WAIF references
+** Deepen value_bytes(waif)
 
 * Before v1.0
 ** Top-level Haskell exception handling
 ** open_network_connection()
+** Version/feature database compatibility
 
 * For v2.0 or later
 ** General Unicode support

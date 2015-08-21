@@ -1,5 +1,5 @@
 
-{-# LANGUAGE OverloadedStrings, ExistentialQuantification #-}
+{-# LANGUAGE CPP, OverloadedStrings, ExistentialQuantification #-}
 
 module MOO.Task (
   -- * Monad Interface
@@ -185,6 +185,9 @@ import {-# SOURCE #-} MOO.Network
 import MOO.Object
 import MOO.Types
 import MOO.Verb
+# ifdef MOO_WAIF
+import {-# SOURCE #-} MOO.WAIF
+# endif
 
 import qualified MOO.List as Lst
 import qualified MOO.String as Str
@@ -371,6 +374,9 @@ taskSize task = 64 + stateSize (taskState task)
         valueSize (Obj _) = 8
         valueSize (Err _) = 4
         valueSize (Lst x) = Lst.foldr' (\v a -> a + valueSize v) 0 x
+# ifdef MOO_WAIF
+        valueSize (Waf _) = 32
+# endif
 
 -- | The running state of a task
 data TaskStatus = Pending | Running | Forked | Suspended Wake | Reading
@@ -857,7 +863,7 @@ callSystemVerb' object name args argstr = getPlayer >>= \player ->
           variables     = vars
         , verbName      = name
         , verbLocation  = verbLoc
-        , initialThis   = object
+        , initialThis   = Obj object
         , initialPlayer = player
         }
     _ -> return Nothing
@@ -883,11 +889,11 @@ callCommandVerb player (verbLoc, verb) this command dobj iobj =
       variables     = vars
     , verbName      = name
     , verbLocation  = verbLoc
-    , initialThis   = this
+    , initialThis   = Obj this
     , initialPlayer = player
     }
 
-callVerb' :: ObjId -> ObjId -> Verb -> StrT -> [Value] -> MOO Value
+callVerb' :: Value -> ObjId -> Verb -> StrT -> [Value] -> MOO Value
 callVerb' this verbLoc verb name args = do
   thisFrame <- frame id
   wizard <- isWizard (permissions thisFrame)
@@ -895,12 +901,17 @@ callVerb' this verbLoc verb name args = do
       player = case (wizard, var "player") of
         (True, Obj oid) -> oid
         _               -> initialPlayer thisFrame
+      name' = case this of
+# ifdef MOO_WAIF
+        Waf{} -> mangleWaifVerbName name
+# endif
+        _     -> name
       vars  = variables thisFrame
       vars' = mkVariables [
-          ("this"  , Obj this)
-        , ("verb"  , Str name)
+          ("this"  , this)
+        , ("verb"  , Str name')
         , ("args"  , fromList args)
-        , ("caller", Obj $ initialThis thisFrame)
+        , ("caller", initialThis thisFrame)
         , ("player", Obj player)
         , retain "argstr"
         , retain "dobjstr"
@@ -919,7 +930,7 @@ callVerb' this verbLoc verb name args = do
     , initialPlayer = player
     }
 
-callVerb :: ObjId -> ObjId -> StrT -> [Value] -> MOO Value
+callVerb :: Value -> ObjId -> StrT -> [Value] -> MOO Value
 callVerb this oid name args =
   findVerb verbPermX name oid >>= \found -> case found of
     (Just verbLoc, Just verb) -> callVerb' this verbLoc verb name args
@@ -930,7 +941,7 @@ callFromFunc :: StrT -> LineNo -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
 callFromFunc func index (oid, name) args =
   findVerb verbPermX name oid >>= \found -> case found of
     (Just verbLoc, Just verb) -> fmap Just $ evalFromFunc func index $
-                                 callVerb' oid verbLoc verb name args
+                                 callVerb' (Obj oid) verbLoc verb name args
     _                         -> return Nothing
 
 evalFromFunc :: StrT -> LineNo -> MOO Value -> MOO Value
@@ -1090,7 +1101,7 @@ data StackFrame = Frame {
   , verbName      :: StrT
   , verbFullName  :: StrT
   , verbLocation  :: ObjId
-  , initialThis   :: ObjId
+  , initialThis   :: Value
   , initialPlayer :: ObjId
 
   , builtinFunc   :: Bool
@@ -1109,7 +1120,7 @@ initFrame = Frame {
   , verbName      = Str.empty
   , verbFullName  = Str.empty
   , verbLocation  = nothing
-  , initialThis   = nothing
+  , initialThis   = Obj nothing
   , initialPlayer = nothing
 
   , builtinFunc   = False
@@ -1121,7 +1132,7 @@ formatFrames includeLineNumbers = fromListBy formatFrame
 
   where formatFrame :: StackFrame -> Value
         formatFrame frame = fromList $
-            Obj (initialThis   frame)
+                 initialThis   frame
           : Str (verbName      frame)
           : Obj (permissions   frame)
           : Obj (verbLocation  frame)
@@ -1265,6 +1276,9 @@ initVariables = HM.fromList $ [
           , ("STR"  , TStr)
           , ("OBJ"  , TObj)
           , ("ERR"  , TErr)
+# ifdef MOO_WAIF
+          , ("WAIF" , TWaf)
+# endif
           ]
 
 -- | Create a variable block for a verb by overriding the default.
@@ -1485,8 +1499,8 @@ formatTraceback except@Exception { exceptionCallStack = Stack frames } =
                            , verbLocation = loc, verbFullName = name
                            , initialThis = this, lineNumber = line } = do
           tell $ "#" <> TLB.decimal loc <> ":" <> Str.toBuilder name
-          when (this /= loc) $ tell $ " (this == #" <> TLB.decimal this <> ")"
-          when (line > 0)    $ tell $ ", line " <> TLB.decimal line
+          when (this /= Obj loc) $ tell $ " (this == " <> toBuilder' this <> ")"
+          when (line > 0)        $ tell $ ", line " <> TLB.decimal line
         describeVerb Frame { builtinFunc = True, verbName = name } =
           tell $ "built-in function " <> Str.toBuilder name <> "()"
 

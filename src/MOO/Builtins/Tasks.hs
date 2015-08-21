@@ -92,7 +92,7 @@ bf_eval = Builtin "eval" 1 (Just 1) [TStr] TLst $ \[Str string] ->
                                   , verbPermD   = True
                                   }
           vars = mkVariables [ ("player", Obj player)
-                             , ("caller", Obj this)
+                             , ("caller", this)
                              ]
       value <- evalFromFunc "eval" 0 $
                runVerb verb initFrame { variables     = vars
@@ -219,7 +219,7 @@ bf_queued_tasks = Builtin "queued_tasks" 0 (Just 0) [] TLst $ \[] -> do
           , Str . verbFullName . activeFrame   -- verb-name
           , Int . fromIntegral .
                   lineNumber   . activeFrame   -- line
-          , Obj . initialThis  . activeFrame   -- this
+          ,       initialThis  . activeFrame   -- this
           , Int . fromIntegral . taskSize      -- task-size
           ]
 

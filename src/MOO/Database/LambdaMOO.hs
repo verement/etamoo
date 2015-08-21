@@ -1,5 +1,5 @@
 
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP, OverloadedStrings #-}
 
 module MOO.Database.LambdaMOO (loadLMDatabase, saveLMDatabase) where
 
@@ -44,6 +44,9 @@ import MOO.Parser
 import MOO.Types
 import MOO.Unparser
 import MOO.Verb
+# ifdef MOO_WAIF
+import MOO.WAIF (WAIF)
+# endif
 
 import qualified MOO.List as Lst
 import qualified MOO.String as Str
@@ -841,6 +844,12 @@ tellValue value = case value of
   Err x -> tellLn (decimal  type_err)   >> tellLn (decimal $ fromEnum x)
   Lst x -> tellLn (decimal _type_list)  >> tellLn (decimal $ Lst.length x) >>
            Lst.forM_ x tellValue
+# ifdef MOO_WAIF
+  Waf x -> tellWaif x
+
+tellWaif :: WAIF -> DBWriter ()
+tellWaif _ = error "exporting WAIF values not yet implemented"
+# endif
 
 tellVerbs :: (ObjId, [Verb]) -> DBWriter ()
 tellVerbs (oid, verbs) = forM_ (zip [0..] verbs) $ \(vnum, verb) -> do

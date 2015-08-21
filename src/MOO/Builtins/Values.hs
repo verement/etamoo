@@ -114,7 +114,7 @@ bf_toint = Builtin "toint" 1 (Just 1) [TAny] TInt $ \[value] -> toint value
           Obj x -> return (Int $ fromIntegral x)
           Str x -> maybe (return $ Int 0) toint (parseNum $ Str.toText x)
           Err x -> return (Int $ fromIntegral $ fromEnum x)
-          Lst _ -> raise E_TYPE
+          _     -> raise E_TYPE
 
 bf_tonum = bf_toint { builtinName = "tonum" }
 
@@ -128,7 +128,7 @@ bf_toobj = Builtin "toobj" 1 (Just 1) [TAny] TObj $ \[value] -> toobj value
           Str x -> maybe (return $ Obj 0) toobj $
                    parseNum (Str.toText x) <|> parseObj (Str.toText x)
           Err x -> return (Obj $ fromIntegral $ fromEnum x)
-          Lst _ -> raise E_TYPE
+          _     -> raise E_TYPE
 
 bf_tofloat = Builtin "tofloat" 1 (Just 1)
              [TAny] TFlt $ \[value] -> tofloat value
@@ -138,7 +138,7 @@ bf_tofloat = Builtin "tofloat" 1 (Just 1)
           Obj x -> return (Flt $ fromIntegral x)
           Str x -> maybe (return $ Flt 0) tofloat (parseNum $ Str.toText x)
           Err x -> return (Flt $ fromIntegral $ fromEnum x)
-          Lst _ -> raise E_TYPE
+          _     -> raise E_TYPE
 
 bf_equal = Builtin "equal" 2 (Just 2) [TAny, TAny] TInt $ \[value1, value2] ->
   return $ truthValue (value1 `equal` value2)

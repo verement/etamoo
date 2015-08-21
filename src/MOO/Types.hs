@@ -12,6 +12,9 @@ module MOO.Types (
   , ObjT
   , ErrT
   , LstT
+# ifdef MOO_WAIF
+  , WafT
+# endif
 
   , ObjId
   , Id
@@ -47,6 +50,9 @@ module MOO.Types (
   , objValue
   , errValue
   , lstValue
+# ifdef MOO_WAIF
+  , wafValue
+# endif
 
   , toText
   , toBuilder
@@ -91,6 +97,9 @@ import qualified Data.Text.Lazy.Builder.RealFloat as TLB
 
 import {-# SOURCE #-} MOO.List (MOOList)
 import MOO.String (MOOString)
+# ifdef MOO_WAIF
+import {-# SOURCE #-} MOO.WAIF (WAIF)
+# endif
 
 import {-# SOURCE #-} qualified MOO.List as Lst
 import qualified MOO.String as Str
@@ -106,6 +115,9 @@ type StrT = MOOString     -- ^ MOO string
 type ObjT = ObjId         -- ^ MOO object number
 type ErrT = Error         -- ^ MOO error
 type LstT = MOOList       -- ^ MOO list
+# ifdef MOO_WAIF
+type WafT = WAIF          -- ^ MOO WAIF
+# endif
 
 type ObjId = Int          -- ^ MOO object number
 
@@ -153,6 +165,9 @@ data Value = Int IntT  -- ^ integer
            | Obj ObjT  -- ^ object number
            | Err ErrT  -- ^ error
            | Lst LstT  -- ^ list
+# ifdef MOO_WAIF
+           | Waf WafT  -- ^ WAIF
+# endif
            deriving (Eq, Show, Typeable)
 
 instance VCacheable Value where
@@ -163,6 +178,9 @@ instance VCacheable Value where
     Obj x -> put (toInteger x)
     Err x -> put (fromEnum x)
     Lst x -> put x
+# ifdef MOO_WAIF
+    Waf x -> put x
+# endif
 
   get = get >>= \t -> case t of
     TInt -> Int . fromInteger <$> get
@@ -171,6 +189,9 @@ instance VCacheable Value where
     TObj -> Obj . fromInteger <$> get
     TErr -> Err . toEnum <$> get
     TLst -> Lst <$> get
+# ifdef MOO_WAIF
+    TWaf -> Waf <$> get
+# endif
     _    -> fail $ "get: unknown Value type (" ++ show (fromEnum t) ++ ")"
 
 -- | A default MOO value
@@ -204,6 +225,9 @@ instance Ord Value where
 comparable :: Value -> Value -> Bool
 comparable x y = case (typeOf x, typeOf y) of
   (TLst, _ ) -> False
+# ifdef MOO_WAIF
+  (TWaf, _ ) -> False
+# endif
   (tx  , ty) -> tx == ty
 
 -- | A 'Type' represents one or more MOO value types.
@@ -215,6 +239,9 @@ data Type = TAny  -- ^ any type
           | TObj  -- ^ object number
           | TErr  -- ^ error
           | TLst  -- ^ list
+# ifdef MOO_WAIF
+          | TWaf  -- ^ WAIF
+# endif
           deriving (Eq, Enum, Typeable)
 
 instance VCacheable Type where
@@ -261,6 +288,9 @@ typeOf Str{} = TStr
 typeOf Obj{} = TObj
 typeOf Err{} = TErr
 typeOf Lst{} = TLst
+# ifdef MOO_WAIF
+typeOf Waf{} = TWaf
+# endif
 
 -- | Return an integer code corresponding to the given type. These codes are
 -- visible to MOO code via the @typeof()@ built-in function and various
@@ -274,6 +304,9 @@ typeCode TStr =  2
 typeCode TErr =  3
 typeCode TLst =  4
 typeCode TFlt =  9
+# ifdef MOO_WAIF
+typeCode TWaf = 10
+# endif
 
 -- | Extract an 'IntT' from a MOO value.
 intValue :: Value -> Maybe IntT
@@ -305,12 +338,22 @@ lstValue :: Value -> Maybe LstT
 lstValue (Lst x) = Just x
 lstValue  _      = Nothing
 
+# ifdef MOO_WAIF
+-- | Extract a 'WafT' from a MOO value.
+wafValue :: Value -> Maybe WafT
+wafValue (Waf x) = Just x
+wafValue  _      = Nothing
+# endif
+
 -- | Return a 'Text' representation of the given MOO value, using the same
 -- rules as the @tostr()@ built-in function.
 toText :: Value -> Text
 toText (Str x) = Str.toText x
 toText (Err x) = error2text x
 toText (Lst _) = "{list}"
+# ifdef MOO_WAIF
+toText (Waf _) = "{waif}"
+# endif
 toText v       = builder2text (toBuilder v)
 
 -- | Return a 'Builder' representation of the given MOO value, using the same
@@ -336,8 +379,10 @@ toBuilder' (Str x) = quote <> Str.foldr escape quote x
         escape '"'  = mappend backslash . mappend quote
         escape '\\' = mappend backslash . mappend backslash
         escape c    = mappend (TLB.singleton c)
-
 toBuilder' (Err x) = TLB.fromString (show x)
+# ifdef MOO_WAIF
+toBuilder' (Waf x) = TLB.fromString (show x)
+# endif
 toBuilder' v       = toBuilder v
 
 -- | Return a 'Text' representation of the given MOO value, using the same

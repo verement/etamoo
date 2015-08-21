@@ -120,3 +120,52 @@ differences include:
     arbitrary MOO commands from the database in addition to the mode's special
     built-in commands. Fourthly, EtaMOO provides line editing, history, and
     command completion (based on database contents) for convenience.
+
+WAIF Notes
+----------
+
+EtaMOO includes an optional WAIF datatype implementation based on
+[Ben Jackson's WAIF patches][] for the LambdaMOO server. While the
+implementation closely follows Ben Jackson's description, there are some
+differences compared with LambdaMOO:
+
+  [Ben Jackson's WAIF patches]: http://ben.com/MOO/waif.html
+
+  * The `toliteral()` format of WAIF values in EtaMOO includes a unique
+    address to distinguish individual WAIFs. Consequently, `toliteral(w1) ==
+    toliteral(w2)` iff `w1 == w2` for any WAIFs `w1` and `w2`, which also
+    ensures a high likelihood that `value_hash(w1) != value_hash(w2)` when `w1
+    != w2`. Note that WAIF addresses are informational only and should not be
+    relied upon for any purpose; they are not preserved across database
+    export/import, and they are not universally unique. (The behavior of
+    `toliteral()` is subject to change.)
+
+  * The ordering comparison operators (`<`, `<=`, `>=`, `>`) cannot be used
+    with WAIFs in EtaMOO; such use will raise `E_TYPE`. (While these operators
+    did not raise an error in LambdaMOO, they did elicit a log message and the
+    results were basically nonsensical.)
+
+  * EtaMOO allows WAIFs to be created with an invalid class object
+    (e.g. `#-1`). Such WAIFs behave the same as WAIFs whose class object is
+    later recycled; attempts to dereference properties or call methods on
+    these WAIFs will raise `E_INVIND`.
+
+  * The effect of renaming properties on class objects referenced by existing
+    WAIFs is unspecified. Currently this may cause the corresponding property
+    value on all existing WAIFs to become hidden, or it may reveal a
+    previously hidden value. Similar effects can also result from re-adding
+    previously removed properties. (This is subject to change.)
+
+  * Tracebacks in EtaMOO include a description of `this` when the value is a
+    WAIF. (This is subject to change.)
+
+  * EtaMOO defines the variable `WAIF` within MOO verbs to have the same value
+    as `typeof(new_waif())`.
+
+  * Currently EtaMOO allows WAIFs to contain circular references. While this
+    is by itself not a problem, it can cause a space leak in the database file
+    if the cyclic references are not broken before the WAIFs are garbage
+    collected. Note that LambdaMOO does not allow WAIFs to contain circular
+    references, so exporting a database with such references and loading it
+    into LambdaMOO may result in undefined behavior. (This is basically a bug
+    and subject to change.)

@@ -1,4 +1,6 @@
 
+{-# LANGUAGE CPP, OverloadedStrings #-}
+
 -- | Compiling abstract syntax trees into 'MOO' computations
 module MOO.Compiler (compile, evaluate) where
 
@@ -17,6 +19,9 @@ import MOO.Builtins
 import MOO.Object
 import MOO.Task
 import MOO.Types
+# ifdef MOO_WAIF
+import MOO.WAIF
+# endif
 
 import qualified MOO.List as Lst
 import qualified MOO.String as Str
@@ -198,11 +203,12 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
     vname'  <- evaluate vname
     args'   <- expand args
 
-    (oid, name) <- case (target', vname') of
-      (Obj oid, Str name) -> return (oid, name)
-      (_      , _       ) -> raise E_TYPE
-
-    callVerb oid oid name args'
+    case (target', vname') of
+      (this@(Obj oid), Str name) -> callVerb this oid name args'
+# ifdef MOO_WAIF
+      (this@(Waf waf), Str name) -> callWaifVerb this waf name args'
+# endif
+      (_             , _       ) -> raise E_TYPE
 
   BuiltinFunc func args -> expand args >>= callBuiltin func
 
@@ -275,8 +281,8 @@ storeVariable var value = do
     frame { variables = HM.insert var value (variables frame) }
   return value
 
-fetchProperty :: (ObjT, StrT) -> MOO Value
-fetchProperty (oid, name) = do
+fetchProperty :: (Value, StrT) -> MOO Value
+fetchProperty (Obj oid, name) = do
   obj <- maybe (raise E_INVIND) return =<< getObject oid
   maybe (search False obj) (handleBuiltin obj) $ builtinProperty name
 
@@ -295,9 +301,12 @@ fetchProperty (oid, name) = do
         handleBuiltin :: Object -> (Object -> Value) -> MOO Value
         handleBuiltin obj prop = checkProtectedProperty (toId name) >>
                                  return (prop obj)
+# ifdef MOO_WAIF
+fetchProperty (Waf waif, name) = fetchWaifProperty waif name
+# endif
 
-storeProperty :: (ObjT, StrT) -> Value -> MOO Value
-storeProperty (oid, name) value = do
+storeProperty :: (Value, StrT) -> Value -> MOO Value
+storeProperty (Obj oid, name) value = do
   obj <- maybe (raise E_INVIND) return =<< getObject oid
   if isBuiltinProperty name
     then checkProtectedProperty (toId name) >>
@@ -307,6 +316,9 @@ storeProperty (oid, name) value = do
       vspace <- getVSpace
       return prop { propertyValue = Just (vref vspace value) }
   return value
+# ifdef MOO_WAIF
+storeProperty (Waf waif, name) value = storeWaifProperty waif name value
+# endif
 
 withIndexLength :: Value -> MOO a -> MOO a
 withIndexLength value = local $ \env -> env { indexLength = valueLength }
@@ -356,13 +368,16 @@ lValue (PropertyRef objExpr nameExpr) = LValue fetch store change
           value <- fetchProperty refs
           return (value, storeProperty refs)
 
-        getRefs :: MOO (ObjT, StrT)
+        getRefs :: MOO (Value, StrT)
         getRefs = do
           objRef  <- evaluate objExpr
           nameRef <- evaluate nameExpr
           case (objRef, nameRef) of
-            (Obj oid, Str name) -> return (oid, name)
-            _                   -> raise E_TYPE
+            (obj@Obj{}, Str name) -> return (obj, name)
+# ifdef MOO_WAIF
+            (waf@Waf{}, Str name) -> return (waf, name)
+# endif
+            _                     -> raise E_TYPE
 
 lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
   where fetchIndex = fst <$> changeIndex

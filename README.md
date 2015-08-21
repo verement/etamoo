@@ -43,6 +43,9 @@ EtaMOO differs from LambdaMOO in a few significant ways:
 
   * EtaMOO supports 64-bit MOO integers via compile-time build option.
 
+  * EtaMOO supports the lightweight object [WAIF datatype][] via compile-time
+    build option.
+
   * EtaMOO natively supports string-key association lists with efficient
     lookup and update operations; the list index syntax has been extended to
     allow _`alist`_`[`_`key`_`]` and _`alist`_`[`_`key`_`] = `_`value`_ for
@@ -64,6 +67,7 @@ EtaMOO differs from LambdaMOO in a few significant ways:
   * EtaMOO supports IPv6.
 
   [LMDB]: http://symas.com/mdb/
+  [WAIF datatype]: http://ben.com/MOO/waif.html
 
 The implementation of EtaMOO otherwise closely follows the specifications of
 the [LambdaMOO Programmer's Manual][], and should be compatible with most
@@ -96,6 +100,7 @@ build:
 | `-j`                  | Build in parallel using multiple processors   |
 | `-f llvm`             | Use GHC's LLVM backend to compile the code    |
 | `-f 64bit`            | Enable 64-bit MOO integers                    |
+| `-f waif`             | Enable the lightweight object WAIF datatype   |
 
 EtaMOO has non-Haskell dependencies on three external libraries: _liblmdb_ for
 database persistence, _libpcre_ (with UTF-8 support enabled) for regular

@@ -1,5 +1,5 @@
 
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP, OverloadedStrings #-}
 
 module MOO.Builtins (builtinFunctions, callBuiltin, verifyBuiltins) where
 
@@ -42,7 +42,7 @@ callBuiltin func args = do
     (Just builtin, False) -> call builtin
     (Just builtin, True)  -> do
       this <- frame initialThis
-      if this == systemObject then call builtin
+      if this == Obj systemObject then call builtin
         else callSystemVerb ("bf_" <> fromId func) args >>=
              maybe (checkWizard >> call builtin) return
     (Nothing, _) -> let name    = fromId func
@@ -119,6 +119,9 @@ verifyBuiltins = foldM accum 0 $ HM.elems builtinFunctions
         mkArgs :: Type -> [Value]
         mkArgs TAny = mkArgs TNum ++ mkArgs TStr ++ mkArgs TObj ++
                       mkArgs TErr ++ mkArgs TLst
+# ifdef MOO_WAIF
+                                                 ++ mkArgs TWaf
+# endif
         mkArgs TNum = mkArgs TInt ++ mkArgs TFlt
         mkArgs TInt = [Int 0]
         mkArgs TFlt = [Flt 0]
@@ -126,3 +129,6 @@ verifyBuiltins = foldM accum 0 $ HM.elems builtinFunctions
         mkArgs TObj = [Obj 0]
         mkArgs TErr = [Err E_NONE]
         mkArgs TLst = [emptyList]
+# ifdef MOO_WAIF
+        mkArgs TWaf = [Waf undefined]
+# endif

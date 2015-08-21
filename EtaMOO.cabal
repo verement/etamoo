@@ -63,6 +63,10 @@ flag outbound-network
   description: Enable open_network_connection() by default
   default:     False
 
+flag waif
+  description: Enable WAIF support
+  default:     False
+
 executable etamoo
   default-language:    Haskell2010
 
@@ -124,8 +128,14 @@ executable etamoo
 
   if flag(64bit)
     cpp-options:       -DMOO_64BIT_INTEGER
+
   if flag(outbound-network)
     cpp-options:       -DMOO_OUTBOUND_NETWORK
+
+  if flag(waif)
+    cpp-options:       -DMOO_WAIF
+    other-modules:     MOO.Builtins.Extra.WAIF
+                       MOO.WAIF
 
   c-sources:           src/cbits/match.c
 
