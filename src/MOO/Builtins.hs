@@ -4,7 +4,7 @@
 module MOO.Builtins ( builtinFunctions, callBuiltin, verifyBuiltins ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (foldM, join)
+import Control.Monad (foldM)
 import Control.Monad.State (gets)
 import Data.HashMap.Lazy (HashMap)
 import Data.List (transpose, inits)
@@ -171,8 +171,8 @@ miscBuiltins = [
 bf_pass = Builtin "pass" 0 Nothing [] TAny $ \args -> do
   (name, verbLoc, this) <- frame $ \frame ->
     (verbName frame, verbLocation frame, initialThis frame)
-  maybeMaybeParent <- fmap objectParent <$> getObject verbLoc
-  case join maybeMaybeParent of
+  maybeObject <- getObject verbLoc
+  case maybeObject >>= objectParent of
     Just parent -> callVerb parent this name args
     Nothing     -> raise E_VERBNF
 

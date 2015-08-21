@@ -142,7 +142,7 @@ import Control.Concurrent.STM (STM, TVar, atomically, retry, throwSTM,
                                newEmptyTMVar, putTMVar, takeTMVar,
                                newTVarIO, readTVar, writeTVar, modifyTVar)
 import Control.Exception (SomeException, try)
-import Control.Monad (when, unless, join, void, (>=>), forM_)
+import Control.Monad (when, unless, void, (>=>), forM_)
 import Control.Monad.Cont (ContT, runContT, callCC)
 import Control.Monad.Reader (ReaderT, runReaderT, local, asks)
 import Control.Monad.State.Strict (StateT, runStateT, get, gets, modify)
@@ -1407,9 +1407,7 @@ checkRecurrence relation subject = checkRecurrence'
   where checkRecurrence' object = do
           when (object == subject) $ raise E_RECMOVE
           maybeObject <- getObject object
-          case join $ relation <$> maybeObject of
-            Just oid -> checkRecurrence' oid
-            Nothing  -> return ()
+          maybe (return ()) checkRecurrence' $ maybeObject >>= relation
 
 -- | Verify that the programmer has not reached their queued task limit
 -- (before creating a new forked, suspended, or reading task).

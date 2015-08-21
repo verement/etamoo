@@ -5,7 +5,7 @@ module MOO.Builtins.Objects ( builtins ) where
 
 import Control.Applicative ((<$>))
 import Control.Concurrent.STM (STM, TVar, newTVar, readTVar, writeTVar)
-import Control.Monad (when, unless, void, forM_, foldM, join)
+import Control.Monad (when, unless, void, forM_, foldM)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Set (Set)
 import Data.Text (Text)
@@ -191,11 +191,7 @@ reparentObject (object, obj) (new_parent, maybeNewParent) = do
   where ancestors :: ObjId -> MOO [ObjId]
         ancestors oid = do
           maybeObject <- getObject oid
-          case join $ objectParent <$> maybeObject of
-            Just parent -> do
-              ancestors <- ancestors parent
-              return (parent : ancestors)
-            Nothing -> return []
+          maybe (return []) ancestors' $ maybeObject >>= objectParent
 
         ancestors' :: ObjId -> MOO [ObjId]
         ancestors' oid = (oid :) <$> ancestors oid
