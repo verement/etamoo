@@ -65,9 +65,8 @@ bf_call_function = Builtin "call_function" 1 Nothing
 bf_function_info = Builtin "function_info" 0 (Just 1)
                    [TStr] TLst $ \args -> case args of
   []         -> return $ fromListBy formatInfo $ HM.elems builtinFunctions
-  [Str name] -> case HM.lookup (toId name) builtinFunctions of
-    Just builtin -> return $ formatInfo builtin
-    Nothing      -> raise E_INVARG
+  [Str name] -> maybe (raise E_INVARG) (return . formatInfo) $
+                HM.lookup (toId name) builtinFunctions
 
   where formatInfo :: Builtin -> Value
         formatInfo Builtin { builtinName     = name

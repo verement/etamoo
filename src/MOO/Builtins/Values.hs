@@ -4,7 +4,7 @@
 module MOO.Builtins.Values ( builtins ) where
 
 import Control.Applicative ((<$>), (<*>), (<|>))
-import Control.Monad (unless, when, (<=<))
+import Control.Monad (unless, (<=<))
 import Data.ByteString (ByteString)
 import Data.Char (isDigit)
 import Data.Maybe (fromJust)
@@ -226,18 +226,21 @@ bf_length = Builtin "length" 1 (Just 1) [TAny] TInt $ \[arg] -> case arg of
   Lst list   -> return $ Int $ fromIntegral $ Lst.length list
   _          -> raise E_TYPE
 
+caseFold' :: Bool -> StrT -> StrT
+caseFold' caseMatters
+  | caseMatters = id
+  | otherwise   = Str.fromText . Str.toCaseFold
+                  -- XXX this won't work for Unicode in general
+
 bf_strsub = Builtin "strsub" 3 (Just 4) [TStr, TStr, TStr, TAny]
             TStr $ \(Str subject : Str what : Str with : optional) ->
   let [case_matters] = booleanDefaults optional [False]
-
-      caseFold :: StrT -> StrT
-      caseFold str = if case_matters then str
-                     else Str.fromText (Str.toCaseFold str)
-                          -- XXX this won't work for Unicode in general
+      caseFold = caseFold' case_matters :: StrT -> StrT
+      what'    = caseFold what          :: StrT
 
       subs :: StrT -> [StrT]
       subs ""      = []
-      subs subject = case Str.breakOn (caseFold what) (caseFold subject) of
+      subs subject = case Str.breakOn what' (caseFold subject) of
         (_, "")     -> [subject]
         (prefix, _) -> let (s, r) = Str.splitAt (Str.length prefix) subject
                        in s : with : subs (Str.drop whatLen r)
@@ -253,11 +256,7 @@ indexBuiltin name nullCase mainCase =
   Builtin name 2 (Just 3) [TStr, TStr, TAny]
   TInt $ \(Str str1 : Str str2 : optional) ->
   let [case_matters] = booleanDefaults optional [False]
-
-      caseFold :: StrT -> StrT
-      caseFold str = if case_matters then str
-                     else Str.fromText (Str.toCaseFold str)
-                          -- XXX this won't work for Unicode in general
+      caseFold = caseFold' case_matters :: StrT -> StrT
 
   in return $ Int $ if Str.null str2 then nullCase str1
                     else mainCase (caseFold str2) (caseFold str1)
@@ -285,19 +284,22 @@ bf_strcmp = Builtin "strcmp" 2 (Just 2)
 bf_decode_binary = Builtin "decode_binary" 1 (Just 2)
                    [TStr, TAny] TLst $ \(Str bin_string : optional) ->
   let [fully] = booleanDefaults optional [False]
+
+      mkResult :: [Word8] -> Value
       mkResult | fully     = fromListBy (Int . fromIntegral)
                | otherwise = fromList . grouping id
+
+      grouping :: (String -> String) -> [Word8] -> [Value]
+      grouping g (w:ws)
+        | Str.validChar c = grouping (g . (c :)) ws
+        | otherwise       = group g ++ Int (fromIntegral w) : grouping id ws
+        where c = toEnum (fromIntegral w)
+      grouping g [] = group g
+
+      group :: (String -> String) -> [Value]
+      group g = [ Str (Str.fromString g') | let g' = g [], not (null g') ]
+
   in mkResult . BS.unpack <$> binaryString bin_string
-
-  where grouping :: (String -> String) -> [Word8] -> [Value]
-        grouping g (w:ws)
-          | Str.validChar c = grouping (g . (c :)) ws
-          | otherwise       = group g ++ Int (fromIntegral w) : grouping id ws
-          where c = toEnum (fromIntegral w)
-        grouping g [] = group g
-
-        group :: (String -> String) -> [Value]
-        group g = [ Str (Str.fromString g') | let g' = g [], not (null g') ]
 
 bf_encode_binary = Builtin "encode_binary" 0 Nothing [] TStr $
                    fmap (Str . Str.fromBinary) . encodeBinary
@@ -399,6 +401,7 @@ bf_substitute = Builtin "substitute" 2 (Just 2)
           walk []     = return []
 
       Str . Str.fromString <$> walk (Str.toString template)
+
     _ -> raise E_INVARG
 
 bf_crypt = Builtin "crypt" 1 (Just 2)
@@ -466,23 +469,23 @@ bf_listappend = Builtin "listappend" 2 (Just 3)
 
 bf_listdelete = Builtin "listdelete" 2 (Just 2) [TLst, TAny]
                 TLst $ \[Lst list, index] -> case index of
-  Int index -> do let index' = fromIntegral index
-                  when (index' < 1 || index' > Lst.length list) $ raise E_RANGE
-                  return $ Lst $ Lst.delete list (index' - 1)
-  Str key   -> case Lst.assocLens key list of
-                 Just (_, change) -> return (Lst $ change Nothing)
-                 Nothing          -> raise E_INVIND
-  _         -> raise E_TYPE
+  Int index | index' < 1 || index' > Lst.length list -> raise E_RANGE
+            | otherwise -> return $ Lst $ Lst.delete list (index' - 1)
+    where index' = fromIntegral index
+  Str key -> case Lst.assocLens key list of
+    Just (_, change) -> return (Lst $ change Nothing)
+    Nothing          -> raise E_INVIND
+  _ -> raise E_TYPE
 
 bf_listset = Builtin "listset" 3 (Just 3) [TLst, TAny, TAny]
              TLst $ \[Lst list, value, index] -> case index of
-  Int index -> do let index' = fromIntegral index
-                  when (index' < 1 || index' > Lst.length list) $ raise E_RANGE
-                  return $ Lst $ Lst.set list (index' - 1) value
-  Str key   -> case Lst.assocLens key list of
-                 Just (_, change) -> return (Lst $ change $ Just value)
-                 Nothing          -> raise E_INVIND
-  _         -> raise E_TYPE
+  Int index | index' < 1 || index' > Lst.length list -> raise E_RANGE
+            | otherwise -> return $ Lst $ Lst.set list (index' - 1) value
+    where index' = fromIntegral index
+  Str key -> case Lst.assocLens key list of
+    Just (_, change) -> return (Lst $ change $ Just value)
+    Nothing          -> raise E_INVIND
+  _ -> raise E_TYPE
 
 bf_setadd = Builtin "setadd" 2 (Just 2)
             [TLst, TAny] TLst $ \[Lst list, value] ->

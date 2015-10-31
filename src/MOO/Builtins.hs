@@ -68,19 +68,19 @@ callBuiltin func args = do
         checkArgs Builtin { builtinMinArgs  = min
                           , builtinMaxArgs  = max
                           , builtinArgTypes = types
-                          } args =
-          let nargs = length args
-          in if nargs < min || nargs > fromMaybe nargs max then raise E_ARGS
-             else checkTypes types args
+                          } args
+          | nargs < min || nargs > fromMaybe nargs max = raise E_ARGS
+          | otherwise                                  = checkTypes types args
+          where nargs = length args
 
         checkTypes :: [Type] -> [Value] -> MOO ()
-        checkTypes (t:ts) (a:as) =
-          if typeMismatch t (typeOf a) then raise E_TYPE
-          else checkTypes ts as
+        checkTypes (t:ts) (v:vs)
+          | typeMismatch t (typeOf v) = raise E_TYPE
+          | otherwise                 = checkTypes ts vs
         checkTypes _ _ = return ()
 
         typeMismatch :: Type -> Type -> Bool
-        typeMismatch x    y    | x == y = False
+        typeMismatch a    b    | a == b = False
         typeMismatch TAny _             = False
         typeMismatch TNum TInt          = False
         typeMismatch TNum TFlt          = False

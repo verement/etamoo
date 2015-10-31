@@ -212,6 +212,7 @@ data World = World {
     -- ^ Shutdown signal
   }
 
+initWorld :: World
 initWorld = World {
     writeLog         = undefined
 
@@ -261,6 +262,7 @@ instance Show Task where
   show task = "<Task " ++ show (taskId task) ++
               ": " ++ show (taskStatus task) ++ ">"
 
+initTask :: Task
 initTask = Task {
     taskId          = 0
   , taskStatus      = Pending
@@ -672,6 +674,7 @@ data TaskState = State {
   , delayedIO    :: DelayedIO
   }
 
+initState :: TaskState
 initState = State {
     ticksLeft    = defaultFgTicks
   , secondsLimit = defaultFgSeconds
@@ -1073,6 +1076,7 @@ data StackFrame = Frame {
   , lineNumber    :: LineNo
   } deriving Show
 
+initFrame :: StackFrame
 initFrame = Frame {
     depthLeft     = defaultMaxStackDepth
 
@@ -1271,6 +1275,7 @@ data Exception = Exception {
 type Code    = Value
 type Message = StrT
 
+initException :: Exception
 initException = Exception {
     exceptionCode      = Err E_NONE
   , exceptionMessage   = Str.fromText (error2text E_NONE)

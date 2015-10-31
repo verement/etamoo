@@ -487,14 +487,16 @@ scatterAssign items args = do
   walk items args (nargs - nreqs)
   return (Lst args)
 
-  where nargs = Lst.length args
-        nreqs = count required items
-        nopts = count optional items
-        ntarg = nreqs + nopts
-        nrest = if haveRest && nargs >= ntarg then nargs - ntarg else 0
+  where nargs = Lst.length args      :: Int
+        nreqs = count required items :: Int
+        nopts = count optional items :: Int
+        ntarg = nreqs + nopts        :: Int
+        nrest = if haveRest && nargs >= ntarg then nargs - ntarg else 0 :: Int
 
-        count p  = length . filter p
-        haveRest = any rest items
+        count :: (a -> Bool) -> [a] -> Int
+        count p = length . filter p
+
+        haveRest = any rest items :: Bool
 
         required, optional, rest :: ScatterItem -> Bool
         required ScatRequired{} = True
@@ -512,8 +514,8 @@ scatterAssign items args = do
           ScatOptional var opt
             | noptAvail > 0 -> do
                 storeVariable var (Lst.head args)
-                walk items (Lst.tail args) (noptAvail - 1)
-            | otherwise     -> do
+                walk items (Lst.tail args) (pred noptAvail)
+            | otherwise -> do
                 maybe (return zero) (storeVariable var <=< evaluate) opt
                 walk items args noptAvail
           ScatRest var -> do

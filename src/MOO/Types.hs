@@ -227,9 +227,9 @@ instance Sizeable Value where
     Lst x -> box + storageBytes x
     where box = storageBytes ()
 
--- | A default (false) MOO value
+-- | A default MOO value
 zero :: Value
-zero = truthValue False
+zero = Int 0
 
 -- | An empty MOO string
 emptyString :: Value
@@ -321,7 +321,7 @@ truthOf _       = False
 
 -- | Return a default MOO value (integer) having the given boolean value.
 truthValue :: Bool -> Value
-truthValue False = Int 0
+truthValue False = zero
 truthValue True  = Int 1
 
 -- | Return a 'Type' indicating the type of the given value.
