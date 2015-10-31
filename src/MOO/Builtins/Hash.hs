@@ -41,12 +41,15 @@ hashFunctions = M.fromList algorithms
           , ("MD4"          , hashWith MD4         )
           , ("MD5"          , hashWith MD5         )
 
+          -- RIPEMD
           , ("RIPEMD-160"   , hashWith RIPEMD160   )
           , ("RIPEMD160"    , alias "RIPEMD-160"   )
 
+          -- SHA-1
           , ("SHA-1"        , hashWith SHA1        )
           , ("SHA1"         , alias "SHA-1"        )
 
+          -- SHA-2
           , ("SHA-224"      , hashWith SHA224      )
           , ("SHA-256"      , hashWith SHA256      )
           , ("SHA-384"      , hashWith SHA384      )
@@ -61,6 +64,7 @@ hashFunctions = M.fromList algorithms
           , ("SHA512/224"   , alias "SHA-512/224"  )
           , ("SHA512/256"   , alias "SHA-512/256"  )
 
+          -- SHA-3
           , ("SHA3-224"     , hashWith SHA3_224    )
           , ("SHA3-256"     , hashWith SHA3_256    )
           , ("SHA3-384"     , hashWith SHA3_384    )
@@ -71,6 +75,7 @@ hashFunctions = M.fromList algorithms
           , ("SHA-3-384"    , alias "SHA3-384"     )
           , ("SHA-3-512"    , alias "SHA3-512"     )
 
+          -- Skein
           , ("Skein-256-224", hashWith Skein256_224)
           , ("Skein-256-256", hashWith Skein256_256)
 
@@ -79,6 +84,7 @@ hashFunctions = M.fromList algorithms
           , ("Skein-512-384", hashWith Skein512_384)
           , ("Skein-512-512", hashWith Skein512_512)
 
+          -- Others
           , ("Tiger"        , hashWith Tiger       )
           , ("Whirlpool"    , hashWith Whirlpool   )
           ]

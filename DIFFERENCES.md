@@ -43,6 +43,39 @@ differences include:
     returning an empty string in this case. EtaMOO raises `E_INVARG` instead.
     Note that `crypt()` can fail if an unsupported salt parameter is used.
 
+  * The `value_hash()`, `string_hash()`, and `binary_hash()` built-in
+    functions in EtaMOO accept two optional arguments in addition to the value
+    or string to be hashed. The second argument is a string which selects the
+    particular hash algorithm to use, and defaults to "MD5". The following
+    algorithms are supported:
+
+        MD2
+        MD4
+        MD5
+        RIPEMD-160
+        SHA-1
+        SHA-224
+        SHA-256
+        SHA-384
+        SHA-512
+        SHA-512/224
+        SHA-512/256
+        SHA3-224
+        SHA3-256
+        SHA3-384
+        SHA3-512
+        Skein-256-224
+        Skein-256-256
+        Skein-512-224
+        Skein-512-256
+        Skein-512-384
+        Skein-512-512
+        Tiger
+        Whirlpool
+
+    The third argument, if provided and true, causes the digest value to be
+    returned as a binary string instead of a string of hexadecimal digits.
+
   * In LambdaMOO, the `buffered_output_length()` built-in returns the number
     of *bytes* currently buffered for output to a connection. In EtaMOO, this
     built-in currently returns the number of *items* buffered, where an item

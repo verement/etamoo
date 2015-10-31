@@ -42,9 +42,9 @@ EtaMOO differs from LambdaMOO in a few significant ways:
     string *`key`*s whenever *`alist`* is a well-formed association list.
 
   * EtaMOO supports several additional hashing algorithms besides MD5,
-    including SHA-1, SHA-2, and RIPEMD-160, via optional argument to
-    `string_hash()`, `binary_hash()`, and `value_hash()`. Hashes may also
-    optionally be returned as binary strings.
+    including SHA-1, SHA-2, SHA-3, and RIPEMD-160, via optional argument to
+    `string_hash()`, `binary_hash()`, and `value_hash()`. Hash digests may
+    also optionally be returned as binary strings.
 
   * EtaMOO internally handles binary strings in an efficient manner, and only
     translates to and from the special MOO *binary string* syntax upon demand.
