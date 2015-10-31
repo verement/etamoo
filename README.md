@@ -57,11 +57,10 @@ EtaMOO differs from LambdaMOO in a few significant ways:
   * EtaMOO supports IPv6.
 
 The implementation of EtaMOO otherwise closely follows the specifications of
-the [LambdaMOO Programmer's Manual][Programmer's Manual], and should be
-compatible with most LambdaMOO databases as of about version 1.8.3 of the
-LambdaMOO server code.
+the [LambdaMOO Programmer's Manual][], and should be compatible with most
+LambdaMOO databases as of about version 1.8.3 of the LambdaMOO server code.
 
-  [Programmer's Manual]: http://www.ipomoea.org/moo/#progman
+  [LambdaMOO Programmer's Manual]: http://www.ipomoea.org/moo/#progman
 
 Installing
 ----------

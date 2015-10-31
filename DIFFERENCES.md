@@ -10,14 +10,15 @@ differences include:
     the "off/off of" preposition has been changed to "off of/off".
 
   * Assignment expressions behave somewhat differently in EtaMOO than they do
-	in LambdaMOO.
+    in LambdaMOO.
 
-    Assuming `x = {1, 2}`:
+    Assuming `x = {1, 2}` and `y = "foo"`:
 
-| Expression        | LambdaMOO       | EtaMOO           |
-| ----------------- | --------------- | ---------------- |
-| `x[1] = x[2] = 3` | `x` => `{3, 2}` | `x` => `{3, 3}`  |
-| `x[1] = (x = 0)`  | `x` => `{0, 2}` | (error) `E_TYPE` |
+| Expression        | LambdaMOO        | EtaMOO           |
+| ----------------- | ---------------- | ---------------- |
+| `x[1] = x[2] = 3` | `x` => `{3, 2}`  | `x` => `{3, 3}`  |
+| `x[1] = (x = 0)`  | `x` => `{0, 2}`  | (error) `E_TYPE` |
+| `y[$][1] = "b"`   | (error) `E_TYPE` | `y` => `"fob"`   |
 
   * EtaMOO provides a visual indication of the point at which MOO code
     compilation failed as part of the list of strings returned by
