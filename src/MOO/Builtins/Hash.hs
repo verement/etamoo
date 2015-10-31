@@ -8,14 +8,14 @@ import Crypto.Hash
   , MD2(MD2), MD4(MD4), MD5(MD5)
   , RIPEMD160(RIPEMD160)
   , SHA1(SHA1), SHA224(SHA224), SHA256(SHA256), SHA384(SHA384), SHA512(SHA512)
---, SHA3_224(SHA3_224), SHA3_256(SHA3_256), SHA3_384(SHA3_384), SHA3_512(SHA3_512)
+  , SHA3_224(SHA3_224), SHA3_256(SHA3_256), SHA3_384(SHA3_384), SHA3_512(SHA3_512)
   , Skein256_224(Skein256_224), Skein256_256(Skein256_256)
   , Skein512_224(Skein512_224), Skein512_256(Skein512_256)
   , Skein512_384(Skein512_384), Skein512_512(Skein512_512)
   , Tiger(Tiger)
   , Whirlpool(Whirlpool)
   )
-import Data.Byteable (toBytes)
+import Data.ByteArray (convert)
 import Data.ByteString (ByteString)
 import Data.Map (Map)
 
@@ -55,14 +55,17 @@ hashFunctions = M.fromList algorithms
           , ("SHA256"       , alias "SHA-256"      )
           , ("SHA384"       , alias "SHA-384"      )
           , ("SHA512"       , alias "SHA-512"      )
-{-
-          -- SHA-3 is not yet standard; these appear to implement Keccak
-          -- variants
+
           , ("SHA3-224"     , hashWith SHA3_224    )
           , ("SHA3-256"     , hashWith SHA3_256    )
           , ("SHA3-384"     , hashWith SHA3_384    )
           , ("SHA3-512"     , hashWith SHA3_512    )
--}
+
+          , ("SHA-3-224"    , alias "SHA3-224"     )
+          , ("SHA-3-256"    , alias "SHA3-256"     )
+          , ("SHA-3-384"    , alias "SHA3-384"     )
+          , ("SHA-3-512"    , alias "SHA3-512"     )
+
           , ("Skein-256-224", hashWith Skein256_224)
           , ("Skein-256-256", hashWith Skein256_256)
 
@@ -85,5 +88,5 @@ hashWith algorithm wantBinary = mkResult . hash' algorithm
         hash' _ = hash
 
         mkResult :: Digest a -> StrT
-        mkResult | wantBinary = Str.fromBinary . toBytes
+        mkResult | wantBinary = Str.fromBinary . convert
                  | otherwise  = Str.fromString . show

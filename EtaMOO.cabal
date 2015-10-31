@@ -124,13 +124,13 @@ executable etamoo
 
   build-depends:       array
                      , base ==4.*
-                     , byteable
                      , bytestring
                      , case-insensitive
                      , containers >= 0.4
-                     , cryptohash
+                     , cryptonite
                      , hashable
                      , haskeline
+                     , memory
                      , mtl
                      , network
                      , parsec
