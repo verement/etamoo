@@ -8,6 +8,7 @@ import Crypto.Hash
   , MD2(MD2), MD4(MD4), MD5(MD5)
   , RIPEMD160(RIPEMD160)
   , SHA1(SHA1), SHA224(SHA224), SHA256(SHA256), SHA384(SHA384), SHA512(SHA512)
+  , SHA512t_224(SHA512t_224), SHA512t_256(SHA512t_256)
   , SHA3_224(SHA3_224), SHA3_256(SHA3_256), SHA3_384(SHA3_384), SHA3_512(SHA3_512)
   , Skein256_224(Skein256_224), Skein256_256(Skein256_256)
   , Skein512_224(Skein512_224), Skein512_256(Skein512_256)
@@ -50,11 +51,15 @@ hashFunctions = M.fromList algorithms
           , ("SHA-256"      , hashWith SHA256      )
           , ("SHA-384"      , hashWith SHA384      )
           , ("SHA-512"      , hashWith SHA512      )
+          , ("SHA-512/224"  , hashWith SHA512t_224 )
+          , ("SHA-512/256"  , hashWith SHA512t_256 )
 
           , ("SHA224"       , alias "SHA-224"      )
           , ("SHA256"       , alias "SHA-256"      )
           , ("SHA384"       , alias "SHA-384"      )
           , ("SHA512"       , alias "SHA-512"      )
+          , ("SHA512/224"   , alias "SHA-512/224"  )
+          , ("SHA512/256"   , alias "SHA-512/256"  )
 
           , ("SHA3-224"     , hashWith SHA3_224    )
           , ("SHA3-256"     , hashWith SHA3_256    )
