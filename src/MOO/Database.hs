@@ -26,7 +26,7 @@ module MOO.Database (
 import Control.Applicative ((<$>))
 import Control.Concurrent.STM (STM, TVar, newTVarIO, newTVar,
                                readTVar, writeTVar)
-import Control.Monad (forM, forM_, when)
+import Control.Monad (forM, forM_, when, (>=>))
 import Data.IntSet (IntSet)
 import Data.Maybe (isJust)
 import Data.Monoid ((<>))
@@ -59,24 +59,23 @@ initDatabase = Database {
 }
 
 dbObjectRef :: ObjId -> Database -> Maybe (TVar (Maybe Object))
-dbObjectRef oid db
-  | oid < 0 || oid >= V.length objs = Nothing
-  | otherwise                       = Just (objs V.! oid)
-  where objs = objects db
+dbObjectRef oid = (V.!? oid) . objects
 
 dbObject :: ObjId -> Database -> STM (Maybe Object)
-dbObject oid db = maybe (return Nothing) readTVar $ dbObjectRef oid db
+dbObject oid = maybe (return Nothing) readTVar . dbObjectRef oid
 
 maxObject :: Database -> ObjId
-maxObject db = V.length (objects db) - 1
+maxObject = pred . V.length . objects
 
 resetMaxObject :: Database -> STM Database
 resetMaxObject db = do
   newMaxObject <- findLastValid (maxObject db)
-  return db { objects = V.take (newMaxObject + 1) $ objects db }
-  where findLastValid oid
+  return db { objects = V.take (succ newMaxObject) $ objects db }
+
+  where findLastValid :: ObjId -> STM ObjId
+        findLastValid oid
           | oid >= 0  = dbObject oid db >>=
-                        maybe (findLastValid $ oid - 1) (return . const oid)
+                        maybe (findLastValid $ pred oid) (return . const oid)
           | otherwise = return nothing
 
 -- | Renumber an object in the database to be the least nonnegative object
@@ -116,34 +115,30 @@ renumber old db = do
   where findLeastUnused :: ObjId -> STM (Maybe ObjId)
         findLeastUnused new
           | new < old = dbObject new db >>= maybe (return $ Just new)
-                        (const $ findLeastUnused $ new + 1)
+                        (const $ findLeastUnused $ succ new)
           | otherwise = return Nothing
 
 setObjects :: [Maybe Object] -> Database -> IO Database
 setObjects objs db = do
-  tvarObjs <- mapM newTVarIO objs
-  return db { objects = V.fromList tvarObjs }
+  refs <- mapM newTVarIO objs
+  return db { objects = V.fromList refs }
 
 addObject :: Object -> Database -> STM Database
 addObject obj db = do
-  objTVar <- newTVar (Just obj)
-  return db { objects = V.snoc (objects db) objTVar }
+  ref <- newTVar (Just obj)
+  return db { objects = V.snoc (objects db) ref }
 
 deleteObject :: ObjId -> Database -> STM ()
 deleteObject oid db =
   case dbObjectRef oid db of
-    Just objTVar -> writeTVar objTVar Nothing
-    Nothing      -> return ()
+    Just ref -> writeTVar ref Nothing
+    Nothing  -> return ()
 
 modifyObject :: ObjId -> Database -> (Object -> STM Object) -> STM ()
 modifyObject oid db f =
   case dbObjectRef oid db of
-    Nothing      -> return ()
-    Just objTVar -> do
-      maybeObject <- readTVar objTVar
-      case maybeObject of
-        Nothing  -> return ()
-        Just obj -> writeTVar objTVar . Just =<< f obj
+    Just ref -> readTVar ref >>= maybe (return ()) (f >=> writeTVar ref . Just)
+    Nothing  -> return ()
 
 {-
 isPlayer :: ObjId -> Database -> Bool
@@ -154,8 +149,9 @@ allPlayers :: Database -> [ObjId]
 allPlayers = IS.toList . players
 
 setPlayer :: Bool -> ObjId -> Database -> Database
-setPlayer yesno oid db = db { players = change oid (players db) }
-  where change = if yesno then IS.insert else IS.delete
+setPlayer isPlayer oid db = db { players = change oid (players db) }
+  where change | isPlayer  = IS.insert
+               | otherwise = IS.delete
 
 data ServerOptions = Options {
     bgSeconds :: Int
@@ -217,8 +213,8 @@ getServerOptions oid = do
 getProtected :: (Id -> MOO (Maybe Value)) -> [Id] -> MOO (Id -> Bool)
 getProtected getOption ids = do
   maybes <- forM ids $ fmap (fmap truthOf) . getOption . ("protect_" <>)
-  let set = HS.fromList [ id | (id, Just True) <- zip ids maybes ]
-  return (`HS.member` set)
+  let protectedSet = HS.fromList [ id | (id, Just True) <- zip ids maybes ]
+  return (`HS.member` protectedSet)
 
 loadServerOptions :: MOO ()
 loadServerOptions = do

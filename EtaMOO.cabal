@@ -144,7 +144,7 @@ executable etamoo
                      , transformers
                      , unix
                      , unordered-containers
-                     , vector
+                     , vector >= 0.7
 
   build-tools:         hsc2hs
 
