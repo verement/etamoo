@@ -108,17 +108,15 @@ executable etamoo
                        ForeignFunctionInterface
                        OverloadedStrings
 
-  extra-libraries:     pcre
+  pkgconfig-depends:   libpcre >= 8.20
+
   if !os(darwin)
     extra-libraries:   crypt
 
   if flag(64bit)
     cpp-options:       -DMOO_64BIT_INTEGER
-
   if flag(outbound-network)
     cpp-options:       -DMOO_OUTBOUND_NETWORK
-
-  includes:            unistd.h pcre.h
 
   c-sources:           src/cbits/match.c
 
