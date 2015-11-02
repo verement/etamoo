@@ -30,6 +30,7 @@ module MOO.Types (
   , fromId
   , toId
   , string2builder
+  , builder2text
 
   , fromInt
   , fromFlt
@@ -47,8 +48,11 @@ module MOO.Types (
   , typeCode
 
   , toText
+  , toBuilder
+  , toBuilder'
   , toLiteral
   , toMicroseconds
+
   , error2text
 
   -- * List Convenience Functions
@@ -71,7 +75,9 @@ import Data.CaseInsensitive (CI)
 import Data.HashMap.Strict (HashMap)
 import Data.Int (Int32, Int64)
 import Data.IntSet (IntSet)
+import Data.List (intersperse)
 import Data.Map (Map)
+import Data.Monoid ((<>), mappend, mconcat)
 import Data.Text (Text)
 import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime)
@@ -84,7 +90,10 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
 import qualified Data.Map as M
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Builder as TLB
+import qualified Data.Text.Lazy.Builder.Int as TLB
+import qualified Data.Text.Lazy.Builder.RealFloat as TLB
 
 import {-# SOURCE #-} MOO.List (MOOList)
 import MOO.String (MOOString)
@@ -207,6 +216,9 @@ instance Ident Builder where
 
 string2builder :: StrT -> Builder
 string2builder = TLB.fromText . Str.toText
+
+builder2text :: Builder -> Text
+builder2text = TL.toStrict . TLB.toLazyText
 
 -- | A 'Value' represents any MOO value.
 data Value = Int IntT  -- ^ integer
@@ -346,28 +358,45 @@ typeCode TErr =  3
 typeCode TLst =  4
 typeCode TFlt =  9
 
--- | Return a string representation of the given MOO value, using the same
+-- | Return a 'Text' representation of the given MOO value, using the same
 -- rules as the @tostr()@ built-in function.
 toText :: Value -> Text
-toText (Int x) = T.pack (show x)
-toText (Flt x) = T.pack (show x)
 toText (Str x) = Str.toText x
-toText (Obj x) = T.pack ('#' : show x)
 toText (Err x) = error2text x
 toText (Lst _) = "{list}"
+toText v       = builder2text (toBuilder v)
 
--- | Return a literal representation of the given MOO value, using the same
+-- | Return a 'Builder' representation of the given MOO value, using the same
+-- rules as the @tostr()@ built-in function.
+toBuilder :: Value -> Builder
+toBuilder (Int x) = TLB.decimal x
+toBuilder (Obj x) = TLB.singleton '#' <> TLB.decimal x
+toBuilder (Flt x) = TLB.realFloat x
+toBuilder v       = TLB.fromText (toText v)
+
+-- | Return a 'Builder' representation of the given MOO value, using the same
+-- rules as the @toliteral()@ built-in function.
+toBuilder' :: Value -> Builder
+toBuilder' (Lst x) = TLB.singleton '{' <> mconcat
+                     (intersperse ", " $ map toBuilder' $ Lst.toList x) <>
+                     TLB.singleton '}'
+toBuilder' (Str x) = quote <> T.foldr escape quote (Str.toText x)
+  where quote, backslash :: Builder
+        quote     = TLB.singleton '"'
+        backslash = TLB.singleton '\\'
+
+        escape :: Char -> Builder -> Builder
+        escape '"'  = mappend backslash . mappend quote
+        escape '\\' = mappend backslash . mappend backslash
+        escape c    = mappend (TLB.singleton c)
+
+toBuilder' (Err x) = TLB.fromString (show x)
+toBuilder' v       = toBuilder v
+
+-- | Return a 'Text' representation of the given MOO value, using the same
 -- rules as the @toliteral()@ built-in function.
 toLiteral :: Value -> Text
-toLiteral (Lst x) = T.concat ["{", T.intercalate ", " $
-                                   map toLiteral (Lst.toList x), "}"]
-toLiteral (Str x) = T.concat ["\"", T.concatMap escape $ Str.toText x, "\""]
-  where escape :: Char -> Text
-        escape '"'  = "\\\""
-        escape '\\' = "\\\\"
-        escape c    = T.singleton c
-toLiteral (Err x) = T.pack (show x)
-toLiteral v = toText v
+toLiteral = builder2text . toBuilder'
 
 -- | Interpret a MOO value as a number of microseconds.
 toMicroseconds :: Value -> Maybe Integer

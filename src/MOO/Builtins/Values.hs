@@ -8,14 +8,13 @@ import Control.Monad (unless, (<=<))
 import Data.ByteString (ByteString)
 import Data.Char (isDigit)
 import Data.Maybe (fromJust)
-import Data.Monoid ((<>))
+import Data.Monoid ((<>), mconcat)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word8)
 import Text.Printf (printf)
 
 import qualified Data.ByteString as BS
-import qualified Data.Text as T
 
 import MOO.Builtins.Common
 import MOO.Builtins.Crypt
@@ -99,7 +98,7 @@ bf_typeof = Builtin "typeof" 1 (Just 1) [TAny] TInt $ \[value] ->
   return $ Int $ typeCode $ typeOf value
 
 bf_tostr = Builtin "tostr" 0 Nothing [] TStr $
-           return . Str . Str.fromText . T.concat . map toText
+           return . Str . Str.fromText . builder2text . mconcat . map toBuilder
 
 bf_toliteral = Builtin "toliteral" 1 (Just 1) [TAny] TStr $ \[value] ->
   return $ Str $ Str.fromText $ toLiteral value

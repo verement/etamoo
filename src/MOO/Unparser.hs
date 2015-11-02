@@ -132,7 +132,7 @@ tellExpr = tell <=< unparseExpr
 
 unparseExpr :: Expr -> Unparser Builder
 unparseExpr expr = case expr of
-  Literal value -> return (fromText $ toLiteral value)
+  Literal value -> return (toBuilder' value)
 
   List args -> do
     args' <- unparseArgs args
