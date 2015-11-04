@@ -9,12 +9,13 @@ import Control.Applicative ((<$>))
 import Control.Concurrent (forkIO, killThread)
 import Control.Concurrent.STM (STM, TMVar, newEmptyTMVarIO, atomically,
                                putTMVar, readTMVar)
-import Control.Exception (SomeException, mask, try, finally, bracketOnError)
+import Control.Exception (SomeException, IOException, mask, try, finally,
+                          bracketOnError)
 import Control.Monad (forever)
 import Data.Maybe (fromMaybe)
 import Network.Socket (PortNumber, Socket, SockAddr,
                        SocketOption(ReuseAddr, KeepAlive),
-                       Family(AF_INET6), SocketType(Stream),
+                       Family(AF_INET, AF_INET6), SocketType(Stream),
                        AddrInfo(addrFlags, addrFamily, addrSocketType,
                                 addrProtocol, addrAddress),
                        AddrInfoFlag(AI_PASSIVE, AI_NUMERICSERV,
@@ -36,13 +37,20 @@ maxBufferSize = 1024
 
 serverAddrInfo :: Maybe HostName -> PortNumber -> IO [AddrInfo]
 serverAddrInfo host port =
-  let hints = defaultHints {
+  let hints6, hints4 :: AddrInfo
+      hints6 = defaultHints {
           addrFlags      = [AI_PASSIVE, AI_NUMERICSERV,
                             AI_ADDRCONFIG, AI_V4MAPPED]
         , addrFamily     = AF_INET6
         , addrSocketType = Stream
         }
-  in getAddrInfo (Just hints) host (Just $ show port)
+      hints4 = hints6 { addrFamily = AF_INET }
+
+      gai :: AddrInfo -> IO [AddrInfo]
+      gai hints = getAddrInfo (Just hints) host (Just $ show port)
+
+  in try (gai hints6) >>=
+     either (\e -> let _ = e :: IOException in gai hints4) return
 
 createTCPListener :: Listener -> ConnectionHandler -> IO Listener
 createTCPListener listener handler = do
