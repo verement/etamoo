@@ -380,7 +380,7 @@ toBuilder' :: Value -> Builder
 toBuilder' (Lst x) = TLB.singleton '{' <> mconcat
                      (intersperse ", " $ map toBuilder' $ Lst.toList x) <>
                      TLB.singleton '}'
-toBuilder' (Str x) = quote <> T.foldr escape quote (Str.toText x)
+toBuilder' (Str x) = quote <> Str.foldr escape quote x
   where quote, backslash :: Builder
         quote     = TLB.singleton '"'
         backslash = TLB.singleton '\\'

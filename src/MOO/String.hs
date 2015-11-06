@@ -27,7 +27,9 @@ module MOO.String (
   -- * Transformations
   , intercalate
 
-  -- * Special folds
+  -- * Folds
+  , foldr
+  -- ** Special folds
   , concat
   , concatMap
 
@@ -63,7 +65,7 @@ import Data.String (IsString(fromString))
 import Data.Text (Text)
 import Data.Word (Word8)
 import Foreign.Storable (sizeOf)
-import Prelude hiding (tail, null, length, concat, concatMap, take, drop,
+import Prelude hiding (tail, null, length, foldr, concat, concatMap, take, drop,
                        splitAt, break, words, unwords)
 
 import qualified Data.ByteString as BS
@@ -213,6 +215,9 @@ compareLength str = T.compareLength (toText str)
 
 intercalate :: MOOString -> [MOOString] -> MOOString
 intercalate sep = fromText . T.intercalate (toText sep) . map toText
+
+foldr :: (Char -> a -> a) -> a -> MOOString -> a
+foldr f z = T.foldr f z . toText
 
 concat :: [MOOString] -> MOOString
 concat = fromText . T.concat . map toText
