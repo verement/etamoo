@@ -29,7 +29,6 @@ module MOO.Types (
   -- * Type and Value Functions
   , fromId
   , toId
-  , string2builder
   , builder2text
 
   , fromInt
@@ -213,9 +212,6 @@ instance Ident MOOString where
 instance Ident Builder where
   fromId = TLB.fromText . CI.original
   toId   = error "Unsupported conversion from Builder to Id"
-
-string2builder :: StrT -> Builder
-string2builder = TLB.fromText . Str.toText
 
 builder2text :: Builder -> Text
 builder2text = TL.toStrict . TLB.toLazyText

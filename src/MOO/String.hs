@@ -11,6 +11,7 @@ module MOO.String (
   , toCaseFold
   , toBinary
   , toString
+  , toBuilder
   , toRegexp
   , singleton
   , empty
@@ -63,6 +64,7 @@ import Data.Hashable (Hashable(hashWithSalt))
 import Data.Monoid (Monoid(mempty, mappend, mconcat))
 import Data.String (IsString(fromString))
 import Data.Text (Text)
+import Data.Text.Lazy.Builder (Builder)
 import Data.Word (Word8)
 import Foreign.Storable (sizeOf)
 import Prelude hiding (tail, null, length, foldr, concat, concatMap, take, drop,
@@ -70,6 +72,7 @@ import Prelude hiding (tail, null, length, foldr, concat, concatMap, take, drop,
 
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
+import qualified Data.Text.Lazy.Builder as TLB
 import qualified Prelude
 
 import MOO.Builtins.Match (Regexp, newRegexp)
@@ -131,6 +134,9 @@ fromBinary bytes =
 
 toString :: MOOString -> String
 toString = T.unpack . toText
+
+toBuilder :: MOOString -> Builder
+toBuilder = TLB.fromText . toText
 
 toBinary :: MOOString -> Maybe ByteString
 toBinary = binaryData . cachedReps

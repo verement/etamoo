@@ -14,7 +14,7 @@ import Data.HashSet (HashSet)
 import Data.List (intersperse)
 import Data.Monoid ((<>), mconcat)
 import Data.Text.Lazy (Text)
-import Data.Text.Lazy.Builder (Builder, toLazyText, fromText)
+import Data.Text.Lazy.Builder (Builder, toLazyText)
 
 import qualified Data.HashSet as HS
 
@@ -141,7 +141,7 @@ unparseExpr expr = case expr of
   Variable var -> return (fromId var)
 
   PropertyRef (Literal (Obj 0)) (Literal (Str name))
-    | isIdentifier name -> return $ "$" <> string2builder name
+    | isIdentifier name -> return $ "$" <> Str.toBuilder name
   PropertyRef obj name -> do
     obj' <- case obj of
       Literal Int{} -> paren obj  -- avoid digits followed by dot (-> float)
@@ -161,7 +161,7 @@ unparseExpr expr = case expr of
 
   VerbCall (Literal (Obj 0)) (Literal (Str name)) args
     | isIdentifier name -> do args' <- unparseArgs args
-                              return $ "$" <> string2builder name <>
+                              return $ "$" <> Str.toBuilder name <>
                                        "(" <> args' <> ")"
   VerbCall obj name args -> do
     obj' <- parenL expr obj
@@ -267,7 +267,7 @@ unparseScatter = fmap (mconcat . intersperse ", ") . mapM unparseScat
 
 unparseNameExpr :: Expr -> Unparser Builder
 unparseNameExpr (Literal (Str name))
-  | isIdentifier name = return (string2builder name)
+  | isIdentifier name = return (Str.toBuilder name)
 unparseNameExpr expr = paren expr
 
 paren :: Expr -> Unparser Builder
