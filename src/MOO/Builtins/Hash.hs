@@ -5,16 +5,15 @@ module MOO.Builtins.Hash (hashBytesUsing) where
 
 import Crypto.Hash
   ( HashAlgorithm, Digest, hash
-  , MD2(MD2), MD4(MD4), MD5(MD5)
-  , RIPEMD160(RIPEMD160)
+  , MD2(MD2), MD4(MD4), MD5(MD5), RIPEMD160(RIPEMD160)
   , SHA1(SHA1), SHA224(SHA224), SHA256(SHA256), SHA384(SHA384), SHA512(SHA512)
   , SHA512t_224(SHA512t_224), SHA512t_256(SHA512t_256)
-  , SHA3_224(SHA3_224), SHA3_256(SHA3_256), SHA3_384(SHA3_384), SHA3_512(SHA3_512)
+  , SHA3_224(SHA3_224), SHA3_256(SHA3_256)
+  , SHA3_384(SHA3_384), SHA3_512(SHA3_512)
   , Skein256_224(Skein256_224), Skein256_256(Skein256_256)
   , Skein512_224(Skein512_224), Skein512_256(Skein512_256)
   , Skein512_384(Skein512_384), Skein512_512(Skein512_512)
-  , Tiger(Tiger)
-  , Whirlpool(Whirlpool)
+  , Tiger(Tiger), Whirlpool(Whirlpool)
   )
 import Data.ByteArray (convert)
 import Data.ByteString (ByteString)

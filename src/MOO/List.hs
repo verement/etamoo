@@ -168,8 +168,8 @@ vectorToAssocMap = fmap snd . V.foldM mkAssocMap (0, HM.empty)
   where mkAssocMap :: (Int, AssocMap) -> Value -> Maybe (Int, AssocMap)
         mkAssocMap (i, map) (Lst lst) = case toList lst of
           [Str k, value] -> let map' = assocMapInsert k (i, value) map
-                            in i `seq` Just (succ i, map')
-          [_    , _    ] ->    i `seq` Just (succ i, map)
+                            in Just (succ $! i, map')
+          [_    , _    ] ->    Just (succ $! i, map)
           _              -> Nothing
         mkAssocMap _ _ = Nothing
 

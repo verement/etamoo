@@ -84,7 +84,8 @@ obj2string ObjThis = "this"
 
 string2obj :: StrT -> Maybe ObjSpec
 string2obj = flip lookup $ map mkAssoc [minBound ..]
-  where mkAssoc objSpec = (obj2string objSpec, objSpec)
+  where mkAssoc :: ObjSpec -> (StrT, ObjSpec)
+        mkAssoc objSpec = (obj2string objSpec, objSpec)
 
 objMatch :: ObjId -> ObjSpec -> ObjId -> Bool
 objMatch _    ObjNone oid = oid == nothing
@@ -135,7 +136,8 @@ prep2string PrepOffofOff               = "off of/off"
 
 string2prep :: StrT -> Maybe PrepSpec
 string2prep = flip lookup $ concatMap mkAssoc [minBound ..]
-  where mkAssoc prepSpec =
+  where mkAssoc :: PrepSpec -> [(StrT, PrepSpec)]
+        mkAssoc prepSpec =
           [ (prep, prepSpec) | prep <- Str.splitOn "/" $
                                        prep2string prepSpec ] ++
           [ (Str.fromString $ show index, prepSpec)
@@ -157,7 +159,8 @@ prepPhrases = [ (prepSpec, Str.words prepPhrase)
 -- use @*@ to separate required and optional text to match.
 verbNameMatch :: StrT -> [StrT] -> Bool
 verbNameMatch name = any matchName
-  where matchName vname
+  where matchName :: StrT -> Bool
+        matchName vname
           | post == ""  = name     == vname
           | post == "*" = preName  == pre
           | otherwise   = preName  == pre &&

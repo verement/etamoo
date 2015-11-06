@@ -130,8 +130,10 @@ floatLiteral = try (lexeme $ signed real) >>= checkRange
           exp <- exponent
           mkFloat pre "" (Just exp)
 
+        exponent :: MOOParser Integer
         exponent = oneOf "eE" >> plusMinus decimal <?> "exponent"
 
+        mkFloat :: String -> String -> Maybe Integer -> MOOParser FltT
         mkFloat pre post exp =
           let whole = if null pre  then 0 else read pre  % 1
               frac  = if null post then 0 else read post % (10 ^ length post)
@@ -143,6 +145,7 @@ floatLiteral = try (lexeme $ signed real) >>= checkRange
                    | e <    0  -> fromRational $ mantissa * (1 % (10 ^ (-e)))
                    | otherwise -> fromRational $ mantissa *      (10 ^   e)
 
+        checkRange :: FltT -> MOOParser Value
         checkRange flt
           | isInfinite flt = fail "Floating-point literal out of range"
           | otherwise      = return (Flt flt)

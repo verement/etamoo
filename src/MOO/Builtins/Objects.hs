@@ -689,7 +689,6 @@ bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
   checkProgrammer
 
   case parseProgram text of
-    Left errors   -> return $ fromListBy (Str . Str.fromString) errors
     Right program -> do
       modifyVerb (object, obj) verb_desc $ \verb ->
         return verb {
@@ -697,6 +696,7 @@ bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
           , verbCode    = compile program
         }
       return emptyList
+    Left errors -> return $ fromListBy (Str . Str.fromString) errors
 
   where addLine :: ([Text] -> [Text]) -> Value -> MOO ([Text] -> [Text])
         addLine add (Str line) = return (add [Str.toText line, "\n"] ++)

@@ -60,6 +60,8 @@ import MOO.Verb
 
 import qualified MOO.String as Str
 
+type VerbDef = ([StrT], TVar Verb)
+
 data Object = Object {
   -- Attributes
     objectIsPlayer   :: Bool
@@ -79,7 +81,7 @@ data Object = Object {
 
   -- Definitions
   , objectProperties :: HashMap StrT (TVar Property)
-  , objectVerbs      :: [([StrT], TVar Verb)]
+  , objectVerbs      :: [VerbDef]
 }
 
 instance Sizeable Object where
@@ -213,7 +215,11 @@ setProperties :: [Property] -> Object -> IO Object
 setProperties props obj = do
   propHash <- mkHash props
   return obj { objectProperties = propHash }
-  where mkHash = fmap HM.fromList . mapM mkAssoc
+
+  where mkHash :: [Property] -> IO (HashMap StrT (TVar Property))
+        mkHash = fmap HM.fromList . mapM mkAssoc
+
+        mkAssoc :: Property -> IO (StrT, TVar Property)
         mkAssoc prop = do
           tvarProp <- newTVarIO prop
           return (propertyKey prop, tvarProp)
@@ -225,10 +231,14 @@ setVerbs :: [Verb] -> Object -> IO Object
 setVerbs verbs obj = do
   verbList <- mkList verbs
   return obj { objectVerbs = verbList }
-  where mkList = mapM mkVerb
+
+  where mkList :: [Verb] -> IO [VerbDef]
+        mkList = mapM mkVerb
+
+        mkVerb :: Verb -> IO VerbDef
         mkVerb verb = do
-          tvarVerb <- newTVarIO verb
-          return (verbKey verb, tvarVerb)
+          verbRef <- newTVarIO verb
+          return (verbKey verb, verbRef)
 
 verbKey :: Verb -> [StrT]
 verbKey = Str.words . verbNames
@@ -260,17 +270,18 @@ deleteProperty name obj =
 lookupVerbRef :: Bool -> Object -> Value -> Maybe (Int, TVar Verb)
 lookupVerbRef numericStrings obj (Str name) =
   second snd <$> find matchVerb (zip [0..] $ objectVerbs obj)
-  where matchVerb (i, (names, _)) = verbNameMatch name names ||
+  where matchVerb :: (Int, VerbDef) -> Bool
+        matchVerb (i, (names, _)) = verbNameMatch name names ||
                                     (numericStrings && nameString == show i)
-        nameString = Str.toString name
+        nameString = Str.toString name :: String
 lookupVerbRef _ obj (Int index)
   | index' < 1        = Nothing
   | index' > numVerbs = Nothing
   | otherwise         = Just (index'', snd $ verbs !! index'')
-  where index'   = fromIntegral index
-        index''  = index' - 1
-        verbs    = objectVerbs obj
-        numVerbs = length verbs
+  where index'   = fromIntegral index :: Int
+        index''  = index' - 1         :: Int
+        verbs    = objectVerbs obj    :: [VerbDef]
+        numVerbs = length verbs       :: Int
 lookupVerbRef _ _ _ = Nothing
 
 lookupVerb :: Bool -> Object -> Value -> STM (Maybe Verb)
@@ -280,9 +291,9 @@ lookupVerb numericStrings obj desc =
 
 replaceVerb :: Int -> Verb -> Object -> STM Object
 replaceVerb index verb obj =
-  return obj { objectVerbs = pre ++ [(verbKey verb, tvarVerb)] ++ tail post }
-  where (pre, post) = splitAt index (objectVerbs obj)
-        tvarVerb = snd $ head post
+  return obj { objectVerbs = pre ++ [(verbKey verb, verbRef)] ++ tail post }
+  where (pre, post) = splitAt index (objectVerbs obj) :: ([VerbDef], [VerbDef])
+        verbRef     = snd (head post)                 :: TVar Verb
 
 addVerb :: Verb -> Object -> STM Object
 addVerb verb obj = do
@@ -290,9 +301,8 @@ addVerb verb obj = do
   return obj { objectVerbs = objectVerbs obj ++ [(verbKey verb, verbTVar)] }
 
 deleteVerb :: Int -> Object -> STM Object
-deleteVerb index obj = return obj { objectVerbs = verbs }
-  where verbs = before ++ tail after
-        (before, after) = splitAt index (objectVerbs obj)
+deleteVerb index obj = return obj { objectVerbs = pre ++ tail post }
+  where (pre, post) = splitAt index (objectVerbs obj) :: ([VerbDef], [VerbDef])
 
 definedProperties :: Object -> STM [StrT]
 definedProperties obj = do

@@ -264,11 +264,12 @@ doMatch helper Regexp { code = codeFP, extra = extraFP } text =
 
 mkMatchResult :: CInt -> Ptr CInt -> (ByteString, Int) -> IO MatchResult
 mkMatchResult rc ovec (subject, subjectCharLen) =
-  MatchSucceeded . pairs . map (rebase . fromIntegral) <$> peekArray (n * 2) ovec
+  MatchSucceeded . pairs . map (rebase . fromIntegral) <$>
+  peekArray (n * 2) ovec
 
   where n :: Int
-        n = let rc' = fromIntegral rc
-            in if rc' == 0 || rc' > maxCaptures then maxCaptures else rc'
+        n | rc == 0 || rc > maxCaptures = maxCaptures
+          | otherwise                   = fromIntegral rc
 
         pairs :: [a] -> [(a, a)]
         pairs (s:e:rs) = (s, e) : pairs rs

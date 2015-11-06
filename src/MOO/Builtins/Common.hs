@@ -20,8 +20,7 @@ data Builtin = Builtin {
 defaultOptions :: (Value -> a) -> [Value] -> [a] -> [a]
 defaultOptions f = defaultOptions'
   where defaultOptions' (v:vs) (_:ds) = f v : defaultOptions' vs ds
-        defaultOptions' []     (d:ds) = d   : defaultOptions' [] ds
-        defaultOptions' []     []     = []
+        defaultOptions' []     ds     = ds
         defaultOptions' vs     []     = map f vs
 
 -- | @defaults@ /optional/ @[@/default-values/@]@ generates an argument list

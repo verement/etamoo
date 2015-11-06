@@ -95,10 +95,7 @@ shutdownServer world' message = do
 
 startLogger :: Maybe FilePath -> IO (Text -> STM (), IO ())
 startLogger dest = do
-  handle <- case dest of
-    Just path -> openFile path AppendMode
-    Nothing   -> return stderr
-
+  handle <- maybe (return stderr) (`openFile` AppendMode) dest
   hSetBuffering handle LineBuffering
 
   (output, input, seal) <- spawn' unbounded

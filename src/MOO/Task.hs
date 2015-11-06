@@ -892,9 +892,7 @@ evalFromFunc func index code = do
     , builtinFunc   = True
     , lineNumber    = index
     }
-  value <- code `catchException` \except -> do
-    popFrame
-    passException except
+  value <- code `catchException` \except -> popFrame >> passException except
   popFrame
   return value
 
@@ -912,9 +910,8 @@ runVerb verb verbFrame = do
     , permissions  = verbOwner verb
     , verbFullName = verbNames verb
     }
-  value <- verbCode verb `catchException` \except -> do
-    popFrame
-    passException except
+  value <- verbCode verb `catchException` \except ->
+    popFrame >> passException except
   popFrame
 
   return value
@@ -1154,8 +1151,8 @@ caller :: (StackFrame -> a) -> MOO (Maybe a)
 caller f = gets (fmap f . previousFrame . stack)
 
 modifyFrame :: (StackFrame -> StackFrame) -> MOO ()
-modifyFrame f = modify $ \state@State { stack = Stack (frame:stack) } ->
-  state { stack = Stack (f frame : stack) }
+modifyFrame f = modify $ \state@State { stack = Stack (frame:frames) } ->
+  state { stack = Stack (f frame : frames) }
 
 setLineNumber :: LineNo -> MOO ()
 setLineNumber lineNo = modifyFrame $ \frame -> frame { lineNumber = lineNo }
@@ -1241,14 +1238,14 @@ initVariables = HM.fromList $ [
   , ("iobj"   , Obj nothing)
   ] ++ typeVariables
 
-  where typeVariables = [
-            ("INT"  , Int $ typeCode TInt)
-          , ("NUM"  , Int $ typeCode TInt)
-          , ("FLOAT", Int $ typeCode TFlt)
-          , ("LIST" , Int $ typeCode TLst)
-          , ("STR"  , Int $ typeCode TStr)
-          , ("OBJ"  , Int $ typeCode TObj)
-          , ("ERR"  , Int $ typeCode TErr)
+  where typeVariables = map (fmap $ Int . typeCode) [
+            ("INT"  , TInt)
+          , ("NUM"  , TInt)
+          , ("FLOAT", TFlt)
+          , ("LIST" , TLst)
+          , ("STR"  , TStr)
+          , ("OBJ"  , TObj)
+          , ("ERR"  , TErr)
           ]
 
 -- | Create a variable block for a verb by overriding the default.
@@ -1388,11 +1385,9 @@ checkValid = getObject >=> maybe (raise E_INVARG) return
 -- | Verify that the given object is fertile for the current task permissions,
 -- raising 'E_PERM' if not.
 checkFertile :: ObjId -> MOO ()
-checkFertile oid = do
-  maybeObj <- getObject oid
-  case maybeObj of
-    Nothing  -> raise E_PERM
-    Just obj -> unless (objectPermF obj) $ checkPermission (objectOwner obj)
+checkFertile = getObject >=> maybe (raise E_PERM) checkFertile'
+  where checkFertile' obj = unless (objectPermF obj) $
+                            checkPermission (objectOwner obj)
 
 -- | Verify that the named built-in property is not protected by
 -- @$server_options.protect_/prop/@, or that the current task permissions have

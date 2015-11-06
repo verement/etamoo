@@ -6,7 +6,7 @@ module MOO.Builtins.Values ( builtins ) where
 import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Monad (unless, (<=<))
 import Data.ByteString (ByteString)
-import Data.Char (isDigit)
+import Data.Char (isDigit, digitToInt)
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>), mconcat)
 import Data.Text (Text)
@@ -301,14 +301,12 @@ bf_decode_binary = Builtin "decode_binary" 1 (Just 2)
   in mkResult . BS.unpack <$> binaryString bin_string
 
 bf_encode_binary = Builtin "encode_binary" 0 Nothing [] TStr $
-                   fmap (Str . Str.fromBinary) . encodeBinary
+                   let mkResult = return . Str . Str.fromBinary . BS.pack
+                   in maybe (raise E_INVARG) mkResult . encode
 
-encodeBinary :: [Value] -> MOO ByteString
-encodeBinary = maybe (raise E_INVARG) (return . BS.pack) . encode
   where encode :: [Value] -> Maybe [Word8]
         encode (Int n : rest)
           | n >= 0 && n <= 255 = (fromIntegral n :)             <$> encode rest
-          | otherwise          = Nothing
         encode (Str s : rest)  = (++) <$> encodeStr s           <*> encode rest
         encode (Lst v : rest)  = (++) <$> encode (Lst.toList v) <*> encode rest
         encode (_     : _   )  = Nothing
@@ -319,9 +317,9 @@ encodeBinary = maybe (raise E_INVARG) (return . BS.pack) . encode
 
         encodeChar :: Char -> Maybe Word8
         encodeChar c
-          | n >= 0 && n <= 255 = Just (fromIntegral n)
-          | otherwise          = Nothing
-          where n = fromEnum c
+          | n <= 255  = Just (fromIntegral n)
+          | otherwise = Nothing
+          where n = fromEnum c :: Int
 
 matchBuiltin :: Id -> (Regexp -> Text -> MatchResult) -> Builtin
 matchBuiltin name matchFunc = Builtin name 2 (Just 3) [TStr, TStr, TAny]
@@ -354,9 +352,7 @@ runMatch match subject pattern caseMatters =
         repls :: Int -> [(Int, Int)] -> [Value]
         repls n (r:rs) = let (s,e) = convert r
                          in fromList [Int s, Int e] : repls (n - 1) rs
-        repls n []
-          | n > 0      = fromList [Int 0, Int (-1)] : repls (n - 1) []
-          | otherwise  = []
+        repls n []     = replicate n $ fromList [Int 0, Int (-1)]
 
 bf_substitute = Builtin "substitute" 2 (Just 2)
                 [TStr, TLst] TStr $ \[Str template, Lst subs] ->
@@ -392,8 +388,7 @@ bf_substitute = Builtin "substitute" 2 (Just 2)
 
       let walk :: String -> MOO String
           walk ('%':c:cs)
-            | isDigit c = let i = fromEnum c - fromEnum '0'
-                          in (replacements !! i ++) <$> walk cs
+            | isDigit c = (replacements !! digitToInt c ++) <$> walk cs
             | c == '%'  = (c :) <$> walk cs
             | otherwise = raise E_INVARG
           walk (c:cs) = (c :) <$> walk cs
@@ -436,11 +431,10 @@ hashBuiltin name f = Builtin name 1 (Just 3)
   in f (hash algorithm wantBinary) input
 
   where hash :: StrT -> Bool -> ByteString -> MOO Value
-        hash alg wantBinary bytes =
-          case hashBytesUsing (toId alg) wantBinary bytes of
-            Just digest -> return (Str digest)
-            Nothing     -> let message = "Unknown hash algorithm: " <> alg
-                           in raiseException (Err E_INVARG) message (Str alg)
+        hash alg wantBinary = maybe unknown (return . Str) .
+                              hashBytesUsing (toId alg) wantBinary
+          where unknown = let message = "Unknown hash algorithm: " <> alg
+                          in raiseException (Err E_INVARG) message (Str alg)
 
 bf_string_hash = hashBuiltin "string_hash" $
                  \hash -> hash . encodeUtf8 . Str.toText  -- XXX Unicode

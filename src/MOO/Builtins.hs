@@ -57,7 +57,7 @@ callBuiltin func args = do
       if this == systemObject then call builtin
         else callSystemVerb ("bf_" <> fromId func) args >>=
              maybe (checkWizard >> call builtin) return
-    (Nothing, _) -> let name = fromId func
+    (Nothing, _) -> let name    = fromId func
                         message = "Unknown built-in function: " <> name
                     in raiseException (Err E_INVARG) message (Str name)
 
@@ -69,15 +69,15 @@ callBuiltin func args = do
                           , builtinMaxArgs  = max
                           , builtinArgTypes = types
                           } args
-          | nargs < min || nargs > fromMaybe nargs max = raise E_ARGS
-          | otherwise                                  = checkTypes types args
-          where nargs = length args
+          | nargs < min || maybe False (nargs >) max = raise E_ARGS
+          | otherwise                                = checkTypes types args
+          where nargs = length args :: Int
 
         checkTypes :: [Type] -> [Value] -> MOO ()
         checkTypes (t:ts) (v:vs)
           | typeMismatch t (typeOf v) = raise E_TYPE
           | otherwise                 = checkTypes ts vs
-        checkTypes _ _ = return ()
+        checkTypes  _      _          = return ()
 
         typeMismatch :: Type -> Type -> Bool
         typeMismatch a    b    | a == b = False

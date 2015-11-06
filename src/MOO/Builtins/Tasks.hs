@@ -82,9 +82,6 @@ bf_function_info = Builtin "function_info" 0 (Just 1)
 
 bf_eval = Builtin "eval" 1 (Just 1) [TStr] TLst $ \[Str string] ->
   checkProgrammer >> case parseProgram (Str.toText string) of
-    Left errors ->
-      return $ fromList [truthValue False,
-                         fromListBy (Str . Str.fromString) errors]
     Right program -> do
       (programmer, this, player) <- frame $ \frame ->
         (permissions frame, initialThis frame, initialPlayer frame)
@@ -102,6 +99,9 @@ bf_eval = Builtin "eval" 1 (Just 1) [TStr] TLst $ \[Str string] ->
                                       , initialPlayer = player
                                       }
       return $ fromList [truthValue True, value]
+    Left errors ->
+      return $ fromList [truthValue False,
+                         fromListBy (Str . Str.fromString) errors]
 
 bf_set_task_perms = Builtin "set_task_perms" 1 (Just 1)
                     [TObj] TAny $ \[Obj who] -> do
@@ -202,8 +202,8 @@ bf_queued_tasks = Builtin "queued_tasks" 0 (Just 0) [] TLst $ \[] -> do
   tasks <- queuedTasks
   programmer <- frame permissions
   wizard <- isWizard programmer
-  let ownedTasks = if wizard then tasks
-                   else filter ((== programmer) . taskOwner) tasks
+  let ownedTasks | wizard    = tasks
+                 | otherwise = filter ((== programmer) . taskOwner) tasks
 
   return $ fromListBy formatTask $ sort ownedTasks
 

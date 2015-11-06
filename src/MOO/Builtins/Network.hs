@@ -53,9 +53,7 @@ bf_connected_players = Builtin "connected_players" 0 (Just 1)
   return $ objectList $ if include_all then objects else filter (>= 0) objects
 
 secondsSince :: UTCTime -> MOO Value
-secondsSince utcTime = do
-  now <- gets startTime
-  return (Int $ floor $ now `diffUTCTime` utcTime)
+secondsSince utcTime = Int . floor . (`diffUTCTime` utcTime) <$> gets startTime
 
 bf_connected_seconds = Builtin "connected_seconds" 1 (Just 1)
                        [TObj] TInt $ \[Obj player] ->

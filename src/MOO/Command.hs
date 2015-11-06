@@ -155,6 +155,9 @@ matchObject player str
         matchName :: StrT -> [ObjId] -> MOO ObjId
         matchName str = fmap (uncurry matchResult) .
                         foldM (matchName' str) ([], [])
+
+        matchName' :: StrT -> ([ObjId], [ObjId]) -> ObjId ->
+                      MOO ([ObjId], [ObjId])
         matchName' str matches@(exact, prefix) oid = do
           maybeAliases <- readProperty oid "aliases"
           maybeObj <- getObject oid

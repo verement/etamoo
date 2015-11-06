@@ -175,10 +175,8 @@ compileStatements (statement:rest) yield = case statement of
     let finally' = compile' finally
     pushTryFinallyContext finally'
 
-    compile' body `catchException` \except -> do
-      popContext
-      finally'
-      passException except
+    compile' body `catchException` \except ->
+      popContext >> finally' >> passException except
 
     popContext
     finally'
@@ -259,10 +257,10 @@ evaluate expr = runTick >>= \_ -> handleDebug $ case expr of
     codes' <- case codes of
       ANY        -> return Nothing
       Codes args -> Just <$> expand args
-    evaluate expr `catchException` \except@Exception { exceptionCode = code } ->
-      if maybe True (code `elem`) codes'
-      then maybe (return code) evaluate dv
-      else passException except
+    let handler except@Exception { exceptionCode = code }
+          | maybe True (code `elem`) codes' = maybe (return code) evaluate dv
+          | otherwise                       = passException except
+    evaluate expr `catchException` handler
 
   where binary :: (Value -> Value -> MOO Value) -> Expr -> Expr -> MOO Value
         binary op x y = evaluate x >>= \x' -> evaluate y >>= \y' -> x' `op` y'
@@ -320,8 +318,9 @@ storeProperty (oid, name) value = do
   return value
 
 withIndexLength :: Value -> MOO a -> MOO a
-withIndexLength expr = local $ \env -> env { indexLength = len }
-  where len = Int . fromIntegral <$> case expr of
+withIndexLength value = local $ \env -> env { indexLength = valueLength }
+  where valueLength :: MOO Value
+        valueLength = Int . fromIntegral <$> case value of
           Lst v -> return (Lst.length v)
           Str t -> return (Str.length t)
           _     -> raise E_TYPE
@@ -335,7 +334,7 @@ getList = usingList (return . Lst.toList)
 
 getIndex :: Value -> MOO Int
 getIndex (Int i) = return (fromIntegral i)
-getIndex _       = raise E_TYPE
+getIndex  _      = raise E_TYPE
 
 checkLstRange :: LstT -> Int -> MOO ()
 checkLstRange v i = when (i < 1 || i > Lst.length v) $ raise E_RANGE
@@ -366,6 +365,7 @@ lValue (PropertyRef objExpr nameExpr) = LValue fetch store change
           value <- fetchProperty refs
           return (value, storeProperty refs)
 
+        getRefs :: MOO (ObjT, StrT)
         getRefs = do
           objRef  <- evaluate objExpr
           nameRef <- evaluate nameExpr
@@ -374,14 +374,17 @@ lValue (PropertyRef objExpr nameExpr) = LValue fetch store change
             _                   -> raise E_TYPE
 
 lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
-  where fetchIndex = fst <$> getLens'
+  where fetchIndex = fst <$> changeIndex
 
         storeIndex newValue = do
           (_, change) <- getLens
           change newValue
           return newValue
 
-        changeIndex = getLens'
+        changeIndex :: MOO (Value, Value -> MOO Value)
+        changeIndex = getLens >>= \(maybeValue, setValue) -> case maybeValue of
+          Just value -> return (value, setValue)
+          Nothing    -> raise E_RANGE
 
         getLens :: MOO (Maybe Value, Value -> MOO Value)
         getLens = do
@@ -392,15 +395,10 @@ lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
             Str k -> getStrLens value               k  changeExpr
             _     -> raise E_TYPE
 
-        getLens' :: MOO (Value, Value -> MOO Value)
-        getLens' = getLens >>= \(maybeValue, setValue) -> case maybeValue of
-          Just value -> return (value, setValue)
-          Nothing    -> raise E_RANGE
-
         getIntLens :: Value -> Int -> (Value -> MOO Value) ->
                       MOO (Maybe Value, Value -> MOO Value)
         getIntLens value index' changeExpr = do
-          let i = index' - 1
+          let i = index' - 1 :: Int
           value' <- case value of
             Lst v -> checkLstRange v index' >> return (v Lst.! i)
             Str t -> checkStrRange t index' >> return (Str $ Str.singleton $
@@ -414,7 +412,7 @@ lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
                   changeExpr $ Lst $ Lst.set v i newValue
                 changeValue (Str t) i changeExpr (Str c) = do
                   when (c `Str.compareLength` 1 /= EQ) $ raise E_INVARG
-                  let (s, r) = Str.splitAt i t
+                  let (s, r) = Str.splitAt i t :: (StrT, StrT)
                   changeExpr $ Str $ Str.concat [s, c, Str.tail r]
                 changeValue _ _ _ _ = raise E_TYPE
 
@@ -457,10 +455,11 @@ lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
 
         changeValue :: Value -> (Int, Int) -> (Value -> MOO a) -> Value -> MOO a
         changeValue (Lst v) (start, end) changeExpr (Lst r) = do
-          let len = Lst.length v
+          let len = Lst.length v :: Int
           when (end < 0 || start > len + 1) $ raise E_RANGE
-          let pre  = sublist v 1 (start - 1)
-              post = sublist v (end + 1) len
+          let pre  = sublist v 1 (start - 1) :: LstT
+              post = sublist v (end + 1) len :: LstT
+              sublist :: LstT -> Int -> Int -> LstT
               sublist v s e
                 | e < s     = Lst.empty
                 | otherwise = Lst.slice (s - 1) (e - s + 1) v
@@ -468,8 +467,9 @@ lValue (expr `Range` (start, end)) = LValue fetchRange storeRange changeRange
         changeValue (Str t) (start, end) changeExpr (Str r) = do
           when (end < 0 || t `Str.compareLength` (start - 1) == LT) $
             raise E_RANGE
-          let pre  = substr t 1 (start - 1)
-              post = substr t (end + 1) (Str.length t)
+          let pre  = substr t 1 (start - 1)            :: StrT
+              post = substr t (end + 1) (Str.length t) :: StrT
+              substr :: StrT -> Int -> Int -> StrT
               substr t s e
                 | e < s     = Str.empty
                 | otherwise = Str.take (e - s + 1) $ Str.drop (s - 1) t
@@ -519,7 +519,7 @@ scatterAssign items args = do
                 maybe (return zero) (storeVariable var <=< evaluate) opt
                 walk items args noptAvail
           ScatRest var -> do
-            let (s, r) = Lst.splitAt nrest args
+            let (s, r) = Lst.splitAt nrest args :: (LstT, LstT)
             storeVariable var (Lst s)
             walk items r noptAvail
         walk [] _ _ = return ()
