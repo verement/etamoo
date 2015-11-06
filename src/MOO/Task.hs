@@ -157,6 +157,7 @@ import Data.Map (Map)
 import Data.Maybe (isNothing, fromMaybe, fromJust)
 import Data.Monoid (Monoid(mempty, mappend), (<>))
 import Data.Text (Text)
+import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime, getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import System.IO.Unsafe (unsafePerformIO)
@@ -167,6 +168,7 @@ import System.Random (Random, StdGen, newStdGen, mkStdGen, split,
 import qualified Data.HashMap.Lazy as HM
 import qualified Data.Map as M
 import qualified Data.Text as T
+import qualified Data.Text.Lazy.Builder.Int as TLB
 
 import MOO.Command
 import {-# SOURCE #-} MOO.Connection
@@ -1450,31 +1452,29 @@ newRandomGen = do
 -- user.
 formatTraceback :: Exception -> [Text]
 formatTraceback except@Exception { exceptionCallStack = Stack frames } =
-  T.splitOn "\n" $ execWriter (traceback frames)
+  T.splitOn "\n" $ builder2text $ execWriter (traceback frames)
 
-  where traceback :: [StackFrame] -> Writer Text ()
-        traceback (frame:frames) = do
-          describeVerb frame
-          tell $ ":  " <> Str.toText (exceptionMessage except)
-          traceback' frames
+  where traceback :: [StackFrame] -> Writer Builder ()
+        traceback (frame:frames) =
+          describeVerb frame >> tell ":  " >> traceback' frames
         traceback [] = traceback' []
 
-        traceback' :: [StackFrame] -> Writer Text ()
-        traceback' (frame:frames) = do
-          tell "\n... called from "
-          describeVerb frame
-          traceback' frames
-        traceback' [] = tell "\n(End of traceback)"
+        traceback' :: [StackFrame] -> Writer Builder ()
+        traceback' frames = do
+          tell $ Str.toBuilder (exceptionMessage except)
+          forM_ frames $ \frame ->
+            tell "\n... called from " >> describeVerb frame
+          tell "\n(End of traceback)"
 
-        describeVerb :: StackFrame -> Writer Text ()
+        describeVerb :: StackFrame -> Writer Builder ()
         describeVerb Frame { builtinFunc = False
                            , verbLocation = loc, verbFullName = name
                            , initialThis = this, lineNumber = line } = do
-          tell $ "#" <> T.pack (show loc) <> ":" <> Str.toText name
-          when (loc /= this) $ tell $ " (this == #" <> T.pack (show this) <> ")"
-          when (line > 0) $ tell $ ", line " <> T.pack (show line)
+          tell $ "#" <> TLB.decimal loc <> ":" <> Str.toBuilder name
+          when (this /= loc) $ tell $ " (this == #" <> TLB.decimal this <> ")"
+          when (line > 0)    $ tell $ ", line " <> TLB.decimal line
         describeVerb Frame { builtinFunc = True, verbName = name } =
-          tell $ "built-in function " <> Str.toText name <> "()"
+          tell $ "built-in function " <> Str.toBuilder name <> "()"
 
 -- | Begin the server shutdown process.
 shutdown :: StrT -> MOO ()
