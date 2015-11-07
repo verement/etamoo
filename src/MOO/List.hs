@@ -200,7 +200,7 @@ assocLens key lst = mkLens <$> toAssocMap lst
                          , toAssocMap = Just $ map' (V.length vec)
                          }
                        Just (i, _) -> lst {
-                           toVector   = vectorSet vec i assoc
+                           toVector   = vectorSet vec assoc i
                          , toAssocMap = Just $ map' i
                          }
                 setValue Nothing = maybe lst (delete lst . fst) current
@@ -209,11 +209,11 @@ assocLens key lst = mkLens <$> toAssocMap lst
 
 -- | Return a modified list with the given 0-based index replaced with the
 -- given value.
-set :: MOOList -> Int -> Value -> MOOList
-set lst i = fromVector . vectorSet (toVector lst) i
+set :: MOOList -> Value -> Int -> MOOList
+set lst value = fromVector . vectorSet (toVector lst) value
 
-vectorSet :: Vector Value -> Int -> Value -> Vector Value
-vectorSet vec i value = V.modify (\vec' -> VM.write vec' i value) vec
+vectorSet :: Vector Value -> Value -> Int -> Vector Value
+vectorSet vec value i = V.modify (\vec' -> VM.write vec' i value) vec
 
 -- | Return a modified list with the given value inserted at the given 0-based
 -- index.

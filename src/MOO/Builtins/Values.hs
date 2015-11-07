@@ -460,25 +460,24 @@ bf_listappend = Builtin "listappend" 2 (Just 3)
   let [Int index] = defaults optional [Int $ fromIntegral $ Lst.length list]
   in return $ Lst $ Lst.insert list (fromIntegral index) value
 
-bf_listdelete = Builtin "listdelete" 2 (Just 2) [TLst, TAny]
-                TLst $ \[Lst list, index] -> case index of
-  Int index | index' < 1 || index' > Lst.length list -> raise E_RANGE
-            | otherwise -> return $ Lst $ Lst.delete list (index' - 1)
-    where index' = fromIntegral index
+listFunc :: LstT -> Value -> Maybe Value -> MOO Value
+listFunc list index newValue = case index of
+  Int i | i' < 1 || i' > Lst.length list -> raise E_RANGE
+        | otherwise -> return $ Lst $
+                       maybe (Lst.delete list) (Lst.set list) newValue (pred i')
+    where i' = fromIntegral i
   Str key -> case Lst.assocLens key list of
-    Just (_, change) -> return (Lst $ change Nothing)
+    Just (_, change) -> return (Lst $ change newValue)
     Nothing          -> raise E_INVIND
   _ -> raise E_TYPE
 
-bf_listset = Builtin "listset" 3 (Just 3) [TLst, TAny, TAny]
-             TLst $ \[Lst list, value, index] -> case index of
-  Int index | index' < 1 || index' > Lst.length list -> raise E_RANGE
-            | otherwise -> return $ Lst $ Lst.set list (index' - 1) value
-    where index' = fromIntegral index
-  Str key -> case Lst.assocLens key list of
-    Just (_, change) -> return (Lst $ change $ Just value)
-    Nothing          -> raise E_INVIND
-  _ -> raise E_TYPE
+bf_listdelete = Builtin "listdelete" 2 (Just 2)
+                [TLst, TAny] TLst $ \[Lst list, index] ->
+  listFunc list index Nothing
+
+bf_listset = Builtin "listset" 3 (Just 3)
+             [TLst, TAny, TAny] TLst $ \[Lst list, value, index] ->
+  listFunc list index (Just value)
 
 bf_setadd = Builtin "setadd" 2 (Just 2)
             [TLst, TAny] TLst $ \[Lst list, value] ->

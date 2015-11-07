@@ -409,7 +409,7 @@ lValue (expr `Index` index) = LValue fetchIndex storeIndex changeIndex
           where changeValue :: Value -> Int -> (Value -> MOO Value) ->
                                Value -> MOO Value
                 changeValue (Lst v) i changeExpr newValue =
-                  changeExpr $ Lst $ Lst.set v i newValue
+                  changeExpr $ Lst $ Lst.set v newValue i
                 changeValue (Str t) i changeExpr (Str c) = do
                   when (c `Str.compareLength` 1 /= EQ) $ raise E_INVARG
                   let (s, r) = Str.splitAt i t :: (StrT, StrT)
