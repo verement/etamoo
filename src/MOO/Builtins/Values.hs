@@ -7,7 +7,6 @@ import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Monad (unless, (<=<))
 import Data.ByteString (ByteString)
 import Data.Char (isDigit, digitToInt)
-import Data.Maybe (fromJust)
 import Data.Monoid ((<>), mconcat)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
@@ -400,28 +399,21 @@ bf_substitute = Builtin "substitute" 2 (Just 2)
 
 bf_crypt = Builtin "crypt" 1 (Just 2)
            [TStr, TStr] TStr $ \(Str text : optional) ->
-  let (saltArg : _) = maybeDefaults optional
-      go salt = do
-        result <- unsafeIOtoMOO $ crypt (Str.toString text) (Str.toString salt)
-        maybe (raise E_INVARG) (return . Str . Str.fromString) result
-  in if maybe True invalidSalt saltArg
-     then generateSalt >>= go
-     else go $ fromStr $ fromJust saltArg
+  let (salt : _) = maybeDefaults optional
+  in saltString salt >>= unsafeIOtoMOO . crypt (Str.toString text) >>=
+     maybe (raise E_INVARG) (return . Str . Str.fromString)
 
-  where invalidSalt :: Value -> Bool
-        invalidSalt (Str salt) = salt `Str.compareLength` 2 == LT
-
-        generateSalt :: MOO StrT
-        generateSalt = do
-          c1 <- randSaltChar
-          c2 <- randSaltChar
-          return $ Str.fromString [c1, c2]
+  where saltString :: Maybe Value -> MOO String
+        saltString (Just (Str salt))
+          | salt `Str.compareLength` 2 /= LT = return (Str.toString salt)
+        saltString _ = randSaltChar >>= \c1 ->
+                       randSaltChar >>= \c2 -> return [c1, c2]
 
         randSaltChar :: MOO Char
-        randSaltChar = (saltStuff !!) <$> random (0, length saltStuff - 1)
+        randSaltChar = (saltChars !!) <$> random (0, length saltChars - 1)
 
-        saltStuff :: String
-        saltStuff = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
+        saltChars :: String
+        saltChars = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "./"
 
 hashBuiltin :: Id -> ((ByteString -> MOO Value) -> StrT -> MOO Value) -> Builtin
 hashBuiltin name f = Builtin name 1 (Just 3)
