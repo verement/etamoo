@@ -31,13 +31,6 @@ module MOO.Types (
   , toId
   , builder2text
 
-  , fromInt
-  , fromFlt
-  , fromStr
-  , fromObj
-  , fromErr
-  , fromLst
-
   , equal
   , comparable
   , truthOf
@@ -246,24 +239,6 @@ emptyString = Str Str.empty
 -- | An empty MOO list
 emptyList :: Value
 emptyList = Lst Lst.empty
-
-fromInt :: Value -> IntT
-fromInt (Int x) = x
-
-fromFlt :: Value -> FltT
-fromFlt (Flt x) = x
-
-fromStr :: Value -> StrT
-fromStr (Str x) = x
-
-fromObj :: Value -> ObjT
-fromObj (Obj x) = x
-
-fromErr :: Value -> ErrT
-fromErr (Err x) = x
-
-fromLst :: Value -> LstT
-fromLst (Lst x) = x
 
 -- | Test two MOO values for indistinguishable (case-sensitive) equality.
 equal :: Value -> Value -> Bool
