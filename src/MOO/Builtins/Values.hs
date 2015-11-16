@@ -282,22 +282,19 @@ bf_strcmp = Builtin "strcmp" 2 (Just 2)
 bf_decode_binary = Builtin "decode_binary" 1 (Just 2)
                    [TStr, TAny] TLst $ \(Str bin_string : optional) ->
   let [fully] = booleanDefaults optional [False]
+  in fromList . pushString . BS.foldr (decode fully) ([], "") <$>
+     binaryString bin_string
 
-      mkResult :: [Word8] -> Value
-      mkResult | fully     = fromListBy (Int . fromIntegral)
-               | otherwise = fromList . grouping id
+  where decode :: Bool -> Word8 -> ([Value], String) -> ([Value], String)
+        decode fully b accum
+          | not fully && Str.validChar c = (c :) <$> accum
+          | otherwise                    = (Int n : pushString accum, "")
+          where c = toEnum (fromIntegral b) :: Char
+                n = fromIntegral b          :: IntT
 
-      grouping :: (String -> String) -> [Word8] -> [Value]
-      grouping g (w:ws)
-        | Str.validChar c = grouping (g . (c :)) ws
-        | otherwise       = group g ++ Int (fromIntegral w) : grouping id ws
-        where c = toEnum (fromIntegral w)
-      grouping g [] = group g
-
-      group :: (String -> String) -> [Value]
-      group g = [ Str (Str.fromString g') | let g' = g [], not (null g') ]
-
-  in mkResult . BS.unpack <$> binaryString bin_string
+        pushString :: ([Value], String) -> [Value]
+        pushString (vs, "") = vs
+        pushString (vs, s)  = Str (Str.fromString s) : vs
 
 bf_encode_binary = Builtin "encode_binary" 0 Nothing [] TStr $
                    let mkResult = return . Str . Str.fromBinary . BS.pack
