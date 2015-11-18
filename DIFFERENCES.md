@@ -47,35 +47,27 @@ differences include:
   * The `value_hash()`, `string_hash()`, and `binary_hash()` built-in
     functions in EtaMOO accept two optional arguments in addition to the value
     or string to be hashed. The second argument is a string which selects the
-    particular hash algorithm to use, and defaults to "MD5". The following
+    particular hash algorithm to use, and defaults to `"MD5"`. The following
     algorithms are supported:
 
-        MD2
-        MD4
-        MD5
-        RIPEMD-160
-        SHA-1
-        SHA-224
-        SHA-256
-        SHA-384
-        SHA-512
-        SHA-512/224
-        SHA-512/256
-        SHA3-224
-        SHA3-256
-        SHA3-384
-        SHA3-512
-        Skein-256-224
-        Skein-256-256
-        Skein-512-224
-        Skein-512-256
-        Skein-512-384
-        Skein-512-512
-        Tiger
-        Whirlpool
+        MD2           SHA-256        SHA3-256         Skein-512-256
+        MD4           SHA-384        SHA3-384         Skein-512-384
+        MD5           SHA-512        SHA3-512         Skein-512-512
+        RIPEMD-160    SHA-512/224    Skein-256-224    Tiger
+        SHA-1         SHA-512/256    Skein-256-256    Whirlpool
+        SHA-224       SHA3-224       Skein-512-224
 
     The third argument, if provided and true, causes the digest value to be
     returned as a binary string instead of a string of hexadecimal digits.
+
+  * In LambdaMOO, the strings returned from the `value_hash()`,
+    `string_hash()`, `binary_hash()`, and `encode_binary()` built-in functions
+    use uppercase hexadecimal digits. In EtaMOO, these strings use lowercase
+    digits.
+
+  * EtaMOO expects only printable ASCII characters to be present within MOO
+    binary strings; in particular, ASCII HT (horizontal tab) is forbidden, and
+    should be encoded instead as `"~09"`.
 
   * In LambdaMOO, the `buffered_output_length()` built-in returns the number
     of *bytes* currently buffered for output to a connection. In EtaMOO, this
