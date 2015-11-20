@@ -107,6 +107,7 @@ executable etamoo
                        FlexibleInstances
                        ForeignFunctionInterface
                        OverloadedStrings
+                       Rank2Types
 
   pkgconfig-depends:   libpcre >= 8.20
 

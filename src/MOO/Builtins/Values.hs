@@ -1,5 +1,5 @@
 
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, Rank2Types #-}
 
 module MOO.Builtins.Values ( builtins ) where
 
@@ -156,25 +156,24 @@ bf_random = Builtin "random" 0 (Just 1) [TInt] TInt $ \optional ->
   in if mod < 1 then raise E_INVARG
      else Int <$> random (1, mod)
 
-bf_min = Builtin "min" 1 Nothing [TNum] TNum $ \args -> case args of
-  Int x:xs -> minMaxInt min x xs
-  Flt x:xs -> minMaxFlt min x xs
+imumBuiltin :: Id -> (forall a. Ord a => [a] -> a) -> Builtin
+imumBuiltin name f = Builtin name 1 Nothing [TNum] TNum $ \args -> case args of
+  Int x:vs -> Int . f . (x :) <$> getValues intValue vs
+  Flt x:vs -> Flt . f . (x :) <$> getValues fltValue vs
 
-bf_max = Builtin "max" 1 Nothing [TNum] TNum $ \args -> case args of
-  Int x:xs -> minMaxInt max x xs
-  Flt x:xs -> minMaxFlt max x xs
+  where getValues :: (Value -> Maybe a) -> [Value] -> MOO [a]
+        getValues f = maybe (raise E_TYPE) return . mapM f
 
-minMaxInt :: (IntT -> IntT -> IntT) -> IntT -> [Value] -> MOO Value
-minMaxInt f = go
-  where go x (Int y:rs) = go (f x y) rs
-        go x []         = return $ Int x
-        go _ _          = raise E_TYPE
+        intValue :: Value -> Maybe IntT
+        intValue (Int x) = Just x
+        intValue  _      = Nothing
 
-minMaxFlt :: (FltT -> FltT -> FltT) -> FltT -> [Value] -> MOO Value
-minMaxFlt f = go
-  where go x (Flt y:rs) = go (f x y) rs
-        go x []         = return $ Flt x
-        go _ _          = raise E_TYPE
+        fltValue :: Value -> Maybe FltT
+        fltValue (Flt x) = Just x
+        fltValue  _      = Nothing
+
+bf_min = imumBuiltin "min" minimum
+bf_max = imumBuiltin "max" maximum
 
 bf_abs = Builtin "abs" 1 (Just 1) [TNum] TNum $ \[arg] -> case arg of
   Int x -> return $ Int $ abs x
