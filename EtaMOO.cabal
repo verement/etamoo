@@ -72,6 +72,7 @@ executable etamoo
                        MOO.Builtins.Extra
                        MOO.Builtins.Hash
                        MOO.Builtins.Match
+                       MOO.Builtins.Misc
                        MOO.Builtins.Network
                        MOO.Builtins.Objects
                        MOO.Builtins.Tasks
