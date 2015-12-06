@@ -73,6 +73,10 @@ int match_helper(const pcre *code, const pcre_extra *extra,
  * Arrange to call pcre_exec() with a callout that records the rightmost
  * match. We use the same callout function as match_helper() so that we can
  * run simultaneously with it, as pcre_callout is a global variable.
+ *
+ * We also use an option to disable PCRE optimizations that can interfere with
+ * rmatch semantics. This has a side-effect of disabling JIT unless the
+ * pattern has been compiled using the same option.
  */
 int rmatch_helper(const pcre *code, const pcre_extra *extra,
                   const char *subject, int length,
@@ -91,7 +95,7 @@ int rmatch_helper(const pcre *code, const pcre_extra *extra,
   pcre_callout = global_callout;
 
   rc = pcre_exec(code, &local_extra, subject, length, 0,
-		 options, ovector, MAX_CAPTURES * 3);
+		 options | PCRE_NO_START_OPTIMIZE, ovector, MAX_CAPTURES * 3);
   if (rc == PCRE_ERROR_NOMATCH && rmatch.valid) {
     rc = rmatch.valid;
     memcpy(ovector, &rmatch.ovec[0], sizeof(ovector[0]) * 2 * rc);

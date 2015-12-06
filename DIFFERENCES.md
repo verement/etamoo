@@ -82,3 +82,8 @@ differences include:
   * The effective range of object values in EtaMOO is system-dependent, and
     not necessarily the same as the range of integer values.
 
+  * Due to the way regular expression matching is implemented in EtaMOO, the
+    `match()` built-in function is generally going to be more efficient than
+    `rmatch()` and may also be able to handle a greater range of patterns
+    before encountering resource limitations.
+

@@ -181,8 +181,7 @@ newRegexp regexp caseMatters =
 
         compileOptions :: CInt
         compileOptions = #{const PCRE_UTF8 | PCRE_NO_UTF8_CHECK}
-        -- allow PCRE to optimize .* at beginning of pattern by implicit anchor
-          .|. #{const PCRE_DOTALL | PCRE_DOLLAR_ENDONLY}
+          .|. #{const PCRE_DOLLAR_ENDONLY}
           .|. if caseMatters then 0 else #{const PCRE_CASELESS}
 
         mkExtra :: Ptr PCRE -> IO (ForeignPtr PCREExtra)
