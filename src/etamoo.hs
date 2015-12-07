@@ -15,6 +15,7 @@ import Paths_EtaMOO (version)
 
 import MOO.Network
 import MOO.Server
+import MOO.Version
 
 main :: IO ()
 main = parseArgs >>= run
@@ -33,6 +34,7 @@ run opts
 versionDetails :: String
 versionDetails = unlines [
     "EtaMOO " ++ showVersion version
+  , "(using " ++ pcreVersion ++ ")"
   , ""
   , "Build options:"
 # ifdef MOO_64BIT_INTEGER

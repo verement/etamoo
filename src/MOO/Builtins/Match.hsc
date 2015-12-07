@@ -13,6 +13,9 @@ module MOO.Builtins.Match (
   -- ** Matching
   , match
   , rmatch
+
+  -- ** Miscellaneous
+  , pcreVersion
   ) where
 
 import Control.Applicative ((<$>))
@@ -54,6 +57,9 @@ foreign import ccall unsafe "static pcre.h &"
 
 foreign import ccall unsafe "static pcre.h &"
   pcre_free :: Ptr (FunPtr (Ptr a -> IO ()))
+
+foreign import ccall unsafe "static pcre.h"
+  pcre_version :: IO CString
 
 foreign import ccall safe "static match.h"  match_helper :: Helper
 foreign import ccall safe "static match.h" rmatch_helper :: Helper
@@ -275,3 +281,7 @@ matchResult subject subjectCharLen ovec rc
         -- translate UTF-8 byte offset to character offset
         rebase 0 = 0
         rebase i = subjectCharLen - T.length (decodeUtf8 $ BS.drop i subject)
+
+-- | Return the current version of the linked PCRE library.
+pcreVersion :: String
+pcreVersion = "PCRE " ++ unsafePerformIO (peekCString =<< pcre_version)
