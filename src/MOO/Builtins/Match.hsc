@@ -226,9 +226,8 @@ newRegexp regexp caseMatters =
                 patch ')'  = "%)"
                 patch  c   = [c]
 
-maxCaptures, ovecLen :: Num a => a
+maxCaptures :: Num a => a
 maxCaptures = 10
-ovecLen     = maxCaptures * 3
 
 data MatchResult = MatchFailed
                  | MatchAborted
@@ -248,23 +247,21 @@ doMatch helper Regexp { code = codeFP, extra = extraFP } text =
   withForeignPtr codeFP  $ \code           ->
   withForeignPtr extraFP $ \extra          ->
   useAsCStringLen string $ \(cstring, len) ->
-  allocaArray ovecLen    $ \ovec           -> do
+  allocaArray ovecLen    $ \ovec           ->
 
-    rc <- helper code extra cstring (fromIntegral len) options ovec
-    if rc < 0
-      then case rc of
-        #{const PCRE_ERROR_NOMATCH} -> return MatchFailed
-        _                           -> return MatchAborted
-      else mkMatchResult rc ovec subject
+  helper code extra cstring (fromIntegral len) options ovec >>=
+  matchResult string (T.length text) ovec
 
   where string  = encodeUtf8 text             :: ByteString
-        subject = (string, T.length text)     :: (ByteString, Int)
+        ovecLen = maxCaptures * 3             :: Int
         options = #{const PCRE_NO_UTF8_CHECK} :: CInt
 
-mkMatchResult :: CInt -> Ptr CInt -> (ByteString, Int) -> IO MatchResult
-mkMatchResult rc ovec (subject, subjectCharLen) =
-  MatchSucceeded . pairs . map (rebase . fromIntegral) <$>
-  peekArray (n * 2) ovec
+matchResult :: ByteString -> Int -> Ptr CInt -> CInt -> IO MatchResult
+matchResult subject subjectCharLen ovec rc
+  | rc == #{const PCRE_ERROR_NOMATCH} = return MatchFailed
+  | rc < 0                            = return MatchAborted
+  | otherwise = MatchSucceeded . pairs . map (rebase . fromIntegral) <$>
+                peekArray (n * 2) ovec
 
   where n :: Int
         n | rc == 0 || rc > maxCaptures = maxCaptures
