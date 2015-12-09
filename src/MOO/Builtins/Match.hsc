@@ -1,5 +1,6 @@
 
-{-# LANGUAGE ForeignFunctionInterface, EmptyDataDecls #-}
+{-# LANGUAGE ForeignFunctionInterface, EmptyDataDecls,
+             GeneralizedNewtypeDeriving #-}
 {-# CFILES src/cbits/match.c #-}
 
 -- | Regular expression matching via PCRE through the FFI
@@ -20,14 +21,16 @@ module MOO.Builtins.Match (
 
 import Control.Applicative ((<$>))
 import Control.Arrow ((&&&))
+import Data.Bits (Bits(zeroBits, (.|.), (.&.), complement))
 import Data.ByteString (ByteString, useAsCString, useAsCStringLen)
 import Data.Function (on)
+import Data.Monoid (Monoid(mempty, mappend), (<>))
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import Foreign (Ptr, FunPtr, ForeignPtr, alloca, allocaArray, nullPtr,
-                peek, peekArray, peekByteOff, pokeByteOff,
-                newForeignPtr, mallocForeignPtrBytes, withForeignPtr,
-                (.|.), (.&.), complement)
+import Foreign (Ptr, FunPtr, ForeignPtr,
+                Storable(peek, peekByteOff, pokeByteOff),
+                nullPtr, alloca, allocaArray, peekArray,
+                newForeignPtr, mallocForeignPtrBytes, withForeignPtr)
 import Foreign.C (CString, CInt(CInt), CULong, peekCString)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -35,22 +38,18 @@ import qualified Data.ByteString as BS
 import qualified Data.Text as T
 
 {-# ANN module ("HLint: ignore Avoid lambda" :: String) #-}
+{-# ANN module ("HLint: ignore Redundant lambda" :: String) #-}
+{-# ANN module ("HLint: ignore Redundant bracket" :: String) #-}
 
-#include <pcre.h>
-
-data PCRE
-data PCREExtra
-data CharacterTables
-
-type Helper = Ptr PCRE -> Ptr PCREExtra -> CString -> CInt ->
-              CInt -> Ptr CInt -> IO CInt
+# include <pcre.h>
 
 foreign import ccall safe "static pcre.h"
-  pcre_compile :: CString -> CInt -> Ptr CString -> Ptr CInt ->
+  pcre_compile :: CString -> PCREOptions -> Ptr CString -> Ptr CInt ->
                   Ptr CharacterTables -> IO (Ptr PCRE)
 
 foreign import ccall safe "static pcre.h"
-  pcre_study :: Ptr PCRE -> CInt -> Ptr CString -> IO (Ptr PCREExtra)
+  pcre_study :: Ptr PCRE -> PCREStudyOptions -> Ptr CString ->
+                IO (Ptr PCREExtra)
 
 foreign import ccall unsafe "static pcre.h &"
   pcre_free_study :: FunPtr (Ptr PCREExtra -> IO ())
@@ -63,6 +62,52 @@ foreign import ccall unsafe "static pcre.h"
 
 foreign import ccall safe "static match.h"  match_helper :: Helper
 foreign import ccall safe "static match.h" rmatch_helper :: Helper
+
+type Helper = Ptr PCRE -> Ptr PCREExtra -> CString -> CInt ->
+              PCREOptions -> Ptr CInt -> IO CInt
+
+data PCRE
+data PCREExtra
+data CharacterTables
+
+newtype BitFlags a = Flags a deriving (Eq, Bits, Storable)
+
+instance Bits a => Monoid (BitFlags a) where
+  mempty  = zeroBits
+  mappend = (.|.)
+
+andNot :: Bits a => a -> a -> a
+x `andNot` y = x .&. complement y
+
+newtype PCREOptions = Options (BitFlags CInt) deriving Monoid
+
+# enum PCREOptions, (Options . Flags)  \
+  , PCRE_UTF8                          \
+  , PCRE_NO_UTF8_CHECK                 \
+  , PCRE_DOLLAR_ENDONLY                \
+  , PCRE_CASELESS
+
+newtype PCREStudyOptions = StudyOptions (BitFlags CInt) deriving Monoid
+
+# enum PCREStudyOptions, (StudyOptions . Flags)  \
+  , PCRE_STUDY_JIT_COMPILE
+
+newtype PCREExtraFlags = ExtraFlags (BitFlags CULong)
+                       deriving (Monoid, Eq, Bits, Storable)
+
+# enum PCREExtraFlags, (ExtraFlags . Flags)  \
+  , PCRE_EXTRA_MATCH_LIMIT                   \
+  , PCRE_EXTRA_MATCH_LIMIT_RECURSION         \
+  , PCRE_EXTRA_CALLOUT_DATA
+
+peekExtraFlags :: Ptr PCREExtra -> IO PCREExtraFlags
+peekExtraFlags = #{peek pcre_extra, flags}
+
+pokeExtraFlags :: Ptr PCREExtra -> PCREExtraFlags -> IO ()
+pokeExtraFlags = #{poke pcre_extra, flags}
+
+patchExtraFlags :: Ptr PCREExtra -> (PCREExtraFlags -> PCREExtraFlags) -> IO ()
+patchExtraFlags ptr f = peekExtraFlags ptr >>= pokeExtraFlags ptr . f
 
 data Regexp = Regexp {
     pattern     :: Text
@@ -182,48 +227,40 @@ newRegexp regexp caseMatters =
                               , code        = codeFP
                               , extra       = extraFP
                               }
-  where string :: ByteString
-        string = encodeUtf8 (translate regexp)
 
-        compileOptions :: CInt
-        compileOptions = #{const PCRE_UTF8 | PCRE_NO_UTF8_CHECK}
-          .|. #{const PCRE_DOLLAR_ENDONLY}
-          .|. if caseMatters then 0 else #{const PCRE_CASELESS}
+  where string = encodeUtf8 (translate regexp) :: ByteString
+
+        compileOptions :: PCREOptions
+        compileOptions = pcreUtf8 <> pcreNoUtf8Check <> pcreDollarEndonly <>
+                         if caseMatters then mempty else pcreCaseless
 
         mkExtra :: Ptr PCRE -> IO (ForeignPtr PCREExtra)
         mkExtra code = alloca $ \errorPtr -> do
           extra <- pcre_study code studyOptions errorPtr
           if extra == nullPtr
             then do
-              extraFP <- mallocForeignPtrBytes #{const sizeof(pcre_extra)}
-              withForeignPtr extraFP $ \extra ->
-                #{poke pcre_extra, flags} extra (0 :: CULong)
+              extraFP <- mallocForeignPtrBytes #{size pcre_extra}
+              withForeignPtr extraFP $ \extra -> pokeExtraFlags extra mempty
               return extraFP
             else newForeignPtr pcre_free_study extra
 
-          where studyOptions :: CInt
-                studyOptions = #{const PCRE_STUDY_JIT_COMPILE}
+          where studyOptions = pcreStudyJitCompile :: PCREStudyOptions
 
         setExtraFlags :: ForeignPtr PCREExtra -> IO ()
         setExtraFlags extraFP = withForeignPtr extraFP $ \extra -> do
           #{poke pcre_extra, match_limit}           extra matchLimit
           #{poke pcre_extra, match_limit_recursion} extra matchLimitRecursion
 
-          flags <- #{peek pcre_extra, flags} extra
-          let extraFlags = (flags .|. matchLimitFlags) .&.
-                           complement calloutDataFlag
-          #{poke pcre_extra, flags} extra extraFlags
+          patchExtraFlags extra $ \flags -> (flags <> matchLimitFlags)
+                                            `andNot` pcreExtraCalloutData
 
           where matchLimit, matchLimitRecursion :: CULong
                 matchLimit          = 100000
                 matchLimitRecursion = matchLimit
 
-                matchLimitFlags :: CULong
-                matchLimitFlags = #{const PCRE_EXTRA_MATCH_LIMIT |
-                                          PCRE_EXTRA_MATCH_LIMIT_RECURSION}
-
-                calloutDataFlag :: CULong
-                calloutDataFlag = #{const PCRE_EXTRA_CALLOUT_DATA}
+                matchLimitFlags :: PCREExtraFlags
+                matchLimitFlags = pcreExtraMatchLimit <>
+                                  pcreExtraMatchLimitRecursion
 
         patchError :: String -> String
         patchError = concatMap patch
@@ -258,9 +295,9 @@ doMatch helper Regexp { code = codeFP, extra = extraFP } text =
   helper code extra cstring (fromIntegral len) options ovec >>=
   matchResult string (T.length text) ovec
 
-  where string  = encodeUtf8 text             :: ByteString
-        ovecLen = maxCaptures * 3             :: Int
-        options = #{const PCRE_NO_UTF8_CHECK} :: CInt
+  where string  = encodeUtf8 text :: ByteString
+        ovecLen = maxCaptures * 3 :: Int
+        options = pcreNoUtf8Check :: PCREOptions
 
 matchResult :: ByteString -> Int -> Ptr CInt -> CInt -> IO MatchResult
 matchResult subject subjectCharLen ovec rc
