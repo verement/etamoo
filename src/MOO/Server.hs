@@ -25,6 +25,7 @@ import qualified Data.Map as M
 import qualified Data.Text as T
 
 import MOO.Builtins
+import MOO.Builtins.Match (verifyPCRE)
 import MOO.Connection
 import MOO.Database.LambdaMOO
 import MOO.Network
@@ -37,7 +38,9 @@ import MOO.Version
 startServer :: Maybe FilePath -> FilePath -> FilePath ->
                Bool -> (TVar World -> Point) -> IO ()
 startServer logFile inputDB outputDB outboundNet pf = withSocketsDo $ do
+  verifyPCRE
   either error return verifyBuiltins
+
   installHandler sigPIPE Ignore Nothing
 
   (stmLogger, stopLogger) <- startLogger logFile

@@ -17,17 +17,20 @@ module MOO.Builtins.Match (
 
   -- ** Miscellaneous
   , pcreVersion
+  , verifyPCRE
   ) where
 
 import Control.Applicative ((<$>))
 import Control.Arrow ((&&&))
+import Control.Monad (unless)
 import Data.Bits (Bits(zeroBits, (.|.), (.&.), complement))
 import Data.ByteString (ByteString, useAsCString, useAsCStringLen)
 import Data.Function (on)
+import Data.Maybe (fromMaybe)
 import Data.Monoid (Monoid(mempty, mappend), (<>))
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import Foreign (Ptr, FunPtr, ForeignPtr,
+import Foreign (Ptr, FunPtr, ForeignPtr, toBool,
                 Storable(peek, peekByteOff, pokeByteOff),
                 nullPtr, alloca, allocaArray, peekArray,
                 newForeignPtr, mallocForeignPtrBytes, withForeignPtr)
@@ -59,6 +62,9 @@ foreign import ccall unsafe "static pcre.h &"
 
 foreign import ccall unsafe "static pcre.h"
   pcre_version :: IO CString
+
+foreign import ccall unsafe "static pcre.h"
+  pcre_config :: PCREConfig a -> Ptr a -> IO CInt
 
 foreign import ccall safe "static match.h"  match_helper :: Helper
 foreign import ccall safe "static match.h" rmatch_helper :: Helper
@@ -322,3 +328,40 @@ matchResult subject subjectCharLen ovec rc
 -- | Return the current version of the linked PCRE library.
 pcreVersion :: String
 pcreVersion = "PCRE " ++ unsafePerformIO (peekCString =<< pcre_version)
+
+newtype PCREConfig a = Config CInt
+
+# enum PCREConfig CInt, Config      \
+  , PCRE_CONFIG_UTF8                \
+  , PCRE_CONFIG_UNICODE_PROPERTIES  \
+  , PCRE_CONFIG_JIT
+# enum PCREConfig CString, Config   \
+  , PCRE_CONFIG_JITTARGET
+
+-- | Retrieve a PCRE build-time option.
+pcreConfig :: Storable a => PCREConfig a -> IO (Maybe a)
+pcreConfig what = alloca $ \ptr -> do
+  result <- pcre_config what ptr
+  case result of
+    0 -> Just <$> peek ptr
+    _ -> return Nothing
+
+pcreBoolConfig :: PCREConfig CInt -> IO (Maybe Bool)
+pcreBoolConfig what = fmap toBool <$> pcreConfig what
+
+pcreStringConfig :: PCREConfig CString -> IO (Maybe String)
+pcreStringConfig what = pcreConfig what >>=
+                        maybe (return Nothing) (fmap Just . peekCString)
+
+-- | Verify the bound PCRE library was built with the required features.
+verifyPCRE :: IO ()
+verifyPCRE = do
+  verify pcreConfigUtf8 "PCRE is missing UTF-8 support"
+{-
+  verify pcreConfigUnicodeProperties
+    "PCRE is missing Unicode character properties support"
+-}
+  where verify :: PCREConfig CInt -> String -> IO ()
+        verify config msg = do
+          supported <- fromMaybe False <$> pcreBoolConfig config
+          unless supported $ error msg
