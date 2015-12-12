@@ -73,7 +73,6 @@ import Prelude hiding (tail, null, length, foldr, concat, concatMap, take, drop,
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
 import qualified Data.Text.Lazy.Builder as TLB
-import qualified Prelude
 
 import MOO.Builtins.Match (Regexp, newRegexp)
 
@@ -156,15 +155,15 @@ caseFold text
 
 -- | Encode a MOO /binary string/.
 encodeBinary :: ByteString -> Text
-encodeBinary = T.pack . Prelude.concatMap encode . BS.unpack
-  where encode :: Word8 -> String
+encodeBinary = T.pack . BS.foldr encode []
+  where encode :: Word8 -> String -> String
         encode b
-          | isAscii c && isPrint c && c /= '~' = [c]
-          | otherwise                          = ['~', hex q, hex r]
-          where n      = fromIntegral b
-                c      = toEnum n
-                (q, r) = n `divMod` 16
-                hex    = intToDigit
+          | isAscii c && isPrint c && c /= '~' = (c :)
+          | otherwise                          = ('~' :) . (hex q :) . (hex r :)
+          where n      = fromIntegral b :: Int
+                c      = toEnum n       :: Char
+                (q, r) = n `divMod` 16  :: (Int, Int)
+                hex    = intToDigit     :: Int -> Char
 
 -- | Decode a MOO /binary string/ or return 'Nothing' if the string is
 -- improperly formatted.
