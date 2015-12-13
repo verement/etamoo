@@ -1432,21 +1432,21 @@ checkQueuedTaskLimit = do
 binaryString :: StrT -> MOO ByteString
 binaryString = maybe (raise E_INVARG) return . Str.toBinary
 
--- | Generate and return a pseudorandom number in the given range, modifying
+-- | Generate and return a pseudorandom value in the given range, modifying
 -- the local generator state.
-random :: (Random a) => (a, a) -> MOO a
-random range = do
-  (r, gen) <- randomR range <$> gets randomGen
-  modify $ \state -> state { randomGen = gen }
-  return r
+random :: Random a => (a, a) -> MOO a
+random = getRandom . randomR
 
 -- | Split the local random number generator state in two, updating the local
 -- state with one of them and returning the other.
 newRandomGen :: MOO StdGen
-newRandomGen = do
-  (gen, gen') <- split <$> gets randomGen
+newRandomGen = getRandom split
+
+getRandom :: (StdGen -> (a, StdGen)) -> MOO a
+getRandom f = do
+  (r, gen) <- f <$> gets randomGen
   modify $ \state -> state { randomGen = gen }
-  return gen'
+  return r
 
 -- | Generate traceback lines for an exception, suitable for displaying to a
 -- user.
