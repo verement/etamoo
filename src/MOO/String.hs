@@ -64,8 +64,9 @@ import Data.Hashable (Hashable(hashWithSalt))
 import Data.Monoid (Monoid(mempty, mappend, mconcat))
 import Data.String (IsString(fromString))
 import Data.Text (Text)
+import Data.Text.Foreign (lengthWord16)
 import Data.Text.Lazy.Builder (Builder)
-import Data.Word (Word8)
+import Data.Word (Word8, Word16)
 import Foreign.Storable (sizeOf)
 import Prelude hiding (tail, null, length, foldr, concat, concatMap, take, drop,
                        splitAt, break, words, unwords)
@@ -196,7 +197,7 @@ singleton :: Char -> MOOString
 singleton = fromText . T.singleton
 
 storageBytes :: MOOString -> Int
-storageBytes str = sizeOf 'x' * (length str + 1) +
+storageBytes str = sizeOf (undefined :: Word16) * lengthWord16 (toText str) +
                    sizeOf (undefined :: Int) * 4
 
 -- | Test two strings for indistinguishable (case-sensitive) equality.
