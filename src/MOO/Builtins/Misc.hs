@@ -58,7 +58,7 @@ bf_pass = Builtin "pass" 0 Nothing [] TAny $ \args -> do
     (verbName frame, verbLocation frame, initialThis frame)
   maybeObject <- getObject verbLoc
   case maybeObject >>= objectParent of
-    Just parent -> callVerb parent this name args
+    Just parent -> callVerb this parent name args
     Nothing     -> raise E_VERBNF
 
 -- § 4.4.5 Operations Involving Times and Dates

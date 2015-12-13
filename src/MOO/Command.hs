@@ -208,10 +208,10 @@ runCommand command = do
   maybeVerb <- getFirst . mconcat . map First <$>
                mapM (locateVerb dobj iobj) [player, room, dobj, iobj]
   case maybeVerb of
-    Just (this, spec) -> callCommandVerb player spec this command (dobj, iobj)
+    Just (this, spec) -> callCommandVerb player spec this command dobj iobj
     Nothing -> findVerb verbPermX "huh" room >>= \found -> case found of
-      (Just oid, Just verb) ->
-        callCommandVerb player (oid, verb) room command (dobj, iobj)
+      (Just verbLoc, Just verb) ->
+        callCommandVerb player (verbLoc, verb) room command dobj iobj
       _ -> notify player "I couldn't understand that." >> return zero
 
   where locateVerb :: ObjId -> ObjId -> ObjId ->
@@ -223,5 +223,5 @@ runCommand command = do
                 prepMatch (verbPreposition verb) (commandPrepSpec command)
           in findVerb acceptable (commandVerb command) this >>= \found ->
           case found of
-            (Just oid, Just verb) -> return $ Just (this, (oid, verb))
-            _                     -> return Nothing
+            (Just verbLoc, Just verb) -> return $ Just (this, (verbLoc, verb))
+            _                         -> return Nothing

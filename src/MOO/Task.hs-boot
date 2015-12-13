@@ -46,7 +46,7 @@ getObject :: ObjId -> MOO (Maybe Object)
 readProperty :: ObjId -> StrT -> MOO (Maybe Value)
 findVerb :: (Verb -> Bool) -> StrT -> ObjId -> MOO (Maybe ObjId, Maybe Verb)
 callCommandVerb :: ObjId -> (ObjId, Verb) -> ObjId ->
-                   Command -> (ObjId, ObjId) -> MOO Value
+                   Command -> ObjId -> ObjId -> MOO Value
 
 raise :: Error -> MOO a
 notyet :: StrT -> MOO a

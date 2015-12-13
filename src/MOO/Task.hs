@@ -799,7 +799,7 @@ callSystemVerb name args = callSystemVerb' systemObject name args Str.empty
 callSystemVerb' :: ObjId -> StrT -> [Value] -> StrT -> MOO (Maybe Value)
 callSystemVerb' object name args argstr = getPlayer >>= \player ->
   findVerb verbPermX name object >>= \found -> case found of
-    (Just verbOid, Just verb) ->
+    (Just verbLoc, Just verb) ->
       let vars = mkVariables [
               ("player", Obj player)
             , ("this"  , Obj object)
@@ -810,15 +810,15 @@ callSystemVerb' object name args argstr = getPlayer >>= \player ->
       in Just <$> runVerb verb initFrame {
           variables     = vars
         , verbName      = name
-        , verbLocation  = verbOid
+        , verbLocation  = verbLoc
         , initialThis   = object
         , initialPlayer = player
         }
     _ -> return Nothing
 
 callCommandVerb :: ObjId -> (ObjId, Verb) -> ObjId ->
-                   Command -> (ObjId, ObjId) -> MOO Value
-callCommandVerb player (verbOid, verb) this command (dobj, iobj) =
+                   Command -> ObjId -> ObjId -> MOO Value
+callCommandVerb player (verbLoc, verb) this command dobj iobj =
   let vars = mkVariables [
           ("player" , Obj player)
         , ("this"   , Obj this)
@@ -835,13 +835,13 @@ callCommandVerb player (verbOid, verb) this command (dobj, iobj) =
   in runVerb verb initFrame {
       variables     = vars
     , verbName      = commandVerb command
-    , verbLocation  = verbOid
+    , verbLocation  = verbLoc
     , initialThis   = this
     , initialPlayer = player
     }
 
-callVerb' :: (ObjId, Verb) -> ObjId -> StrT -> [Value] -> MOO Value
-callVerb' (verbOid, verb) this name args = do
+callVerb' :: ObjId -> ObjId -> Verb -> StrT -> [Value] -> MOO Value
+callVerb' this verbLoc verb name args = do
   thisFrame <- frame id
   wizard <- isWizard (permissions thisFrame)
   let player = case (wizard, vars HM.! "player") of
@@ -865,23 +865,23 @@ callVerb' (verbOid, verb) this name args = do
   runVerb verb initFrame {
       variables     = vars'
     , verbName      = name
-    , verbLocation  = verbOid
+    , verbLocation  = verbLoc
     , initialThis   = this
     , initialPlayer = player
     }
 
 callVerb :: ObjId -> ObjId -> StrT -> [Value] -> MOO Value
-callVerb verbLoc this name args =
-  findVerb verbPermX name verbLoc >>= \found -> case found of
-    (Just verbOid, Just verb) -> callVerb' (verbOid, verb) this name args
-    (Nothing     , _)         -> raise E_INVIND
-    (_           , Nothing)   -> raise E_VERBNF
+callVerb this oid name args =
+  findVerb verbPermX name oid >>= \found -> case found of
+    (Just verbLoc, Just verb) -> callVerb' this verbLoc verb name args
+    (Nothing     , _        ) -> raise E_INVIND
+    (_           , Nothing  ) -> raise E_VERBNF
 
 callFromFunc :: StrT -> LineNo -> (ObjId, StrT) -> [Value] -> MOO (Maybe Value)
 callFromFunc func index (oid, name) args =
   findVerb verbPermX name oid >>= \found -> case found of
-    (Just verbOid, Just verb) -> fmap Just $ evalFromFunc func index $
-                                 callVerb' (verbOid, verb) oid name args
+    (Just verbLoc, Just verb) -> fmap Just $ evalFromFunc func index $
+                                 callVerb' oid verbLoc verb name args
     _                         -> return Nothing
 
 evalFromFunc :: StrT -> LineNo -> MOO Value -> MOO Value
