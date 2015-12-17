@@ -162,7 +162,7 @@ data Property = Property {
   , propertyPermR     :: Bool
   , propertyPermW     :: Bool
   , propertyPermC     :: Bool
-} deriving Show
+}
 
 instance Sizeable Property where
   storageBytes prop =

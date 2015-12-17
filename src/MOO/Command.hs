@@ -96,7 +96,7 @@ data Command = Command {
   , commandPrepSpec :: PrepSpec
   , commandPrepStr  :: StrT
   , commandIObjStr  :: StrT
-  } deriving Show
+  }
 
 -- | Split a typed command into words according to the MOO rules for quoting
 -- and escaping.

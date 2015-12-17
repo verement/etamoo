@@ -270,7 +270,7 @@ data Type = TAny  -- ^ any type
           | TObj  -- ^ object number
           | TErr  -- ^ error
           | TLst  -- ^ list
-          deriving (Eq, Show)
+          deriving (Eq)
 
 -- | A MOO error
 data Error = E_NONE     -- ^ No error

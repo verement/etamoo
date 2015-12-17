@@ -260,10 +260,6 @@ data Task = Task {
   , taskComputation :: MOO Value
   }
 
-instance Show Task where
-  show task = "<Task " ++ show (taskId task) ++
-              ": " ++ show (taskStatus task) ++ ">"
-
 initTask :: Task
 initTask = Task {
     taskId          = 0
@@ -330,7 +326,6 @@ taskOwner = permissions . activeFrame
 
 -- | The running state of a task
 data TaskStatus = Pending | Running | Forked | Suspended Wake | Reading
-                deriving Show
 
 isQueued :: TaskStatus -> Bool
 isQueued Pending = False
@@ -350,9 +345,6 @@ instance Sizeable TaskStatus where
 
 -- | A function to call in order to wake a suspended task
 newtype Wake = Wake (Value -> IO ())
-
-instance Show Wake where
-  show _ = "Wake{..}"
 
 -- | The intermediate or final result of a running task
 data TaskDisposition = Complete Value
@@ -1019,7 +1011,6 @@ setBuiltinProperty _ _ _ = raise E_TYPE
 
 -- | The stack of verb and/or built-in function frames
 newtype CallStack = Stack [StackFrame]
-                  deriving Show
 
 instance Sizeable CallStack where
   storageBytes (Stack stack) = storageBytes stack
@@ -1050,12 +1041,6 @@ instance Sizeable Context where
   storageBytes TryFinally{} = storageBytes ()
     -- storageBytes (finally context)
 
-instance Show Context where
-  show Loop { loopName = Nothing   } = "<Loop>"
-  show Loop { loopName = Just name } = "<Loop " ++ show name ++ ">"
-
-  show TryFinally{} = "<TryFinally>"
-
 -- | The data tracked for each verb and/or built-in function call
 data StackFrame = Frame {
     depthLeft     :: Int
@@ -1073,7 +1058,7 @@ data StackFrame = Frame {
 
   , builtinFunc   :: Bool
   , lineNumber    :: LineNo
-  } deriving Show
+  }
 
 initFrame :: StackFrame
 initFrame = Frame {
@@ -1255,9 +1240,6 @@ mkVariables :: [(Id, Value)] -> HashMap Id Value
 mkVariables = foldr (uncurry HM.insert) initVariables
 
 newtype ExceptionHandler = Handler (Exception -> MOO Value)
-
-instance Show ExceptionHandler where
-  show _ = "<ExceptionHandler>"
 
 -- | A MOO exception
 data Exception = Exception {
