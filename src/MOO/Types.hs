@@ -204,7 +204,7 @@ instance Ident MOOString where
 
 instance Ident Builder where
   fromId = TLB.fromText . CI.original
-  toId   = error "Unsupported conversion from Builder to Id"
+  toId   = CI.mk . builder2text
 
 builder2text :: Builder -> Text
 builder2text = TL.toStrict . TLB.toLazyText
