@@ -17,7 +17,7 @@ module MOO.Command (
   ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (void, foldM, join)
+import Control.Monad (void, foldM)
 import Data.Char (isSpace, isDigit)
 import Data.Monoid (Monoid(mempty, mappend, mconcat), First(First, getFirst))
 import Data.Text (Text)
@@ -204,7 +204,7 @@ runCommand command = do
   dobj <- matchObject player (commandDObjStr command)
   iobj <- matchObject player (commandIObjStr command)
 
-  room <- objectForMaybe . join . fmap objectLocation <$> getObject player
+  room <- objectForMaybe . (objectLocation =<<) <$> getObject player
   maybeVerb <- getFirst . mconcat . map First <$>
                mapM (locateVerb dobj iobj) [player, room, dobj, iobj]
   case maybeVerb of
