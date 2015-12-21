@@ -3,7 +3,7 @@
 module MOO.Compiler ( compile, evaluate ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (when, unless, void, join, (<=<))
+import Control.Monad (forM_, when, unless, void, join, (<=<))
 import Control.Monad.Cont (callCC)
 import Control.Monad.Reader (asks, local)
 import Control.Monad.State (gets)
@@ -59,13 +59,9 @@ compileStatements (statement:rest) yield = case statement of
     compile' rest
 
     where loop :: Id -> [Value] -> MOO a -> MOO ()
-          loop var (elt:elts) body = runTick >> do
+          loop var elts body = forM_ elts $ \elt -> runTick >> do
             storeVariable var elt
-            callCC $ \continue -> do
-              setLoopContinue (Continuation continue)
-              void body
-            loop var elts body
-          loop _ [] _ = return ()
+            callCC $ \k -> setLoopContinue (Continuation k) >> void body
 
   ForRange lineNo var (start, end) body -> do
     handleDebug $ do
@@ -87,14 +83,9 @@ compileStatements (statement:rest) yield = case statement of
 
     where loop :: Id -> (Integer -> Value) -> Integer -> Integer -> MOO a ->
                   MOO ()
-          loop var ty i end body
-            | i > end   = return ()
-            | otherwise = runTick >> do
-              storeVariable var (ty i)
-              callCC $ \continue -> do
-                setLoopContinue (Continuation continue)
-                void body
-              loop var ty (succ i) end body
+          loop var ty start end body = forM_ [start..end] $ \i -> runTick >> do
+            storeVariable var (ty i)
+            callCC $ \k -> setLoopContinue (Continuation k) >> void body
 
   While lineNo var expr body -> do
     callCC $ \break -> do
@@ -110,9 +101,7 @@ compileStatements (statement:rest) yield = case statement of
             expr' <- expr
             maybe return storeVariable var expr'
             when (truthOf expr') $ do
-              callCC $ \continue -> do
-                setLoopContinue (Continuation continue)
-                void body
+              callCC $ \k -> setLoopContinue (Continuation k) >> void body
               loop lineNo var expr body
 
   Fork lineNo var delay body -> runTick >> do
