@@ -84,8 +84,6 @@ module MOO.Task (
   , Continuation(..)
   , initFrame
   , formatFrames
-  , pushFrame
-  , popFrame
   , activeFrame
   , frame
   , caller
@@ -879,16 +877,13 @@ callFromFunc func index (oid, name) args =
 evalFromFunc :: StrT -> LineNo -> MOO Value -> MOO Value
 evalFromFunc func index code = do
   (depthLeft, player) <- frame (depthLeft &&& initialPlayer)
-  pushFrame initFrame {
+  code `runInFrame` initFrame {
       depthLeft     = depthLeft
     , verbName      = func
     , initialPlayer = player
     , builtinFunc   = True
     , lineNumber    = index
     }
-  value <- code `catchException` \except -> popFrame >> passException except
-  popFrame
-  return value
 
 runVerb :: Verb -> StackFrame -> MOO Value
 runVerb verb verbFrame = do
@@ -898,17 +893,12 @@ runVerb verb verbFrame = do
     []      -> serverOption maxStackDepth
   unless (depthLeft' > 0) $ raise E_MAXREC
 
-  pushFrame verbFrame {
+  verbCode verb `runInFrame` verbFrame {
       depthLeft    = depthLeft' - 1
     , debugBit     = verbPermD verb
     , permissions  = verbOwner verb
     , verbFullName = verbNames verb
     }
-  value <- verbCode verb `catchException` \except ->
-    popFrame >> passException except
-  popFrame
-
-  return value
 
 runTick :: MOO ()
 runTick = do
@@ -1106,15 +1096,22 @@ formatFrames includeLineNumbers = fromListBy formatFrame
           : Obj (initialPlayer frame)
           : [Int $ fromIntegral $ lineNumber frame | includeLineNumbers]
 
-pushFrame :: StackFrame -> MOO ()
-pushFrame frame = modify $ \state@State { stack = Stack frames } ->
-  state { stack = Stack (frame : frames) }
+runInFrame :: MOO a -> StackFrame -> MOO a
+runInFrame code frame = do
+  pushFrame frame
+  result <- code `catchException` \except -> popFrame >> passException except
+  popFrame
+  return result
 
-popFrame :: MOO ()
-popFrame = do
-  unwindContexts (const False)
-  modify $ \state@State { stack = Stack (_:frames) } ->
-    state { stack = Stack frames }
+  where pushFrame :: StackFrame -> MOO ()
+        pushFrame frame = modify $ \state@State { stack = Stack frames } ->
+          state { stack = Stack (frame : frames) }
+
+        popFrame :: MOO ()
+        popFrame = do
+          unwindContexts (const False)
+          modify $ \state@State { stack = Stack (_:frames) } ->
+            state { stack = Stack frames }
 
 currentFrame :: CallStack -> StackFrame
 currentFrame (Stack (frame:_)) = frame
