@@ -809,11 +809,12 @@ callSystemVerb' object name args argstr = getPlayer >>= \player ->
 callCommandVerb :: ObjId -> (ObjId, Verb) -> ObjId ->
                    Command -> ObjId -> ObjId -> MOO Value
 callCommandVerb player (verbLoc, verb) this command dobj iobj =
-  let vars = mkVariables [
+  let name = commandVerb command
+      vars = mkVariables [
           ("player" , Obj player)
         , ("this"   , Obj this)
         , ("caller" , Obj player)
-        , ("verb"   , Str        $ commandVerb    command)
+        , ("verb"   , Str name)
         , ("argstr" , Str        $ commandArgStr  command)
         , ("args"   , stringList $ commandArgs    command)
         , ("dobjstr", Str        $ commandDObjStr command)
@@ -824,7 +825,7 @@ callCommandVerb player (verbLoc, verb) this command dobj iobj =
         ]
   in runVerb verb initFrame {
       variables     = vars
-    , verbName      = commandVerb command
+    , verbName      = name
     , verbLocation  = verbLoc
     , initialThis   = this
     , initialPlayer = player
@@ -834,23 +835,25 @@ callVerb' :: ObjId -> ObjId -> Verb -> StrT -> [Value] -> MOO Value
 callVerb' this verbLoc verb name args = do
   thisFrame <- frame id
   wizard <- isWizard (permissions thisFrame)
-  let player = case (wizard, vars HM.! "player") of
+  let var = (vars HM.!)
+      player = case (wizard, var "player") of
         (True, Obj oid) -> oid
         _               -> initialPlayer thisFrame
       vars  = variables thisFrame
       vars' = mkVariables [
-          ("this"   , Obj this)
-        , ("verb"   , Str name)
-        , ("args"   , fromList args)
-        , ("caller" , Obj $ initialThis thisFrame)
-        , ("player" , Obj player)
-        , ("argstr" , vars HM.! "argstr")
-        , ("dobjstr", vars HM.! "dobjstr")
-        , ("dobj"   , vars HM.! "dobj")
-        , ("prepstr", vars HM.! "prepstr")
-        , ("iobjstr", vars HM.! "iobjstr")
-        , ("iobj"   , vars HM.! "iobj")
+          ("this"  , Obj this)
+        , ("verb"  , Str name)
+        , ("args"  , fromList args)
+        , ("caller", Obj $ initialThis thisFrame)
+        , ("player", Obj player)
+        , retain "argstr"
+        , retain "dobjstr"
+        , retain "dobj"
+        , retain "prepstr"
+        , retain "iobjstr"
+        , retain "iobj"
         ]
+      retain x = (x, var x)
 
   runVerb verb initFrame {
       variables     = vars'
