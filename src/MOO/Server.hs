@@ -14,6 +14,7 @@ import Data.Text (Text)
 import Data.Text.IO (hPutStrLn)
 import Data.Time (getCurrentTime, utcToLocalZonedTime, formatTime,
                   defaultTimeLocale)
+import Database.VCache (openVCache, vcache_space, vcacheSync)
 import Network (withSocketsDo)
 import Pipes (Pipe, runEffect, (>->), for, cat, lift, yield)
 import Pipes.Concurrent (spawn', unbounded, send, fromInput)
@@ -43,6 +44,9 @@ startServer logFile inputDB outputDB outboundNet pf = withSocketsDo $ do
 
   installHandler sigPIPE Ignore Nothing
 
+  vcache <- openVCache 1000 outputDB
+  let vspace = vcache_space vcache
+
   (stmLogger, stopLogger) <- startLogger logFile
   let writeLog = atomically . stmLogger
 
@@ -59,9 +63,9 @@ startServer logFile inputDB outputDB outboundNet pf = withSocketsDo $ do
       pluralize numCapabilities "processor core" <> ")"
     ]
 
-  db <- loadLMDatabase inputDB writeLog >>= either (error . show) return
+  db <- loadLMDatabase vspace inputDB writeLog >>= either (error . show) return
 
-  world' <- newWorld stmLogger db outboundNet
+  world' <- newWorld stmLogger vspace db outboundNet
 
   runTask =<< newTask world' nothing
     (resetLimits True >> callSystemVerb "server_started" [] >> return zero)
@@ -70,6 +74,10 @@ startServer logFile inputDB outputDB outboundNet pf = withSocketsDo $ do
 
   world <- readTVarIO world'
   takeMVar (shutdownMessage world) >>= shutdownServer world'
+
+  writeLog "SHUTDOWN: Synchronizing database..."
+  vcacheSync vspace
+  writeLog "SHUTDOWN: Finished"
 
   stopLogger
 

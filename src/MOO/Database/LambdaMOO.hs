@@ -4,7 +4,6 @@
 module MOO.Database.LambdaMOO ( loadLMDatabase, saveLMDatabase ) where
 
 import Control.Applicative ((<$>))
-import Control.Concurrent.STM (STM, atomically, readTVar, writeTVar)
 import Control.Monad (unless, when, forM, forM_, join)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (ReaderT, runReaderT, local, asks, ask)
@@ -22,6 +21,7 @@ import Data.Text.Lazy.Builder (Builder, toLazyText,
 import Data.Text.Lazy.Builder.Int (decimal)
 import Data.Text.Lazy.Builder.RealFloat (realFloat)
 import Data.Word (Word)
+import Database.VCache (VSpace, VTx, runVTx, readPVar, writePVar)
 import System.IO (Handle, withFile, IOMode(ReadMode, WriteMode),
                   hSetBuffering, BufferMode(BlockBuffering),
                   hSetNewlineMode, NewlineMode(NewlineMode, inputNL, outputNL),
@@ -37,7 +37,6 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy.IO as TL
 
 import MOO.AST
-import MOO.Compiler
 import MOO.Database
 import MOO.Object
 import MOO.Parser
@@ -57,13 +56,14 @@ withDBFile dbFile mode io = withFile dbFile mode $ \handle -> do
   hSetEncoding handle utf8
   io handle
 
-loadLMDatabase :: FilePath -> (T.Text -> IO ()) ->
+loadLMDatabase :: VSpace -> FilePath -> (T.Text -> IO ()) ->
                   IO (Either ParseError Database)
-loadLMDatabase dbFile writeLog = withDBFile dbFile ReadMode $ \handle -> do
-  writeLog $ "LOADING: " <> T.pack dbFile
-  contents <- TL.hGetContents handle
-  runReaderT (runParserT lmDatabase initDatabase dbFile contents)
-    (initDBEnv writeLog)
+loadLMDatabase vspace dbFile writeLog =
+  withDBFile dbFile ReadMode $ \handle -> do
+    writeLog $ "LOADING: " <> T.pack dbFile
+    contents <- TL.hGetContents handle
+    runReaderT (runParserT lmDatabase initDatabase dbFile contents)
+      (initDBEnv writeLog vspace)
 
 type DBParser = ParsecT Text Database (ReaderT DBEnv IO)
 
@@ -71,12 +71,14 @@ data DBEnv = DBEnv {
     logger        :: T.Text -> IO ()
   , input_version :: Word
   , users         :: IntSet
+  , vspace        :: VSpace
 }
 
-initDBEnv logger = DBEnv {
+initDBEnv logger vspace = DBEnv {
     logger        = logger
   , input_version = undefined
   , users         = IS.empty
+  , vspace        = vspace
 }
 
 writeLog :: String -> DBParser ()
@@ -178,8 +180,10 @@ installObjects dbObjs = do
   -- Check sequential object ordering
   mapM_ checkObjId (zip [0..] dbObjs)
 
-  objs <- liftIO (mapM installPropsAndVerbs preObjs) >>= setPlayerFlags
-  getState >>= liftIO . setObjects objs >>= putState
+  vspace <- asks vspace
+
+  objs <- liftIO (mapM (installPropsAndVerbs vspace) preObjs) >>= setPlayerFlags
+  getState >>= liftIO . setObjects vspace objs >>= putState
 
   where dbArray = listArray (0, length dbObjs - 1) $ map valid dbObjs
         preObjs = map (objectForDBObject dbArray) dbObjs
@@ -189,14 +193,16 @@ installObjects dbObjs = do
             fail $ "Unexpected object #" ++ show (oid dbObj) ++
                    " (expecting #" ++ show objId ++ ")"
 
-        installPropsAndVerbs :: (ObjId, Maybe Object) -> IO (Maybe Object)
-        installPropsAndVerbs (_  , Nothing)  = return Nothing
-        installPropsAndVerbs (oid, Just obj) =
+        installPropsAndVerbs :: VSpace -> (ObjId, Maybe Object) ->
+                                IO (Maybe Object)
+        installPropsAndVerbs _ (_  , Nothing)  = return Nothing
+        installPropsAndVerbs vspace (oid, Just obj) =
           let Just def = dbArray ! oid
               propvals = objPropvals def
               verbdefs = objVerbdefs def
-          in fmap Just $ setProperties (mkProperties False oid propvals) obj >>=
-             setVerbs (map mkVerb verbdefs)
+          in fmap Just $
+               setProperties vspace (mkProperties False oid propvals) obj >>=
+               setVerbs vspace (map mkVerb verbdefs)
 
         mkProperties :: Bool -> ObjId -> [PropVal] -> [Property]
         mkProperties _ _ [] = []
@@ -287,18 +293,16 @@ objectForDBObject dbArray dbObj = (oid dbObj, mkObject <$> valid dbObj)
 
 installProgram :: (Int, Int, Program) -> DBParser ()
 installProgram (oid, vnum, program) = do
+  vspace <- asks vspace
   db <- getState
-  maybeObj <- liftIO $ atomically $ dbObject oid db
+  maybeObj <- liftIO $ runVTx vspace $ dbObject oid db
   case maybeObj of
     Nothing  -> fail $ doesNotExist "Object"
     Just obj -> case lookupVerbRef False obj (Int $ 1 + fromIntegral vnum) of
       Nothing            -> fail $ doesNotExist "Verb"
-      Just (_, verbTVar) -> liftIO $ atomically $ do
-        verb <- readTVar verbTVar
-        writeTVar verbTVar verb {
-            verbProgram = program
-          , verbCode    = compile program
-        }
+      Just (_, verbPVar) -> liftIO $ runVTx vspace $ do
+        verb <- readPVar verbPVar
+        writePVar verbPVar verb { verbProgram = program }
 
   where doesNotExist what = what ++ " for program " ++ desc ++ " does not exist"
         desc = "#" ++ show oid ++ ":" ++ show vnum
@@ -670,16 +674,17 @@ objMask   = 0x3
 
 -- Database writing ...
 
-type DBWriter = ReaderT Database (WriterT Builder STM)
+type DBWriter = ReaderT Database (WriterT Builder VTx)
 
-liftSTM :: STM a -> DBWriter a
-liftSTM = lift . lift
+liftVTx :: VTx a -> DBWriter a
+liftVTx = lift . lift
 
-saveLMDatabase :: FilePath -> Database -> IO ()
-saveLMDatabase dbFile database = withDBFile dbFile WriteMode $ \handle -> do
-  let writer = runReaderT writeDatabase database
-      stm    = execWriterT writer
-  TL.hPutStr handle . toLazyText =<< atomically stm
+saveLMDatabase :: VSpace -> FilePath -> Database -> IO ()
+saveLMDatabase vspace dbFile database =
+  withDBFile dbFile WriteMode $ \handle -> do
+    let writer = runReaderT writeDatabase database
+        vtx    = execWriterT writer
+    TL.hPutStr handle . toLazyText =<< runVTx vspace vtx
 
 tellLn :: Builder -> DBWriter ()
 tellLn line = tell line >> tell (singleton '\n')
@@ -696,7 +701,7 @@ writeDatabase = do
   tellLn (decimal nobjs)
 
   objects <- listArray (0, maxObject db) <$>
-             forM [0..maxObject db] (\oid -> liftSTM $ dbObject oid db)
+             forM [0..maxObject db] (\oid -> liftVTx $ dbObject oid db)
 
   let nprogs = foldl' numVerbs 0 (elems objects)
         where numVerbs acc Nothing    = acc
@@ -752,7 +757,7 @@ tellObject objects (oid, Just obj) = do
   tellLn (decimal $ objectForMaybe $ listToMaybe children)
   tellLn (decimal $ nextLink objects oid objectChildren parent)
 
-  verbs <- liftSTM $ mapM (readTVar . snd) $ objectVerbs obj
+  verbs <- liftVTx $ mapM (readPVar . snd) $ objectVerbs obj
   tellLn (decimal $ length verbs)
   forM_ verbs $ \verb -> do
     tellLn (Str.toBuilder $ verbNames verb)
@@ -770,7 +775,7 @@ tellObject objects (oid, Just obj) = do
 
     tellLn (decimal $ fromEnum (verbPreposition verb) - 2)
 
-  definedProperties <- liftSTM $ definedProperties obj
+  definedProperties <- liftVTx $ definedProperties obj
   tellLn (decimal $ length definedProperties)
   forM_ definedProperties $ tellLn . Str.toBuilder
 
@@ -799,9 +804,9 @@ tellProperties :: Array ObjId (Maybe Object) -> Object -> Maybe ObjId ->
                   DBWriter ()
 tellProperties objects obj (Just oid) = do
   let Just definer = objects ! oid
-  properties <- liftSTM $ definedProperties definer
+  properties <- liftVTx $ definedProperties definer
   forM_ properties $ \propertyName -> do
-    Just property <- liftSTM $ lookupProperty obj propertyName
+    Just property <- liftVTx $ lookupProperty obj propertyName
     case propertyValue property of
       Nothing    -> tellLn (decimal type_clear)
       Just value -> tellValue value

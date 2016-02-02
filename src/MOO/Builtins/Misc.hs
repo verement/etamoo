@@ -8,6 +8,7 @@ import Control.Monad.State (gets)
 import Data.Monoid ((<>))
 import Data.Time (formatTime, utcToLocalZonedTime, defaultTimeLocale)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
+import Database.VCache (VCacheStats(..), vcacheStats)
 
 # ifdef __GLASGOW_HASKELL__
 import GHC.Stats (GCStats(currentBytesUsed, maxBytesUsed),
@@ -117,14 +118,14 @@ bf_renumber = Builtin "renumber" 1 (Just 1) [TObj] TObj $ \[Obj object] -> do
   checkValid object
   checkWizard
 
-  (new, db) <- liftSTM . renumber object =<< getDatabase
+  (new, db) <- liftVTx . renumber object =<< getDatabase
   putDatabase db
 
   return (Obj new)
 
 bf_reset_max_object = Builtin "reset_max_object" 0 (Just 0) [] TAny $ \[] -> do
   checkWizard
-  getDatabase >>= liftSTM . resetMaxObject >>= putDatabase
+  getDatabase >>= liftVTx . resetMaxObject >>= putDatabase
   return zero
 
 -- § 4.4.8 Server Statistics and Miscellaneous Information
@@ -164,9 +165,33 @@ bf_memory_usage = Builtin "memory_usage" 0 (Just 0) [] TLst $ \[] ->
   return emptyList  -- ... nothing to see here
 # endif
 
-bf_db_disk_size = Builtin "db_disk_size" 0 (Just 0) [] TInt $ \[] ->
-  notyet "db_disk_size"
-  -- raise E_QUOTA
+bf_db_disk_size = Builtin "db_disk_size" 0 (Just 1)
+                  [TAny] TAny $ \optional -> do
+  let [full] = booleanDefaults optional [False]
+  stats <- unsafeIOtoMOO . vcacheStats . vspace =<< getWorld
+
+  return $ if full
+           then fromList $ map (keyValue stats) [
+               ("file_size",    vcstat_file_size)
+             , ("vref_count",   vcstat_vref_count)
+             , ("pvar_count",   vcstat_pvar_count)
+             , ("root_count",   vcstat_root_count)
+             , ("mem_vrefs",    vcstat_mem_vrefs)
+             , ("mem_pvars",    vcstat_mem_pvars)
+             , ("eph_count",    vcstat_eph_count)
+             , ("alloc_count",  vcstat_alloc_count)
+             , ("cache_limit",  vcstat_cache_limit)
+             , ("cache_size",   vcstat_cache_size)
+             , ("gc_count",     vcstat_gc_count)
+             , ("write_pvars",  vcstat_write_pvars)
+             , ("write_sync",   vcstat_write_sync)
+             , ("write_frames", vcstat_write_frames)
+             ]
+           else Int $ fromIntegral (vcstat_file_size stats)
+
+  where keyValue :: VCacheStats -> (StrT, VCacheStats -> Int) -> Value
+        keyValue stats (key, f) =
+          fromList [Str key, Int . fromIntegral $ f stats]
 
 bf_verb_cache_stats = Builtin "verb_cache_stats" 0 (Just 0) [] TLst $ \[] ->
   notyet "verb_cache_stats"

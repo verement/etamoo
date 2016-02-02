@@ -16,10 +16,11 @@ module MOO.Task ( MOO
                 , notyet
                 ) where
 
-import Control.Concurrent.STM (STM, TVar)
+import Control.Concurrent.STM (TVar)
 import Control.Monad.Reader (ReaderT)
 import Control.Monad.Cont (ContT)
 import Control.Monad.State.Strict (StateT)
+import Database.VCache (VTx)
 
 import {-# SOURCE #-} MOO.Command
 import {-# SOURCE #-} MOO.Object
@@ -33,7 +34,7 @@ data TaskState
 
 type MOO = ReaderT Environment
            (ContT TaskDisposition
-            (StateT TaskState STM))
+            (StateT TaskState VTx))
 
 requestIO :: IO a -> MOO a
 delayIO :: IO () -> MOO ()

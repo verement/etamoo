@@ -6,6 +6,7 @@ module MOO.Task (
     MOO
   , Environment(..)
   , initEnvironment
+  , liftVTx
   , liftSTM
 
   -- * World Interface
@@ -138,7 +139,8 @@ import Control.Concurrent (MVar, ThreadId, myThreadId, forkIO, threadDelay,
                            newEmptyMVar, putMVar, tryPutMVar, takeMVar)
 import Control.Concurrent.STM (STM, TVar, atomically, retry, throwSTM,
                                newEmptyTMVar, putTMVar, takeTMVar,
-                               newTVarIO, readTVar, writeTVar, modifyTVar)
+                               newTVarIO, readTVar, readTVarIO, writeTVar,
+                               modifyTVar)
 import Control.Exception (SomeException, try)
 import Control.Monad (when, unless, void, (>=>), forM_)
 import Control.Monad.Cont (ContT, runContT, callCC)
@@ -158,6 +160,8 @@ import Data.Text (Text)
 import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime, getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Database.VCache (VSpace, VTx, runVTx,
+                        PVar, readPVar, writePVar, modifyPVar)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (nanosleep)
 import System.Random (Random, StdGen, newStdGen, mkStdGen, split,
@@ -167,8 +171,10 @@ import qualified Data.HashMap.Lazy as HM
 import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Text.Lazy.Builder.Int as TLB
+import qualified Database.VCache as DV
 
 import MOO.Command
+import {-# SOURCE #-} MOO.Compiler
 import {-# SOURCE #-} MOO.Connection
 import {-# SOURCE #-} MOO.Database
 import {-# SOURCE #-} MOO.Network
@@ -179,20 +185,26 @@ import MOO.Verb
 import qualified MOO.String as Str
 
 -- | This is the basic MOO monad transformer stack. A computation of type
--- @'MOO' a@ is an 'STM' transaction that returns a value of type @a@ within
--- an environment that supports state, continuations, and local modification.
+-- @'MOO' a@ is a 'VTx' transaction (layered on 'STM') that returns a value of
+-- type @a@ within an environment that supports state, continuations, and
+-- local modification.
 type MOO = ReaderT Environment
            (ContT TaskDisposition
-            (StateT TaskState STM))
+            (StateT TaskState VTx))
+
+-- | Lift a 'VTx' transaction into the 'MOO' monad.
+liftVTx :: VTx a -> MOO a
+liftVTx = lift . lift . lift
 
 -- | Lift an 'STM' transaction into the 'MOO' monad.
 liftSTM :: STM a -> MOO a
-liftSTM = lift . lift . lift
+liftSTM = liftVTx . DV.liftSTM
 
 -- | The known universe, as far as the MOO server is concerned
 data World = World {
     writeLog           :: Text -> STM ()        -- ^ Logging function
 
+  , vspace             :: VSpace                -- ^ VCache address space
   , database           :: Database              -- ^ The database of objects
   , tasks              :: Map TaskId Task       -- ^ Queued and running tasks
 
@@ -216,6 +228,7 @@ initWorld :: World
 initWorld = World {
     writeLog         = undefined
 
+  , vspace           = undefined
   , database         = undefined
   , tasks            = M.empty
 
@@ -230,12 +243,13 @@ initWorld = World {
   , shutdownMessage  = undefined
   }
 
-newWorld :: (Text -> STM ()) -> Database -> Bool -> IO (TVar World)
-newWorld writeLog db outboundNetworkEnabled = do
+newWorld :: (Text -> STM ()) -> VSpace -> Database -> Bool -> IO (TVar World)
+newWorld writeLog vspace db outboundNetworkEnabled = do
   shutdownVar <- newEmptyMVar
 
   world' <- newTVarIO initWorld {
       writeLog        = writeLog
+    , vspace          = vspace
     , database        = db
     , outboundNetwork = outboundNetworkEnabled
     , shutdownMessage = shutdownVar
@@ -376,8 +390,9 @@ stepTask task = do
       state  = taskState task
       contM  = runReaderT comp' env
       stateM = runContT contM return
-      stmM   = runStateT stateM state
-  (result, state') <- atomically stmM
+      vtxM   = runStateT stateM state
+  world <- readTVarIO (taskWorld task)
+  (result, state') <- runVTx (vspace world) vtxM
   runDelayed $ delayedIO state'
   return (result, task { taskState = state' { delayedIO = mempty }})
 
@@ -742,7 +757,7 @@ getPlayer :: MOO ObjId
 getPlayer = asks (taskPlayer . task)
 
 getObject :: ObjId -> MOO (Maybe Object)
-getObject oid = liftSTM . dbObject oid =<< getDatabase
+getObject oid = liftVTx . dbObject oid =<< getDatabase
 
 getObjectName :: ObjId -> MOO StrT
 getObjectName oid = maybe objNum objNameNum <$> getObject oid
@@ -750,16 +765,16 @@ getObjectName oid = maybe objNum objNameNum <$> getObject oid
         objNameNum obj = Str.concat [objectName obj, " (", objNum, ")"]
 
 getProperty :: Object -> StrT -> MOO Property
-getProperty obj name = liftSTM (lookupProperty obj name) >>=
+getProperty obj name = liftVTx (lookupProperty obj name) >>=
                        maybe (raise E_PROPNF) return
 
 getVerb :: Object -> Value -> MOO Verb
 getVerb obj desc@Str{} = do
   numericStrings <- serverOption supportNumericVerbnameStrings
-  liftSTM (lookupVerb numericStrings obj desc) >>= maybe (raise E_VERBNF) return
+  liftVTx (lookupVerb numericStrings obj desc) >>= maybe (raise E_VERBNF) return
 getVerb obj desc@(Int index)
   | index < 1 = raise E_INVARG
-  | otherwise = liftSTM (lookupVerb False obj desc) >>=
+  | otherwise = liftVTx (lookupVerb False obj desc) >>=
                 maybe (raise E_VERBNF) return
 getVerb _ _ = raise E_TYPE
 
@@ -769,16 +784,16 @@ findVerb acceptable name = findVerb'
           maybeObj <- getObject oid
           case maybeObj of
             Just obj -> do
-              maybeVerb <- liftSTM $ searchVerbs (objectVerbs obj)
+              maybeVerb <- liftVTx $ searchVerbs (objectVerbs obj)
               case maybeVerb of
                 Just verb -> return (Just oid, Just verb)
                 Nothing   -> maybe (return (Just oid, Nothing))
                              findVerb' (objectParent obj)
             Nothing -> return (Nothing, Nothing)
 
-        searchVerbs :: [([StrT], TVar Verb)] -> STM (Maybe Verb)
-        searchVerbs ((names,verbTVar):rest)
-          | verbNameMatch name names = readTVar verbTVar >>= \verb ->
+        searchVerbs :: [([StrT], PVar Verb)] -> VTx (Maybe Verb)
+        searchVerbs ((names,verbPVar):rest)
+          | verbNameMatch name names = readPVar verbPVar >>= \verb ->
             if acceptable verb then return (Just verb) else searchVerbs rest
           | otherwise = searchVerbs rest
         searchVerbs [] = return Nothing
@@ -896,7 +911,7 @@ runVerb verb verbFrame = do
     []      -> serverOption maxStackDepth
   unless (depthLeft' > 0) $ raise E_MAXREC
 
-  verbCode verb `runInFrame` verbFrame {
+  compile (verbProgram verb) `runInFrame` verbFrame {
       depthLeft    = depthLeft' - 1
     , debugBit     = verbPermD verb
     , permissions  = verbOwner verb
@@ -911,23 +926,23 @@ runTick = do
 
 modifyProperty :: Object -> StrT -> (Property -> MOO Property) -> MOO ()
 modifyProperty obj name f = case lookupPropertyRef obj name of
-  Just propTVar -> do
-    prop  <- liftSTM $ readTVar propTVar
+  Just propPVar -> do
+    prop  <- liftVTx $ readPVar propPVar
     prop' <- f prop
-    liftSTM $ writeTVar propTVar prop'
+    liftVTx $ writePVar propPVar prop'
   Nothing -> raise E_PROPNF
 
 modifyVerb :: (ObjId, Object) -> Value -> (Verb -> MOO Verb) -> MOO ()
 modifyVerb (oid, obj) desc f = do
   numericStrings <- serverOption supportNumericVerbnameStrings
   case lookupVerbRef numericStrings obj desc of
-    Just (index, verbTVar) -> do
-      verb  <- liftSTM $ readTVar verbTVar
+    Just (index, verbPVar) -> do
+      verb  <- liftVTx $ readPVar verbPVar
       verb' <- f verb
-      liftSTM $ writeTVar verbTVar verb'
+      liftVTx $ writePVar verbPVar verb'
       unless (verbNames verb `Str.equal` verbNames verb') $ do
         db <- getDatabase
-        liftSTM $ modifyObject oid db $ replaceVerb index verb'
+        liftVTx $ modifyObject oid db $ replaceVerb index verb'
     Nothing -> raise E_VERBNF
 
 readProperty :: ObjId -> StrT -> MOO (Maybe Value)
@@ -939,7 +954,7 @@ readProperty oid name = getObject oid >>= \maybeObj ->
 
   where search :: Object -> MOO (Maybe Value)
         search obj = do
-          maybeProp <- liftSTM $ lookupProperty obj name
+          maybeProp <- liftVTx $ lookupProperty obj name
           case maybeProp of
             Just prop -> case propertyValue prop of
               Nothing -> do
@@ -955,14 +970,14 @@ writeProperty oid name value = getObject oid >>= \maybeObj ->
     Just obj
       | isBuiltinProperty name -> setBuiltinProperty (oid, obj) name value
       | otherwise -> case lookupPropertyRef obj name of
-        Just propTVar -> liftSTM $ modifyTVar propTVar $
+        Just propPVar -> liftVTx $ modifyPVar propPVar $
                          \prop -> prop { propertyValue = Just value }
         Nothing -> return ()
     Nothing -> return ()
 
 modifyObject' :: ObjId -> (Object -> Object) -> MOO ()
 modifyObject' oid f = getDatabase >>= \db ->
-  liftSTM $ modifyObject oid db $ return . f
+  liftVTx $ modifyObject oid db $ return . f
 
 setBuiltinProperty :: (ObjId, Object) -> StrT -> Value -> MOO ()
 setBuiltinProperty (oid, obj) "name" (Str name) = do

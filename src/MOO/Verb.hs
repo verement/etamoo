@@ -1,5 +1,5 @@
 
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, DeriveDataTypeable #-}
 
 module MOO.Verb ( Verb(..)
                 , ObjSpec(..)
@@ -15,9 +15,12 @@ module MOO.Verb ( Verb(..)
                 , verbNameMatch
                 ) where
 
+import Control.Applicative ((<$>), (<*>))
+import Data.Typeable (Typeable)
+import Database.VCache (VCacheable(put, get))
+
 import MOO.AST
 import {-# SOURCE #-} MOO.Object (nothing)
-import {-# SOURCE #-} MOO.Task
 import MOO.Types
 
 import qualified MOO.String as Str
@@ -25,7 +28,6 @@ import qualified MOO.String as Str
 data Verb = Verb {
     verbNames          :: StrT
   , verbProgram        :: Program
-  , verbCode           :: MOO Value
 
   , verbOwner          :: ObjId
   , verbPermR          :: Bool
@@ -36,13 +38,29 @@ data Verb = Verb {
   , verbDirectObject   :: ObjSpec
   , verbPreposition    :: PrepSpec
   , verbIndirectObject :: ObjSpec
-}
+} deriving Typeable
+
+instance VCacheable Verb where
+  put verb = do
+    put $ verbNames          verb
+    put $ verbProgram        verb
+    put $ verbOwner          verb
+    put $ verbPermR          verb
+    put $ verbPermW          verb
+    put $ verbPermX          verb
+    put $ verbPermD          verb
+    put $ verbDirectObject   verb
+    put $ verbPreposition    verb
+    put $ verbIndirectObject verb
+
+  get = Verb <$> get <*> get
+             <*> get <*> get <*> get <*> get <*> get
+             <*> get <*> get <*> get
 
 instance Sizeable Verb where
   storageBytes verb =
     storageBytes (verbNames          verb) +
     storageBytes (verbProgram        verb) * 2 +
-    -- storageBytes (verbCode           verb) +
     storageBytes (verbOwner          verb) +
     storageBytes (verbPermR          verb) +
     storageBytes (verbPermW          verb) +
@@ -55,7 +73,6 @@ instance Sizeable Verb where
 initVerb = Verb {
     verbNames          = ""
   , verbProgram        = Program []
-  , verbCode           = return zero
 
   , verbOwner          = nothing
   , verbPermR          = False
@@ -72,7 +89,11 @@ initVerb = Verb {
 data ObjSpec = ObjNone  -- ^ none
              | ObjAny   -- ^ any
              | ObjThis  -- ^ this
-             deriving (Enum, Bounded)
+             deriving (Enum, Bounded, Typeable)
+
+instance VCacheable ObjSpec where
+  put = put . fromEnum
+  get = toEnum <$> get
 
 instance Sizeable ObjSpec where
   storageBytes _ = storageBytes ()
@@ -110,7 +131,11 @@ data PrepSpec = PrepAny                     -- ^ any
               | PrepIs                      -- ^ is
               | PrepAs                      -- ^ as
               | PrepOffofOff                -- ^ off of\/off
-              deriving (Enum, Bounded, Eq)
+              deriving (Enum, Bounded, Eq, Typeable)
+
+instance VCacheable PrepSpec where
+  put = put . fromEnum
+  get = toEnum <$> get
 
 instance Sizeable PrepSpec where
   storageBytes _ = storageBytes ()

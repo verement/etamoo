@@ -20,7 +20,6 @@ import qualified Data.Set as S
 
 import MOO.Builtins.Common
 import {-# SOURCE #-} MOO.Builtins
-import {-# SOURCE #-} MOO.Compiler
 import MOO.Object
 import MOO.Parser
 import MOO.Task
@@ -87,7 +86,6 @@ bf_eval = Builtin "eval" 1 (Just 1) [TStr] TLst $ \[Str string] ->
         (permissions frame, initialThis frame, initialPlayer frame)
       let verb = initVerb { verbNames   = "Input to EVAL"
                           , verbProgram = program
-                          , verbCode    = compile program
                           , verbOwner   = programmer
                           , verbPermD   = True
                           }

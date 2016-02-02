@@ -17,7 +17,7 @@ module MOO.Database ( Database
                     , supportNumericVerbnameStrings
                     ) where
 
-import Control.Concurrent.STM (STM)
+import Database.VCache (VTx)
 
 import {-# SOURCE #-} MOO.Object (Object)
 import {-# SOURCE #-} MOO.Task (MOO)
@@ -29,8 +29,8 @@ data ServerOptions
 serverOptions :: Database -> ServerOptions
 getServerOption' :: ObjId -> Id -> MOO (Maybe Value)
 
-dbObject :: ObjId -> Database -> STM (Maybe Object)
-modifyObject :: ObjId -> Database -> (Object -> STM Object) -> STM ()
+dbObject :: ObjId -> Database -> VTx (Maybe Object)
+modifyObject :: ObjId -> Database -> (Object -> VTx Object) -> VTx ()
 
 loadServerOptions :: MOO ()
 

@@ -15,6 +15,8 @@ module MOO.Types (
 
   , ObjId
   , Id
+  , VIntSet(..)
+  , VHashMap(..)
 
   , LineNo
 
@@ -80,7 +82,7 @@ import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable (Typeable)
-import Database.VCache (VCacheable(put, get), VRef, unsafeVRefEncoding)
+import Database.VCache (VCacheable(put, get), PVar, VRef, unsafeVRefEncoding)
 import Foreign.Storable (sizeOf)
 import System.Random (StdGen)
 import System.IO.Unsafe (unsafePerformIO)
@@ -176,6 +178,9 @@ instance (Sizeable k, Sizeable v) => Sizeable (HashMap k v) where
 instance Sizeable (TVar a) where
   storageBytes _ = storageBytes ()
 
+instance Sizeable (PVar a) where
+  storageBytes _ = storageBytes ()
+
 instance Sizeable (VRef a) where
   storageBytes ref = unsafePerformIO $ unsafeVRefEncoding ref $ const return
 
@@ -227,6 +232,19 @@ instance Ident Builder where
 
 builder2text :: Builder -> Text
 builder2text = TL.toStrict . TLB.toLazyText
+
+newtype VIntSet = VIntSet { unVIntSet :: IntSet } deriving Typeable
+
+instance VCacheable VIntSet where
+  put (VIntSet x) = put (IS.toList x)
+  get = VIntSet . IS.fromList <$> get
+
+newtype VHashMap a b = VHashMap { unVHashMap :: HashMap a b } deriving Typeable
+
+instance (Eq a, Hashable a,
+          VCacheable a, VCacheable b) => VCacheable (VHashMap a b) where
+  put (VHashMap x) = put (HM.toList x)
+  get = VHashMap . HM.fromList <$> get
 
 -- | A 'Value' represents any MOO value.
 data Value = Int IntT  -- ^ integer

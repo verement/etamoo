@@ -75,6 +75,10 @@ differences include:
     essentially represents all the data from a single call to `notify()`.
     (This is subject to change.)
 
+  * EtaMOO accepts an optional argument to the `db_disk_size()` built-in that,
+    if provided and true, causes the function to return an association list
+    with various statistics from the persistence layer.
+
   * The result of the `disassemble()` built-in is very different in EtaMOO
     than in LambdaMOO, and currently shows the internal abstract syntax tree
     associated with a verb. (This is subject to change.)

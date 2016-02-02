@@ -24,14 +24,14 @@ module MOO.Database (
   ) where
 
 import Control.Applicative ((<$>))
-import Control.Concurrent.STM (STM, TVar, newTVarIO, newTVar,
-                               readTVar, writeTVar)
 import Control.Monad (forM, forM_, when, (>=>))
 import Data.IntSet (IntSet)
 import Data.Maybe (isJust)
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import Data.Vector (Vector)
+import Database.VCache (VSpace, VTx,
+                        PVar, newPVarsIO, newPVar, readPVar, writePVar)
 
 import qualified Data.HashMap.Lazy as HM
 import qualified Data.HashSet as HS
@@ -47,7 +47,7 @@ import qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 data Database = Database {
-    objects       :: Vector (TVar (Maybe Object))
+    objects       :: Vector (PVar (Maybe Object))
   , players       :: IntSet
   , serverOptions :: ServerOptions
 }
@@ -58,21 +58,21 @@ initDatabase = Database {
   , serverOptions = undefined
 }
 
-dbObjectRef :: ObjId -> Database -> Maybe (TVar (Maybe Object))
+dbObjectRef :: ObjId -> Database -> Maybe (PVar (Maybe Object))
 dbObjectRef oid = (V.!? oid) . objects
 
-dbObject :: ObjId -> Database -> STM (Maybe Object)
-dbObject oid = maybe (return Nothing) readTVar . dbObjectRef oid
+dbObject :: ObjId -> Database -> VTx (Maybe Object)
+dbObject oid = maybe (return Nothing) readPVar . dbObjectRef oid
 
 maxObject :: Database -> ObjId
 maxObject = pred . V.length . objects
 
-resetMaxObject :: Database -> STM Database
+resetMaxObject :: Database -> VTx Database
 resetMaxObject db = do
   newMaxObject <- findLastValid (maxObject db)
   return db { objects = V.take (succ newMaxObject) $ objects db }
 
-  where findLastValid :: ObjId -> STM ObjId
+  where findLastValid :: ObjId -> VTx ObjId
         findLastValid oid
           | oid >= 0  = dbObject oid db >>=
                         maybe (findLastValid $ pred oid) (return . const oid)
@@ -80,7 +80,7 @@ resetMaxObject db = do
 
 -- | Renumber an object in the database to be the least nonnegative object
 -- number not currently in use pursuant to the renumber() built-in function.
-renumber :: ObjId -> Database -> STM (ObjId, Database)
+renumber :: ObjId -> Database -> VTx (ObjId, Database)
 renumber old db = do
   maybeNew <- findLeastUnused 0
   case maybeNew of
@@ -89,9 +89,9 @@ renumber old db = do
       -- renumber database slot references
       let Just oldRef = dbObjectRef old db
           Just newRef = dbObjectRef new db
-      Just obj <- readTVar oldRef
-      writeTVar oldRef Nothing
-      writeTVar newRef (Just obj)
+      Just obj <- readPVar oldRef
+      writePVar oldRef Nothing
+      writePVar newRef (Just obj)
 
       -- ask the object to fix up parent/children and location/contents
       renumberObject obj old new db
@@ -99,11 +99,11 @@ renumber old db = do
       -- fix up ownerships throughout entire database
       forM_ [0..maxObject db] $ \oid -> case dbObjectRef oid db of
         Just ref -> do
-          maybeObj <- readTVar ref
+          maybeObj <- readPVar ref
           case maybeObj of
             Just obj -> do
               maybeNew <- renumberOwnership old new obj
-              when (isJust maybeNew) $ writeTVar ref maybeNew
+              when (isJust maybeNew) $ writePVar ref maybeNew
             Nothing  -> return ()
         Nothing  -> return ()
 
@@ -112,32 +112,32 @@ renumber old db = do
 
       return (new, db')
 
-  where findLeastUnused :: ObjId -> STM (Maybe ObjId)
+  where findLeastUnused :: ObjId -> VTx (Maybe ObjId)
         findLeastUnused new
           | new < old = dbObject new db >>= maybe (return $ Just new)
                         (const $ findLeastUnused $ succ new)
           | otherwise = return Nothing
 
-setObjects :: [Maybe Object] -> Database -> IO Database
-setObjects objs db = do
-  refs <- mapM newTVarIO objs
+setObjects :: VSpace -> [Maybe Object] -> Database -> IO Database
+setObjects vspace objs db = do
+  refs <- newPVarsIO vspace objs
   return db { objects = V.fromList refs }
 
-addObject :: Object -> Database -> STM Database
+addObject :: Object -> Database -> VTx Database
 addObject obj db = do
-  ref <- newTVar (Just obj)
+  ref <- newPVar (Just obj)
   return db { objects = V.snoc (objects db) ref }
 
-deleteObject :: ObjId -> Database -> STM ()
+deleteObject :: ObjId -> Database -> VTx ()
 deleteObject oid db =
   case dbObjectRef oid db of
-    Just ref -> writeTVar ref Nothing
+    Just ref -> writePVar ref Nothing
     Nothing  -> return ()
 
-modifyObject :: ObjId -> Database -> (Object -> STM Object) -> STM ()
+modifyObject :: ObjId -> Database -> (Object -> VTx Object) -> VTx ()
 modifyObject oid db f =
   case dbObjectRef oid db of
-    Just ref -> readTVar ref >>= maybe (return ()) (f >=> writeTVar ref . Just)
+    Just ref -> readPVar ref >>= maybe (return ()) (f >=> writePVar ref . Just)
     Nothing  -> return ()
 
 {-
