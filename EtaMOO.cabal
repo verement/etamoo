@@ -31,7 +31,7 @@ category:            Network
 
 build-type:          Simple
 cabal-version:       >= 1.22
-tested-with:         GHC == 7.10.2
+tested-with:         GHC == 7.10.3
 
 homepage:            http://verement.github.io/etamoo
 bug-reports:         https://github.com/verement/etamoo/issues
@@ -103,6 +103,7 @@ executable etamoo
 
   default-extensions:
   other-extensions:    CPP
+                       DeriveDataTypeable
                        EmptyDataDecls
                        ExistentialQuantification
                        FlexibleInstances
@@ -147,6 +148,7 @@ executable etamoo
                      , transformers
                      , unix
                      , unordered-containers
+                     , vcache
                      , vector >= 0.7
 
   build-tools:         hsc2hs

@@ -1,4 +1,6 @@
 
+{-# LANGUAGE DeriveDataTypeable #-}
+
 -- | Abstract MOO list type
 module MOO.List (
     MOOList
@@ -61,7 +63,9 @@ import Control.Applicative ((<$>))
 import Data.Function (on)
 import Data.HashMap.Lazy (HashMap)
 import Data.Monoid (Monoid(mempty, mappend, mconcat), (<>))
+import Data.Typeable (Typeable)
 import Data.Vector (Vector)
+import Database.VCache (VCacheable(put, get))
 import Prelude hiding (concat, head, length, null, tail, elem, splitAt, (++))
 
 import qualified Data.HashMap.Lazy as HM
@@ -77,7 +81,7 @@ type AssocMap = HashMap StrT (Int, Value)
 data MOOList = MOOList {
     toVector   :: Vector Value
   , toAssocMap :: Maybe AssocMap
-  }
+  } deriving Typeable
 
 instance Eq MOOList where
   (==) = (==) `on` toVector
@@ -89,6 +93,10 @@ instance Monoid MOOList where
 
 instance Show MOOList where
   show = show . toList
+
+instance VCacheable MOOList where
+  put lst = put (length lst) >> forM_ lst put
+  get = get >>= \len -> fromVector <$> V.replicateM len get
 
 fromVector :: Vector Value -> MOOList
 fromVector vec = MOOList {

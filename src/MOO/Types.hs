@@ -1,5 +1,6 @@
 
-{-# LANGUAGE CPP, OverloadedStrings, FlexibleInstances #-}
+{-# LANGUAGE CPP, OverloadedStrings, FlexibleInstances,
+             GeneralizedNewtypeDeriving, DeriveDataTypeable #-}
 
 -- | Basic data types used throughout the MOO server code
 module MOO.Types (
@@ -61,21 +62,28 @@ module MOO.Types (
 
   ) where
 
+import Control.Applicative ((<$>))
 import Control.Concurrent (ThreadId)
 import Control.Concurrent.STM (TVar)
 import Data.CaseInsensitive (CI)
+import Data.Hashable (Hashable)
 import Data.HashMap.Strict (HashMap)
 import Data.Int (Int32, Int64)
 import Data.IntSet (IntSet)
 import Data.List (intersperse)
 import Data.Map (Map)
-import Data.Monoid ((<>), mappend, mconcat)
+import Data.Monoid (Monoid, (<>), mappend, mconcat)
+import Data.String (IsString)
 import Data.Text (Text)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Typeable (Typeable)
+import Database.VCache (VCacheable(put, get), VRef, unsafeVRefEncoding)
 import Foreign.Storable (sizeOf)
 import System.Random (StdGen)
+import System.IO.Unsafe (unsafePerformIO)
 
 import qualified Data.CaseInsensitive as CI
 import qualified Data.HashMap.Strict as HM
@@ -168,6 +176,9 @@ instance (Sizeable k, Sizeable v) => Sizeable (HashMap k v) where
 instance Sizeable (TVar a) where
   storageBytes _ = storageBytes ()
 
+instance Sizeable (VRef a) where
+  storageBytes ref = unsafePerformIO $ unsafeVRefEncoding ref $ const return
+
 # ifdef MOO_64BIT_INTEGER
 type IntT = Int64
 # else
@@ -181,9 +192,17 @@ type ErrT = Error         -- ^ MOO error
 type LstT = MOOList       -- ^ MOO list
 
 type ObjId = Int          -- ^ MOO object number
-type Id    = CI Text      -- ^ MOO identifier (string lite)
 
 type LineNo = Int         -- ^ MOO code line number
+
+-- | MOO identifier (string lite)
+newtype Id = Id { unId :: CI Text }
+           deriving (Eq, Ord, Show, Monoid, IsString,
+                     Hashable, Sizeable, Typeable)
+
+instance VCacheable Id where
+  put = put . encodeUtf8 . fromId
+  get = toId . decodeUtf8 <$> get
 
 -- | Convert an identifier to and from another type.
 class Ident a where
@@ -191,20 +210,20 @@ class Ident a where
   toId   :: a -> Id
 
 instance Ident [Char] where
-  fromId = T.unpack . CI.original
-  toId   = CI.mk . T.pack
+  fromId = T.unpack . CI.original . unId
+  toId   = Id . CI.mk . T.pack
 
 instance Ident Text where
-  fromId = CI.original
-  toId   = CI.mk
+  fromId = CI.original . unId
+  toId   = Id . CI.mk
 
 instance Ident MOOString where
-  fromId = Str.fromText . CI.original
-  toId   = CI.mk . Str.toText
+  fromId = Str.fromText . CI.original . unId
+  toId   = Id . CI.mk . Str.toText
 
 instance Ident Builder where
-  fromId = TLB.fromText . CI.original
-  toId   = CI.mk . builder2text
+  fromId = TLB.fromText . CI.original . unId
+  toId   = Id . CI.mk . builder2text
 
 builder2text :: Builder -> Text
 builder2text = TL.toStrict . TLB.toLazyText
@@ -216,7 +235,25 @@ data Value = Int IntT  -- ^ integer
            | Obj ObjT  -- ^ object number
            | Err ErrT  -- ^ error
            | Lst LstT  -- ^ list
-           deriving (Eq, Show)
+           deriving (Eq, Show, Typeable)
+
+instance VCacheable Value where
+  put v = put (typeOf v) >> case v of
+    Int x -> put (toInteger x)
+    Flt x -> put $ if isNegativeZero x then Nothing else Just (decodeFloat x)
+    Str x -> put x
+    Obj x -> put (toInteger x)
+    Err x -> put (fromEnum x)
+    Lst x -> put x
+
+  get = get >>= \t -> case t of
+    TInt -> Int . fromInteger <$> get
+    TFlt -> Flt . maybe (-0.0) (uncurry encodeFloat) <$> get
+    TStr -> Str <$> get
+    TObj -> Obj . fromInteger <$> get
+    TErr -> Err . toEnum <$> get
+    TLst -> Lst <$> get
+    _    -> fail $ "get: unknown Value type (" ++ show (fromEnum t) ++ ")"
 
 instance Sizeable Value where
   storageBytes value = case value of
@@ -270,7 +307,11 @@ data Type = TAny  -- ^ any type
           | TObj  -- ^ object number
           | TErr  -- ^ error
           | TLst  -- ^ list
-          deriving (Eq)
+          deriving (Eq, Enum, Typeable)
+
+instance VCacheable Type where
+  put = put . fromEnum
+  get = toEnum <$> get
 
 -- | A MOO error
 data Error = E_NONE     -- ^ No error

@@ -1,4 +1,6 @@
 
+{-# LANGUAGE DeriveDataTypeable #-}
+
 -- | Abstract MOO string type
 module MOO.String (
     MOOString
@@ -64,9 +66,12 @@ import Data.Hashable (Hashable(hashWithSalt))
 import Data.Monoid (Monoid(mempty, mappend, mconcat))
 import Data.String (IsString(fromString))
 import Data.Text (Text)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Text.Foreign (lengthWord16)
 import Data.Text.Lazy.Builder (Builder)
+import Data.Typeable (Typeable)
 import Data.Word (Word8, Word16)
+import Database.VCache (VCacheable(put, get))
 import Foreign.Storable (sizeOf)
 import Prelude hiding (tail, null, length, foldr, concat, concatMap, take, drop,
                        splitAt, break, words, unwords)
@@ -97,7 +102,7 @@ data MOOString = MOOString {
   , toCaseFold :: Text
   , length     :: Int
   , cachedReps :: CachedReps
-  }
+  } deriving Typeable
 
 instance IsString MOOString where
   fromString = fromText . T.pack
@@ -118,6 +123,11 @@ instance Monoid MOOString where
 
 instance Show MOOString where
   show = show . toText
+
+instance VCacheable MOOString where
+  put = let left = Left :: a -> Either a ByteString
+        in put . left . encodeUtf8 . toText
+  get = either (fromText . decodeUtf8) fromBinary <$> get
 
 fromText :: Text -> MOOString
 fromText text = MOOString {
