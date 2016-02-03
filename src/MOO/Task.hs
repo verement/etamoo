@@ -18,6 +18,7 @@ module MOO.Task (
   , modifyWorld
   , getDatabase
   , putDatabase
+  , getVSpace
   , serverOption
 
   -- * Task Interface
@@ -160,7 +161,7 @@ import Data.Text (Text)
 import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime, getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import Database.VCache (VSpace, VTx, runVTx,
+import Database.VCache (VCache, VSpace, VTx, runVTx, getVTxSpace, vcache_space,
                         PVar, readPVar, writePVar, modifyPVar)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (nanosleep)
@@ -204,7 +205,7 @@ liftSTM = liftVTx . DV.liftSTM
 data World = World {
     writeLog           :: Text -> STM ()        -- ^ Logging function
 
-  , vspace             :: VSpace                -- ^ VCache address space
+  , vcache             :: VCache                -- ^ LMDB handle
   , database           :: Database              -- ^ The database of objects
   , tasks              :: Map TaskId Task       -- ^ Queued and running tasks
 
@@ -228,7 +229,7 @@ initWorld :: World
 initWorld = World {
     writeLog         = undefined
 
-  , vspace           = undefined
+  , vcache           = undefined
   , database         = undefined
   , tasks            = M.empty
 
@@ -243,13 +244,13 @@ initWorld = World {
   , shutdownMessage  = undefined
   }
 
-newWorld :: (Text -> STM ()) -> VSpace -> Database -> Bool -> IO (TVar World)
-newWorld writeLog vspace db outboundNetworkEnabled = do
+newWorld :: (Text -> STM ()) -> VCache -> Database -> Bool -> IO (TVar World)
+newWorld writeLog vcache db outboundNetworkEnabled = do
   shutdownVar <- newEmptyMVar
 
   world' <- newTVarIO initWorld {
       writeLog        = writeLog
-    , vspace          = vspace
+    , vcache          = vcache
     , database        = db
     , outboundNetwork = outboundNetworkEnabled
     , shutdownMessage = shutdownVar
@@ -392,7 +393,7 @@ stepTask task = do
       stateM = runContT contM return
       vtxM   = runStateT stateM state
   world <- readTVarIO (taskWorld task)
-  (result, state') <- runVTx (vspace world) vtxM
+  (result, state') <- runVTx (vcache_space $ vcache world) vtxM
   runDelayed $ delayedIO state'
   return (result, task { taskState = state' { delayedIO = mempty }})
 
@@ -751,7 +752,13 @@ getDatabase :: MOO Database
 getDatabase = database <$> getWorld
 
 putDatabase :: Database -> MOO ()
-putDatabase db = modifyWorld $ \world -> world { database = db }
+putDatabase db = do
+  modifyWorld $ \world -> world { database = db }
+  world <- getWorld
+  liftVTx $ saveDatabase (vcache world) db
+
+getVSpace :: MOO VSpace
+getVSpace = liftVTx getVTxSpace
 
 getPlayer :: MOO ObjId
 getPlayer = asks (taskPlayer . task)

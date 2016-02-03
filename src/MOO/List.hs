@@ -73,6 +73,7 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
 
 import MOO.Types (Value(Lst, Str), StrT)
+import MOO.Util (VVector(..))
 
 import qualified MOO.Types as Value
 
@@ -95,8 +96,8 @@ instance Show MOOList where
   show = show . toList
 
 instance VCacheable MOOList where
-  put lst = put (length lst) >> forM_ lst put
-  get = get >>= \len -> fromVector <$> V.replicateM len get
+  put = put . VVector . toVector
+  get = fromVector . unVVector <$> get
 
 fromVector :: Vector Value -> MOOList
 fromVector vec = MOOList {

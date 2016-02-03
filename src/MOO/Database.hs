@@ -1,5 +1,5 @@
 
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, DeriveDataTypeable #-}
 
 module MOO.Database (
     Database
@@ -21,17 +21,24 @@ module MOO.Database (
   , getServerOption'
   , loadServerOptions
   , getServerMessage
+  , writeMagic
+  , checkMagic
+  , loadDatabase
+  , saveDatabase
   ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (forM, forM_, when, (>=>))
+import Control.Monad (forM, forM_, when, unless, (>=>))
+import Data.ByteString (ByteString)
 import Data.IntSet (IntSet)
 import Data.Maybe (isJust)
 import Data.Monoid ((<>))
 import Data.Text (Text)
+import Data.Typeable (Typeable)
 import Data.Vector (Vector)
-import Database.VCache (VSpace, VTx,
-                        PVar, newPVarsIO, newPVar, readPVar, writePVar)
+import Database.VCache (VCache, VSpace, VTx,
+                        VCacheable(put, get), PVar, loadRootPVar,
+                        newPVarsIO, newPVar, readPVarIO, readPVar, writePVar)
 
 import qualified Data.HashMap.Lazy as HM
 import qualified Data.HashSet as HS
@@ -42,6 +49,7 @@ import {-# SOURCE #-} MOO.Builtins (builtinFunctions)
 import MOO.Object
 import MOO.Task
 import MOO.Types
+import MOO.Util
 
 import qualified MOO.List as Lst
 import qualified MOO.String as Str
@@ -50,7 +58,17 @@ data Database = Database {
     objects       :: Vector (PVar (Maybe Object))
   , players       :: IntSet
   , serverOptions :: ServerOptions
-}
+} deriving Typeable
+
+instance VCacheable Database where
+  put db = do
+    put $ VVector (objects db)
+    put $ VIntSet (players db)
+
+  get = do
+    objects <- unVVector <$> get
+    players <- unVIntSet <$> get
+    return initDatabase { objects = objects, players = players }
 
 initDatabase = Database {
     objects       = V.empty
@@ -298,3 +316,26 @@ getServerMessage oid msg def = do
           Str s -> (Str.toText s :) <$> strings vs
           _     -> Nothing
         strings [] = Just []
+
+dbMagic :: ByteString
+dbMagic = "EtaMOO database"
+
+magicPVar :: VCache -> PVar ByteString
+magicPVar vcache = loadRootPVar vcache "magic" ""
+
+writeMagic :: VCache -> VTx ()
+writeMagic vcache = writePVar (magicPVar vcache) dbMagic
+
+checkMagic :: VCache -> IO ()
+checkMagic vcache = do
+  magic <- readPVarIO (magicPVar vcache)
+  unless (magic == dbMagic) $ error "invalid database"
+
+databasePVar :: VCache -> PVar Database
+databasePVar vcache = loadRootPVar vcache "database" initDatabase
+
+loadDatabase :: VCache -> IO Database
+loadDatabase vcache = readPVarIO (databasePVar vcache)
+
+saveDatabase :: VCache -> Database -> VTx ()
+saveDatabase vcache = writePVar (databasePVar vcache)

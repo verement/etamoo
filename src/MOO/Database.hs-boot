@@ -15,9 +15,10 @@ module MOO.Database ( Database
                     , queuedTaskLimit
                     , protectProperty
                     , supportNumericVerbnameStrings
+                    , saveDatabase
                     ) where
 
-import Database.VCache (VTx)
+import Database.VCache (VCache, VTx)
 
 import {-# SOURCE #-} MOO.Object (Object)
 import {-# SOURCE #-} MOO.Task (MOO)
@@ -46,3 +47,5 @@ queuedTaskLimit :: ServerOptions -> Maybe Int
 protectProperty :: ServerOptions -> Id -> Bool
 
 supportNumericVerbnameStrings :: ServerOptions -> Bool
+
+saveDatabase :: VCache -> Database -> VTx ()

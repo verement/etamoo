@@ -680,7 +680,8 @@ liftVTx :: VTx a -> DBWriter a
 liftVTx = lift . lift
 
 saveLMDatabase :: VSpace -> FilePath -> Database -> IO ()
-saveLMDatabase vspace dbFile database =
+saveLMDatabase vspace dbFile database = do
+  putStrLn $ "SAVING: " ++ dbFile
   withDBFile dbFile WriteMode $ \handle -> do
     let writer = runReaderT writeDatabase database
         vtx    = execWriterT writer

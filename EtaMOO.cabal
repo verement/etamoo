@@ -93,6 +93,7 @@ executable etamoo
                        MOO.Task
                        MOO.Types
                        MOO.Unparser
+                       MOO.Util
                        MOO.Verb
                        MOO.Version
                        Paths_EtaMOO

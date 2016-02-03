@@ -13,7 +13,6 @@
 *** § 4.4.7 Administrative Operations
 **** dump_database()
 *** § 4.4.8 Server Statistics and Miscellaneous Information
-**** db_disk_size()
 **** verb_cache_stats()
 **** log_cache_stats()
 * § 5 Server Commands and Database Assumptions
@@ -70,7 +69,6 @@
    - Bind built-in functions directly to implementations
 ** Alternative input languages?
 ** JIT compilation to LLVM?
-** Use acid-state instead of STM?
 ** Read and write queued tasks and active connections
 ** Intern strings on parsing and database load
 ** Rewrite database reading using Attoparsec
@@ -79,7 +77,6 @@
 ** MOO string and list size limits?
 ** .program
 ** Release unused memory upon storing property values
-** Binary database format
 ** $server_options.{max_list_concat,max_string_concat}
 ** $server_options.max_concat_catchable
    - to govern whether violating new size limits causes out-of-seconds or

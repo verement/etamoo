@@ -3,7 +3,8 @@
 
 module Main (main) where
 
-import Control.Monad (foldM, unless)
+import Control.Monad (foldM, unless, when)
+import Data.Char (isDigit)
 import Data.List (isInfixOf, isPrefixOf)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Version (showVersion)
@@ -24,17 +25,21 @@ run :: Options -> IO ()
 run opts
   | optHelp      opts = putStr =<< usage
   | optVersion   opts = putStr versionDetails
+  | optImport    opts = importDatabase (fromJust $ optInputDB  opts)
+                                       (fromJust $ optOutputDB opts)
+  | optExport    opts = exportDatabase (fromJust $ optInputDB  opts)
+                                       (fromJust $ optOutputDB opts)
   | optEmergency opts = error "Emergency Wizard Mode not yet implemented"
   | otherwise         = startServer (optLogFile opts)
                         (fromJust $ optInputDB opts)
-                        (fromJust $ optOutputDB opts)
                         (optOutboundNetwork opts)
                         (const $ TCP (optBindAddress opts) (optPort opts))
 
 versionDetails :: String
 versionDetails = unlines [
-    "EtaMOO " ++ showVersion version
-  , "(using " ++ pcreVersion ++ ")"
+    "EtaMOO " ++ showVersion version ++ ", using:"
+  , "  " ++ lmdbVersion
+  , "  " ++ pcreVersion
   , ""
   , "Build options:"
 # ifdef MOO_64BIT_INTEGER
@@ -50,7 +55,9 @@ versionDetails = unlines [
   ]
 
 data Options = Options {
-    optHelp            :: Bool
+    optImport          :: Bool
+  , optExport          :: Bool
+  , optHelp            :: Bool
   , optVersion         :: Bool
   , optEmergency       :: Bool
   , optLogFile         :: Maybe FilePath
@@ -63,7 +70,9 @@ data Options = Options {
   }
 
 defaultOptions = Options {
-    optHelp            = False
+    optImport          = False
+  , optExport          = False
+  , optHelp            = False
   , optVersion         = False
   , optEmergency       = False
   , optLogFile         = Nothing
@@ -102,6 +111,12 @@ options = [
       (ReqArg (\port opts -> opts { optPort = fromInteger $ read port
                                   , optPortSpecified = True }) "PORT")
       $ "Listening port (default: " ++ show (optPort defaultOptions) ++ ")"
+  , Option "" ["import"]
+      (NoArg (\opts -> opts { optImport = True }))
+      "Import LambdaMOO-format database"
+  , Option "" ["export"]
+      (NoArg (\opts -> opts { optExport = True }))
+      "Export LambdaMOO-format database"
   , Option "V" ["version"]
       (NoArg (\opts -> opts { optVersion = True }))
       "Show server version and build details"
@@ -114,10 +129,14 @@ options = [
 usage :: IO String
 usage = do
   argv0 <- getProgName
-  let header = "Usage: " ++ argv0 ++ " [-e] [-l FILE] " ++
-               "INPUT-DB OUTPUT-DB [+O|-O] [-a IP-ADDR] [[-p] PORT]"
+  let header = init $ unlines [
+          "Usage: " ++ argv0 ++ " [-e] [-l FILE] " ++
+                                "ETAMOO-DB [+O|-O] [-a IP-ADDR] [[-p] PORT]"
+        , "       " ++ argv0 ++ " --import LAMBDAMOO-DB ETAMOO-DB"
+        , "       " ++ argv0 ++ " --export ETAMOO-DB LAMBDAMOO-DB"
+        ]
   return $ patchUsage (usageInfo header options) ++
-    unlines ("* Default outbound network option" : "" : rtsOptions)
+    unlines ((replicate 68 ' ' ++ "(* default)") : "" : rtsOptions)
 
   where patchUsage :: String -> String
         patchUsage = unlines . map patch . lines
@@ -135,7 +154,7 @@ usage = do
           ]
 
 usageError :: String -> IO a
-usageError msg = error . (msg ++) . ('\n' :) . init =<< usage
+usageError msg = error . (msg ++) . ("\n\n" ++) . init =<< usage
 
 serverOpts :: IO (Options, [String])
 serverOpts = do
@@ -150,8 +169,10 @@ parseArgs = do
   opts <- foldM handleArg opts nonOpts
 
   unless (optHelp opts || optVersion opts) $ do
-    unless (isJust $ optInputDB  opts) $ usageError "missing INPUT-DB"
-    unless (isJust $ optOutputDB opts) $ usageError "missing OUTPUT-DB"
+    when (optImport opts && optExport opts) $ usageError "usage error"
+    when (isNothing $ optInputDB opts) $ usageError "missing input DB"
+    when (optImport opts || optExport opts) $
+      when (isNothing $ optOutputDB opts) $ usageError "missing output DB"
 
   return opts
 
@@ -161,9 +182,10 @@ parseArgs = do
           '+':_ -> usageError $ "unrecognized option `" ++ arg ++ "'"
           _ | isNothing (optInputDB opts) ->
                 return opts { optInputDB = Just arg }
-            | isNothing (optOutputDB opts) ->
+            | isNothing (optOutputDB opts) &&
+              (optImport opts || optExport opts) ->
                 return opts { optOutputDB = Just arg }
-            | not (optPortSpecified opts) ->
+            | not (optPortSpecified opts) && all isDigit arg ->
                 return opts { optPort = fromInteger $ read arg
                             , optPortSpecified = True }
             | otherwise -> usageError $ "unknown argument `" ++ arg ++ "'"

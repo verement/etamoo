@@ -15,8 +15,6 @@ module MOO.Types (
 
   , ObjId
   , Id
-  , VIntSet(..)
-  , VHashMap(..)
 
   , LineNo
 
@@ -232,19 +230,6 @@ instance Ident Builder where
 
 builder2text :: Builder -> Text
 builder2text = TL.toStrict . TLB.toLazyText
-
-newtype VIntSet = VIntSet { unVIntSet :: IntSet } deriving Typeable
-
-instance VCacheable VIntSet where
-  put (VIntSet x) = put (IS.toList x)
-  get = VIntSet . IS.fromList <$> get
-
-newtype VHashMap a b = VHashMap { unVHashMap :: HashMap a b } deriving Typeable
-
-instance (Eq a, Hashable a,
-          VCacheable a, VCacheable b) => VCacheable (VHashMap a b) where
-  put (VHashMap x) = put (HM.toList x)
-  get = VHashMap . HM.fromList <$> get
 
 -- | A 'Value' represents any MOO value.
 data Value = Int IntT  -- ^ integer

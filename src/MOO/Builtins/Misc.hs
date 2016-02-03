@@ -6,7 +6,6 @@ module MOO.Builtins.Misc ( builtins ) where
 import Control.Applicative ((<$>))
 import Control.Monad.State (gets)
 import Data.Monoid ((<>))
-import Data.Time (formatTime, utcToLocalZonedTime, defaultTimeLocale)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import Database.VCache (VCacheStats(..), vcacheStats)
 
@@ -20,6 +19,7 @@ import MOO.Database
 import MOO.Object
 import MOO.Task
 import MOO.Types
+import MOO.Util
 import MOO.Version
 
 import qualified MOO.String as Str
@@ -70,16 +70,14 @@ currentTime = floor . utcTimeToPOSIXSeconds <$> gets startTime
 bf_time = Builtin "time" 0 (Just 0) [] TInt $ \[] -> Int <$> currentTime
 
 bf_ctime = Builtin "ctime" 0 (Just 1) [TInt] TStr $ \arg -> case arg of
-  []         -> ctime =<< currentTime
-  [Int time] -> ctime time
+  []         -> ctime' =<< currentTime
+  [Int time] -> ctime' time
 
-  where ctime :: IntT -> MOO Value
-        ctime time = do
+  where ctime' :: IntT -> MOO Value
+        ctime' time = do
           let utcTime = posixSecondsToUTCTime (fromIntegral time)
-          zonedTime <- utcToLocalZonedTime utcTime `catchUnsafeIOtoMOO` \_ ->
-            raise E_INVARG
-          return $ Str $ Str.fromString $
-            formatTime defaultTimeLocale "%a %b %_d %T %Y %Z" zonedTime
+          Str . Str.fromString <$>
+            ctime utcTime `catchUnsafeIOtoMOO` \_ -> raise E_INVARG
 
 -- § 4.4.7 Administrative Operations
 
@@ -168,7 +166,7 @@ bf_memory_usage = Builtin "memory_usage" 0 (Just 0) [] TLst $ \[] ->
 bf_db_disk_size = Builtin "db_disk_size" 0 (Just 1)
                   [TAny] TAny $ \optional -> do
   let [full] = booleanDefaults optional [False]
-  stats <- unsafeIOtoMOO . vcacheStats . vspace =<< getWorld
+  stats <- unsafeIOtoMOO . vcacheStats =<< getVSpace
 
   return $ if full
            then fromList $ map (keyValue stats) [

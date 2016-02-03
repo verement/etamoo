@@ -57,6 +57,7 @@ import qualified Data.IntSet as IS
 
 import {-# SOURCE #-} MOO.Database
 import MOO.Types
+import MOO.Util
 import MOO.Verb
 
 import qualified MOO.String as Str

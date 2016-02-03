@@ -31,6 +31,12 @@ EtaMOO differs from LambdaMOO in a few significant ways:
     also used for network connection management, so for example name lookups
     do not block the entire server.
 
+  * EtaMOO uses [LMDB][] as a persistent backing store for the MOO database.
+    Changes are committed on an ongoing basis for instantaneous crash
+    recovery; checkpoints merely perform a quick synchronization, and are
+    otherwise unnecessary. EtaMOO provides mechanisms for importing and
+    exporting LambdaMOO-format databases to and from the EtaMOO-native format.
+
   * EtaMOO is Unicode-aware, and will eventually include support for Unicode
     MOO strings via compile-time build option.
 
@@ -55,6 +61,8 @@ EtaMOO differs from LambdaMOO in a few significant ways:
   * EtaMOO supports fractional second delays in `suspend()` and `fork`.
 
   * EtaMOO supports IPv6.
+
+  [LMDB]: http://symas.com/mdb/
 
 The implementation of EtaMOO otherwise closely follows the specifications of
 the [LambdaMOO Programmer's Manual][], and should be compatible with most
@@ -88,12 +96,12 @@ build:
 | `-f llvm`             | Use GHC's LLVM backend to compile the code    |
 | `-f 64bit`            | Enable 64-bit MOO integers                    |
 
-EtaMOO has non-Haskell dependencies on two external libraries: _libpcre_ (with
-UTF-8 support enabled) for regular expression matching, and, possibly,
-_libcrypt_ (often part of the standard libraries) for the MOO `crypt()`
-built-in function. You should ensure you have these available before
-installing EtaMOO (e.g. on Debian-derived systems, `sudo apt-get install
-libpcre3-dev`).
+EtaMOO has non-Haskell dependencies on three external libraries: _liblmdb_ for
+database persistence, _libpcre_ (with UTF-8 support enabled) for regular
+expression matching, and, possibly, _libcrypt_ (often part of the standard
+libraries) for the MOO `crypt()` built-in function. You should ensure you have
+these available before installing EtaMOO (e.g. on Debian-derived systems,
+`sudo apt-get install liblmdb-dev libpcre3-dev`).
 
 Hacking
 -------
