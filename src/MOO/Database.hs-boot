@@ -4,6 +4,7 @@ module MOO.Database ( Database
                     , ServerOptions
                     , serverOptions
                     , getServerOption'
+                    , initDatabase
                     , dbObject
                     , modifyObject
                     , loadServerOptions
@@ -29,6 +30,8 @@ data ServerOptions
 
 serverOptions :: Database -> ServerOptions
 getServerOption' :: ObjId -> Id -> MOO (Maybe Value)
+
+initDatabase :: Database
 
 dbObject :: ObjId -> Database -> VTx (Maybe Object)
 modifyObject :: ObjId -> Database -> (Object -> VTx Object) -> VTx ()

@@ -206,6 +206,8 @@ data World = World {
     writeLog           :: Text -> STM ()        -- ^ Logging function
 
   , vcache             :: VCache                -- ^ LMDB handle
+  , checkpoint         :: STM ()                -- ^ Database checkpoint signal
+
   , database           :: Database              -- ^ The database of objects
   , tasks              :: Map TaskId Task       -- ^ Queued and running tasks
 
@@ -227,10 +229,12 @@ data World = World {
 
 initWorld :: World
 initWorld = World {
-    writeLog         = undefined
+    writeLog         = const $ return ()
 
   , vcache           = undefined
-  , database         = undefined
+  , checkpoint       = return ()
+
+  , database         = initDatabase
   , tasks            = M.empty
 
   , listeners        = M.empty

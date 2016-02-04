@@ -126,6 +126,7 @@ executable etamoo
   c-sources:           src/cbits/match.c
 
   build-depends:       array
+                     , async
                      , base >= 4.7 && ==4.*
                      , bytestring
                      , case-insensitive

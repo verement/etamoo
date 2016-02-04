@@ -4,12 +4,15 @@
 module MOO.Server (startServer, importDatabase, exportDatabase) where
 
 import Control.Applicative ((<$>))
-import Control.Concurrent (newEmptyMVar, takeMVar, putMVar,
-                           forkIO, getNumCapabilities)
-import Control.Concurrent.STM (STM, TVar, atomically, retry,
-                               readTVarIO, readTVar)
-import Control.Exception (finally)
+import Control.Arrow ((&&&))
+import Control.Concurrent (takeMVar, getNumCapabilities, threadDelay)
+import Control.Concurrent.Async (async, withAsync, waitEither, wait)
+import Control.Concurrent.STM (STM, TVar, atomically, retry, newEmptyTMVarIO,
+                               tryPutTMVar, putTMVar, tryTakeTMVar, takeTMVar,
+                               readTVarIO, readTVar, modifyTVar)
+import Control.Exception (SomeException, try)
 import Control.Monad (forM_, void, unless)
+import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import Data.Text.IO (hPutStrLn)
@@ -81,14 +84,19 @@ startServer logFile dbFile outboundNet pf = withSocketsDo $ do
   runTask =<< newTask world' nothing
     (resetLimits True >> callSystemVerb "server_started" [] >> return zero)
 
+  (checkpoint, stopCheckpointer) <- startCheckpointer world'
+  atomically $ modifyTVar world' $ \world -> world { checkpoint = checkpoint }
+
   createListener world' systemObject (pf world') True
 
-  world <- readTVarIO world'
-  takeMVar (shutdownMessage world) >>= shutdownServer world'
+  message <- takeMVar . shutdownMessage =<< readTVarIO world'
 
-  writeLog "SHUTDOWN: Synchronizing database..."
+  stopCheckpointer
+  shutdownServer world' message
+
+  writeLog "DUMPING: Synchronizing database..."
   syncDatabase vcache
-  writeLog "SHUTDOWN: Finished"
+  writeLog "DUMPING finished"
 
   stopLogger
 
@@ -101,7 +109,7 @@ shutdownServer world' message = do
   atomically $ do
     world <- readTVar world'
 
-    writeLog world "SHUTDOWN: shutdown signal received"
+    writeLog world $ "SHUTDOWN: " <> message
 
     forM_ (M.elems $ connections world) $ \conn -> do
       -- XXX probably not good to send to ALL connections
@@ -121,15 +129,14 @@ startLogger dest = do
   hSetBuffering handle LineBuffering
 
   (output, input, seal) <- spawn' unbounded
-  done <- newEmptyMVar
 
-  forkIO $ (`finally` putMVar done ()) $ do
+  logger <- async $ do
     runEffect $
       fromInput input >-> timestamp >-> for cat (lift . hPutStrLn handle)
     hClose handle
 
   let writeLog   = void . send output
-      stopLogger = atomically seal >> takeMVar done
+      stopLogger = atomically seal >> wait logger
 
   return (writeLog, stopLogger)
 
@@ -138,6 +145,47 @@ startLogger dest = do
           zonedTime <- lift $ utcToLocalZonedTime =<< getCurrentTime
           let timestamp = formatTime defaultTimeLocale "%b %_d %T: " zonedTime
           yield $ T.pack timestamp <> line
+
+startCheckpointer :: TVar World -> IO (STM (), IO ())
+startCheckpointer world' = do
+  (vcache, writeLog) <- atomically $ (vcache &&& writeLog) <$> readTVar world'
+  signal <- newEmptyTMVarIO
+
+  let verbCall :: StrT -> [Value] -> IO ()
+      verbCall name args =
+        void $ runTask =<< newTask world' nothing
+        (resetLimits False >> callSystemVerb name args >> return zero)
+
+      checkpointerLoop :: IO ()
+      checkpointerLoop = do
+        dumpInterval <- runTask =<< newTask world' nothing
+                        (fromMaybe zero <$>
+                         readProperty systemObject "dump_interval")
+        let interval = case dumpInterval >>= toMicroseconds of
+              Just usecs | usecs >= 60 * 1000000 -> fromIntegral usecs
+              _                                  -> 3600 * 1000000
+
+        shouldExit <- withAsync (threadDelay interval) $ \delayAsync ->
+          withAsync (atomically $ takeTMVar signal) $ \signalAsync ->
+          waitEither delayAsync signalAsync
+        case shouldExit of
+          Right True -> return ()
+          _          -> do
+            atomically $ writeLog "CHECKPOINTING database"
+            verbCall "checkpoint_started" []
+            success <- either (\e -> let _ = e :: SomeException in False)
+                              (const True) <$> try (syncDatabase vcache)
+            verbCall "checkpoint_finished" [truthValue success]
+            checkpointerLoop
+
+  checkpointer <- async checkpointerLoop
+
+  let checkpoint = void $ tryPutTMVar signal False
+      stopCheckpointer = do
+        atomically $ tryTakeTMVar signal >> putTMVar signal True
+        wait checkpointer
+
+  return (checkpoint, stopCheckpointer)
 
 syncDatabase :: VCache -> IO ()
 syncDatabase vcache = do

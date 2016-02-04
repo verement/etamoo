@@ -82,7 +82,7 @@ bf_ctime = Builtin "ctime" 0 (Just 1) [TInt] TStr $ \arg -> case arg of
 -- § 4.4.7 Administrative Operations
 
 bf_dump_database = Builtin "dump_database" 0 (Just 0) [] TAny $ \[] ->
-  notyet "dump_database"
+  checkWizard >> getWorld >>= liftSTM . checkpoint >> return zero
 
 bf_shutdown = Builtin "shutdown" 0 (Just 1) [TStr] TAny $ \optional -> do
   let (message : _) = maybeDefaults optional
