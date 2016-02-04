@@ -16,6 +16,7 @@ module MOO.Task (
   , getWorld'
   , putWorld
   , modifyWorld
+  , updateConnections
   , getDatabase
   , putDatabase
   , getVSpace
@@ -161,8 +162,8 @@ import Data.Text (Text)
 import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime, getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import Database.VCache (VCache, VSpace, VTx, runVTx, getVTxSpace, vcache_space,
-                        PVar, readPVar, writePVar, modifyPVar)
+import Database.VCache (VSpace, VTx, runVTx, getVTxSpace,
+                        PVar, readPVarIO, readPVar, writePVar, modifyPVar)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (nanosleep)
 import System.Random (Random, StdGen, newStdGen, mkStdGen, split,
@@ -205,7 +206,7 @@ liftSTM = liftVTx . DV.liftSTM
 data World = World {
     writeLog           :: Text -> STM ()        -- ^ Logging function
 
-  , vcache             :: VCache                -- ^ LMDB handle
+  , persistence        :: Persistence           -- ^ Persistent storage
   , checkpoint         :: STM ()                -- ^ Database checkpoint signal
 
   , database           :: Database              -- ^ The database of objects
@@ -231,7 +232,7 @@ initWorld :: World
 initWorld = World {
     writeLog         = const $ return ()
 
-  , vcache           = undefined
+  , persistence      = undefined
   , checkpoint       = return ()
 
   , database         = initDatabase
@@ -248,13 +249,14 @@ initWorld = World {
   , shutdownMessage  = undefined
   }
 
-newWorld :: (Text -> STM ()) -> VCache -> Database -> Bool -> IO (TVar World)
-newWorld writeLog vcache db outboundNetworkEnabled = do
+newWorld :: (Text -> STM ()) -> Persistence -> Bool -> IO (TVar World)
+newWorld writeLog persist outboundNetworkEnabled = do
   shutdownVar <- newEmptyMVar
 
+  db <- readPVarIO (persistenceDatabase persist)
   world' <- newTVarIO initWorld {
       writeLog        = writeLog
-    , vcache          = vcache
+    , persistence     = persist
     , database        = db
     , outboundNetwork = outboundNetworkEnabled
     , shutdownMessage = shutdownVar
@@ -396,8 +398,8 @@ stepTask task = do
       contM  = runReaderT comp' env
       stateM = runContT contM return
       vtxM   = runStateT stateM state
-  world <- readTVarIO (taskWorld task)
-  (result, state') <- runVTx (vcache_space $ vcache world) vtxM
+  vspace <- persistenceVSpace . persistence <$> readTVarIO (taskWorld task)
+  (result, state') <- runVTx vspace vtxM
   runDelayed $ delayedIO state'
   return (result, task { taskState = state' { delayedIO = mempty }})
 
@@ -741,6 +743,16 @@ putWorld world = liftSTM . flip writeTVar world =<< getWorld'
 modifyWorld :: (World -> World) -> MOO ()
 modifyWorld f = liftSTM . flip modifyTVar f =<< getWorld'
 
+updateConnections :: TVar World ->
+                     (Map ObjId Connection -> Map ObjId Connection) -> VTx ()
+updateConnections world' f = do
+  world <- DV.liftSTM $ readTVar world'
+  let connections' = f (connections world)
+  DV.liftSTM $ writeTVar world' world { connections = connections' }
+
+  writePVar (persistenceConnected $ persistence world) $ M.foldMapWithKey
+    (\player conn -> [(player, connectionObject conn)]) connections'
+
 getTask :: TaskId -> MOO (Maybe Task)
 getTask taskId = M.lookup taskId . tasks <$> getWorld
 
@@ -758,8 +770,9 @@ getDatabase = database <$> getWorld
 putDatabase :: Database -> MOO ()
 putDatabase db = do
   modifyWorld $ \world -> world { database = db }
-  world <- getWorld
-  liftVTx $ saveDatabase (vcache world) db
+
+  p <- persistence <$> getWorld
+  liftVTx $ writePVar (persistenceDatabase p) db
 
 getVSpace :: MOO VSpace
 getVSpace = liftVTx getVTxSpace

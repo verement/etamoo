@@ -57,10 +57,10 @@ withDBFile dbFile mode io = withFile dbFile mode $ \handle -> do
   io handle
 
 loadLMDatabase :: VSpace -> FilePath -> (T.Text -> IO ()) ->
-                  IO (Either ParseError Database)
+                  IO (Either ParseError (Database, Connected))
 loadLMDatabase vspace dbFile writeLog =
   withDBFile dbFile ReadMode $ \handle -> do
-    writeLog $ "LOADING: " <> T.pack dbFile
+    writeLog $ "IMPORTING: " <> T.pack dbFile
     contents <- TL.hGetContents handle
     runReaderT (runParserT lmDatabase initDatabase dbFile contents)
       (initDBEnv writeLog vspace)
@@ -87,7 +87,7 @@ writeLog line = asks logger >>= \writeLog ->
 
 header_format_string = ("** LambdaMOO Database, Format Version ", " **")
 
-lmDatabase :: DBParser Database
+lmDatabase :: DBParser (Database, Connected)
 lmDatabase = do
   let (before, after) = header_format_string
   dbVersion <- line $ between (string before) (string after) unsignedInt
@@ -97,7 +97,7 @@ lmDatabase = do
   unless (dbVersion < num_db_versions) $
     fail $ "Unsupported database format (version " ++ show dbVersion ++ ")"
 
-  local (\r -> r { input_version = dbVersion }) $ do
+  connected <- local (\r -> r { input_version = dbVersion }) $ do
     nobjs  <- line signedInt
     nprogs <- line signedInt
     _dummy <- line signedInt
@@ -127,9 +127,8 @@ lmDatabase = do
       read_active_connections
 
   eof
-  writeLog "Database loaded!"
 
-  getState
+  getState >>= \db -> return (db, connected)
 
 installUsers :: [ObjId] -> DBParser ()
 installUsers users = do
@@ -608,7 +607,7 @@ read_rt_env = (<?> "rt_env") $ do
 read_bi_func_data :: DBParser ()
 read_bi_func_data = return ()
 
-read_active_connections :: DBParser [(Int, Int)]
+read_active_connections :: DBParser [(ObjId, ObjId)]
 read_active_connections = (<?> "active_connections") $ (eof >> return []) <|> do
   nconnections <- signedInt
   string " active connections"
@@ -679,19 +678,19 @@ type DBWriter = ReaderT Database (WriterT Builder VTx)
 liftVTx :: VTx a -> DBWriter a
 liftVTx = lift . lift
 
-saveLMDatabase :: VSpace -> FilePath -> Database -> IO ()
-saveLMDatabase vspace dbFile database = do
-  putStrLn $ "SAVING: " ++ dbFile
+saveLMDatabase :: VSpace -> FilePath -> (Database, Connected) -> IO ()
+saveLMDatabase vspace dbFile (database, connected) = do
+  putStrLn $ "EXPORTING: " ++ dbFile
   withDBFile dbFile WriteMode $ \handle -> do
-    let writer = runReaderT writeDatabase database
+    let writer = runReaderT (writeDatabase connected) database
         vtx    = execWriterT writer
     TL.hPutStr handle . toLazyText =<< runVTx vspace vtx
 
 tellLn :: Builder -> DBWriter ()
 tellLn line = tell line >> tell (singleton '\n')
 
-writeDatabase :: DBWriter ()
-writeDatabase = do
+writeDatabase :: Connected -> DBWriter ()
+writeDatabase connected = do
   let (before, after) = header_format_string
   tell (fromString before)
   tell (decimal $ num_db_versions - 1)
@@ -723,6 +722,11 @@ writeDatabase = do
   tellLn "0 clocks"
   tellLn "0 queued tasks"
   tellLn "0 suspended tasks"
+
+  unless (null connected) $ do
+    tellLn $ decimal (length connected) <> " active connections with listeners"
+    forM_ connected $ \(who, listener) ->
+      tellLn $ decimal who <> " " <> decimal listener
 
 tellObject :: Array ObjId (Maybe Object) -> (ObjId, Maybe Object) ->
               DBWriter (ObjId, [Verb])

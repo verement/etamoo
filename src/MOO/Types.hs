@@ -80,10 +80,9 @@ import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable (Typeable)
-import Database.VCache (VCacheable(put, get), PVar, VRef, unsafeVRefEncoding)
+import Database.VCache (VCacheable(put, get), PVar)
 import Foreign.Storable (sizeOf)
 import System.Random (StdGen)
-import System.IO.Unsafe (unsafePerformIO)
 
 import qualified Data.CaseInsensitive as CI
 import qualified Data.HashMap.Strict as HM
@@ -179,8 +178,16 @@ instance Sizeable (TVar a) where
 instance Sizeable (PVar a) where
   storageBytes _ = storageBytes ()
 
+{-
+-- Unfortunately these can cause vcache deadlock
+
+instance VCacheable a => Sizeable (PVar a) where
+  storageBytes var = unsafePerformIO $
+                     storageBytes . vref (pvar_space var) <$> readPVarIO var
+
 instance Sizeable (VRef a) where
   storageBytes ref = unsafePerformIO $ unsafeVRefEncoding ref $ const return
+-}
 
 # ifdef MOO_64BIT_INTEGER
 type IntT = Int64

@@ -4,7 +4,10 @@
 module MOO.Connection (
     Connection
   , ConnectionHandler
+  , Disconnect(..)
   , connectionHandler
+  , connectionObject
+  , doDisconnected
 
   , firstConnectionId
 
@@ -56,13 +59,14 @@ import Control.Monad.State (get, modify)
 import Control.Monad.Trans (lift)
 import Data.ByteString (ByteString)
 import Data.Map (Map)
-import Data.Maybe (fromMaybe, isNothing, fromJust)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import Data.Text.Encoding (Decoding(Some), encodeUtf8, streamDecodeUtf8With)
 import Data.Text.Encoding.Error (lenientDecode)
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Database.VCache (runVTx)
 import Pipes (Producer, Consumer, Pipe, await, yield, runEffect,
               for, cat, (>->))
 import Pipes.Concurrent (send, spawn, unbounded, fromInput, toOutput)
@@ -71,6 +75,7 @@ import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
+import qualified Database.VCache as DV
 
 import MOO.Command
 import MOO.Database
@@ -84,6 +89,7 @@ import qualified MOO.String as Str
 data Connection = Connection {
     connectionObject           :: ObjId
   , connectionPlayer           :: TVar ObjId
+  , connectionPrintMessages    :: Bool
 
   , connectionInput            :: TBMQueue StrT
   , connectionOutput           :: TBMQueue ConnectionMessage
@@ -249,7 +255,7 @@ data Disconnect = Disconnected | ClientDisconnected
 connectionHandler :: TVar World -> ObjId -> Bool -> ConnectionHandler
 connectionHandler world' object printMessages connectionName (input, output) =
   bracket newConnection deleteConnection $ \conn -> do
-    forkIO $ runConnection world' printMessages conn
+    forkIO $ runConnection world' conn
 
     forkIO $ do
       try (runEffect $ input >-> connectionRead conn) >>=
@@ -266,59 +272,62 @@ connectionHandler world' object printMessages connectionName (input, output) =
   where newConnection :: IO Connection
         newConnection = do
           now <- getCurrentTime
+          vspace <- persistenceVSpace . persistence <$> readTVarIO world'
 
-          atomically $ do
-            world <- readTVar world'
+          runVTx vspace $ do
+            (world, connectionId, nextId,
+             connection, inputQueue) <- DV.liftSTM $ do
+              world <- readTVar world'
 
-            let connectionId = nextConnectionId world
+              let connectionId = nextConnectionId world
 
-            name <- connectionName
-            writeLog world $ "ACCEPT: " <> toText (Obj connectionId) <>
-              " on " <> T.pack name
+              name <- connectionName
+              writeLog world $ "ACCEPT: " <> toText (Obj connectionId) <>
+                " on " <> T.pack name
 
-            playerVar     <- newTVar connectionId
+              playerVar     <- newTVar connectionId
 
-            inputQueue    <- newTBMQueue maxQueueLength
-            outputQueue   <- newTBMQueue maxQueueLength
+              inputQueue    <- newTBMQueue maxQueueLength
+              outputQueue   <- newTBMQueue maxQueueLength
 
-            cTimeVar      <- newTVar Nothing
-            aTimeVar      <- newTVar now
+              cTimeVar      <- newTVar Nothing
+              aTimeVar      <- newTVar now
 
-            delimsVar     <- newTVar (T.empty, T.empty)
-            optionsVar    <- newTVar initConnectionOptions {
-              optionFlushCommand = defaultFlushCommand $
-                                   serverOptions (database world) }
+              delimsVar     <- newTVar (T.empty, T.empty)
+              optionsVar    <- newTVar initConnectionOptions {
+                optionFlushCommand = defaultFlushCommand $
+                                     serverOptions (database world) }
 
-            readerVar     <- newEmptyTMVar
-            disconnectVar <- newEmptyTMVar
+              readerVar     <- newEmptyTMVar
+              disconnectVar <- newEmptyTMVar
 
-            let connection = Connection {
-                    connectionObject           = object
-                  , connectionPlayer           = playerVar
+              let connection = Connection {
+                      connectionObject           = object
+                    , connectionPlayer           = playerVar
+                    , connectionPrintMessages    = printMessages
 
-                  , connectionInput            = inputQueue
-                  , connectionOutput           = outputQueue
+                    , connectionInput            = inputQueue
+                    , connectionOutput           = outputQueue
 
-                  , connectionName             = connectionName
-                  , connectionConnectedTime    = cTimeVar
-                  , connectionActivityTime     = aTimeVar
+                    , connectionName             = connectionName
+                    , connectionConnectedTime    = cTimeVar
+                    , connectionActivityTime     = aTimeVar
 
-                  , connectionOutputDelimiters = delimsVar
-                  , connectionOptions          = optionsVar
+                    , connectionOutputDelimiters = delimsVar
+                    , connectionOptions          = optionsVar
 
-                  , connectionReader           = readerVar
-                  , connectionDisconnect       = disconnectVar
-                  }
-                nextId = succConnectionId
-                         (`M.member` connections world) connectionId
+                    , connectionReader           = readerVar
+                    , connectionDisconnect       = disconnectVar
+                    }
+                  nextId = succConnectionId
+                           (`M.member` connections world) connectionId
 
-            writeTVar world' world {
-                connections      = M.insert connectionId connection
-                                   (connections world)
-              , nextConnectionId = nextId
-              }
+              return (world, connectionId, nextId, connection, inputQueue)
 
-            writeTBMQueue inputQueue Str.empty
+            DV.liftSTM $ writeTVar world' world { nextConnectionId = nextId }
+            updateConnections world' $ M.insert connectionId connection
+
+            DV.liftSTM $ writeTBMQueue inputQueue Str.empty
 
             return connection
 
@@ -326,21 +335,33 @@ connectionHandler world' object printMessages connectionName (input, output) =
         deleteConnection conn = do
           how <- atomically $ takeTMVar (connectionDisconnect conn)
           player <- readTVarIO (connectionPlayer conn)
-          let systemVerb = case how of
-                Disconnected       -> "user_disconnected"
-                ClientDisconnected -> "user_client_disconnected"
-              comp = do
-                liftSTM $ do
-                  connectionId <- readTVar (connectionPlayer conn)
-                  modifyTVar world' $ \world ->
-                    world { connections = M.delete connectionId
-                                          (connections world) }
-                fromMaybe zero <$>
-                  callSystemVerb' object systemVerb [Obj player] Str.empty
-          void $ runTask =<< newTask world' player (resetLimits True >> comp)
+          doDisconnected world' object player how
+          case how of
+            ClientDisconnected -> do
+              let comp = do
+                    world <- getWorld
+                    connName <- liftSTM connectionName
+                    objectName <- getObjectName player
+                    liftSTM $ writeLog world $ "CLIENT DISCONNECTED: " <>
+                      Str.toText objectName <> " on " <> T.pack connName
+                    return zero
+              void $ runTask =<< newTask world' player
+                (resetLimits True >> comp)
+            _ -> return ()
 
-runConnection :: TVar World -> Bool -> Connection -> IO ()
-runConnection world' printMessages conn = loop
+doDisconnected :: TVar World -> ObjId -> ObjId -> Disconnect -> IO ()
+doDisconnected world' object player how = do
+  let systemVerb = case how of
+        Disconnected       -> "user_disconnected"
+        ClientDisconnected -> "user_client_disconnected"
+      comp = do
+        liftVTx $ updateConnections world' $ M.delete player
+        fromMaybe zero <$>
+          callSystemVerb' object systemVerb [Obj player] Str.empty
+  void $ runTask =<< newTask world' player (resetLimits True >> comp)
+
+runConnection :: TVar World -> Connection -> IO ()
+runConnection world' conn = loop
   where loop = do
           (line, reader) <- atomically $ do
             line <- readTBMQueue (connectionInput conn)
@@ -414,44 +435,45 @@ runConnection world' printMessages conn = loop
         connectPlayer player maxObject = do
           now <- getCurrentTime
 
-          maybeOldConn <- atomically $ do
-            writeTVar (connectionConnectedTime conn) (Just now)
+          oldPlayer <- atomically $ swapTVar (connectionPlayer conn) player
 
-            oldPlayer <- swapTVar (connectionPlayer conn) player
+          void $ runServerTask $ do
+            liftSTM $ writeTVar (connectionConnectedTime conn) (Just now)
 
-            world <- readTVar world'
+            playerName <- getObjectName player
+            connName   <- liftSTM $ connectionName conn
+
+            world <- getWorld
             let maybeOldConn = M.lookup player (connections world)
             case maybeOldConn of
               Just oldConn -> do
-                writeTVar (connectionPlayer oldConn) oldPlayer
+                liftSTM $ writeTVar (connectionPlayer oldConn) oldPlayer
+                printMessage oldConn redirectFromMsg
+                liftSTM $ closeConnection oldConn
 
-                let oldObject = connectionObject oldConn
-                    newObject = connectionObject conn
-                when (oldObject /= newObject) $ void $
-                  tryPutTMVar (connectionDisconnect oldConn) ClientDisconnected
-                -- print' oldConn redirectFromMsg
-                closeConnection oldConn
-              Nothing      -> return ()
+                oldConnName <- liftSTM $ connectionName oldConn
+                liftSTM $ writeLog world $ "REDIRECTED: " <>
+                  Str.toText playerName <> ", was " <> T.pack oldConnName <>
+                  ", now " <> T.pack connName
 
-            writeTVar world' world {
-              connections = M.insert player conn $
-                            M.delete oldPlayer (connections world) }
-            return maybeOldConn
+              Nothing -> liftSTM $ writeLog world $ "CONNECTED: " <>
+                         Str.toText playerName <> " on " <> T.pack connName
 
-          let (systemVerb, msg)
-                | player > maxObject     = ("user_created",     createMsg)
-                | isNothing maybeOldConn ||
-                  connectionObject (fromJust maybeOldConn) /=
-                  connectionObject conn  = ("user_connected",   connectMsg)
-                | otherwise              = ("user_reconnected", redirectToMsg)
-          print msg
-          runServerVerb systemVerb [Obj player]
+            liftVTx $ updateConnections world' $
+              M.insert player conn . M.delete oldPlayer
+
+            let (verb, msg)
+                  | player > maxObject     = ("user_created",     createMsg)
+                  | isNothing maybeOldConn = ("user_connected",   connectMsg)
+                  | otherwise              = ("user_reconnected", redirectToMsg)
+
+            printMessage conn msg
+            callSystemVerb verb [Obj player] Str.empty
+
+            return zero
 
         callSystemVerb :: StrT -> [Value] -> StrT -> MOO (Maybe Value)
         callSystemVerb = callSystemVerb' (connectionObject conn)
-
-        runServerVerb :: StrT -> [Value] -> IO ()
-        runServerVerb vname args = void $ runServerVerb' vname args Str.empty
 
         runServerVerb' :: StrT -> [Value] -> StrT -> IO (Maybe Value)
         runServerVerb' vname args argstr = runServerTask $
@@ -466,15 +488,6 @@ runConnection world' printMessages conn = loop
             atomically $ sendToConnection conn $
               T.pack $ "*** Runtime error: " <> show (except :: SomeException)
             return Nothing
-
-        print' :: Connection -> (ObjId -> MOO [Text]) -> IO ()
-        print' conn msg
-          | printMessages = void $ runServerTask $
-                            printMessage conn msg >> return zero
-          | otherwise     = return ()
-
-        print :: (ObjId -> MOO [Text]) -> IO ()
-        print = print' conn
 
         cmdWords :: StrT -> [Value]
         cmdWords = map Str . parseWords . Str.toText
@@ -611,10 +624,12 @@ enqueueOutput noFlush conn message = do
 sendToConnection :: Connection -> Text -> STM ()
 sendToConnection conn = void . enqueueOutput False conn . Line
 
-printMessage :: Connection -> (ObjId -> MOO [Text]) -> MOO ()
-printMessage conn msg = serverMessage conn msg >>= liftSTM
+printMessage :: Connection -> ServerMessage -> MOO ()
+printMessage conn msg
+  | connectionPrintMessages conn = liftSTM =<< serverMessage conn msg
+  | otherwise                    = return ()
 
-serverMessage :: Connection -> (ObjId -> MOO [Text]) -> MOO (STM ())
+serverMessage :: Connection -> ServerMessage -> MOO (STM ())
 serverMessage conn msg =
   mapM_ (sendToConnection conn) <$> msg (connectionObject conn)
 
@@ -722,11 +737,22 @@ bootPlayer = bootPlayer' False
 bootPlayer' :: Bool -> ObjId -> MOO ()
 bootPlayer' recycled oid =
   withMaybeConnection oid . maybe (return ()) $ \conn -> do
-    printMessage conn $ if recycled then recycleMsg else bootMsg
+    connName <- liftSTM $ connectionName conn
+    writeLog <- writeLog <$> getWorld
+    if recycled then do
+      liftSTM $ writeLog $ "RECYCLED: #" <> T.pack (show oid) <>
+        " on " <> T.pack connName
+      printMessage conn recycleMsg
+      else do
+      objectName <- getObjectName oid
+      liftSTM $ writeLog $ "DISCONNECTED: " <> Str.toText objectName <>
+        " on " <> T.pack connName
+      printMessage conn bootMsg
+
     liftSTM $ closeConnection conn
-    modifyWorld $ \world -> world { connections =
-                                       M.delete oid (connections world) }
-    return ()
+
+    world' <- getWorld'
+    liftVTx $ updateConnections world' $ M.delete oid
 
 withConnectionOptions :: ObjId -> (ConnectionOptions -> MOO a) -> MOO a
 withConnectionOptions oid f =
@@ -755,7 +781,9 @@ getConnectionOptions oid =
     let optionValue option = optionGet option options
     in return $ M.map optionValue allConnectionOptions
 
-msgFor :: Id -> [Text] -> ObjId -> MOO [Text]
+type ServerMessage = ObjId -> MOO [Text]
+
+msgFor :: Id -> [Text] -> ServerMessage
 msgFor msg def oid
   | oid == systemObject = systemMessage
   | otherwise           = getServerMessage oid msg systemMessage

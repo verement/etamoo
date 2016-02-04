@@ -19,13 +19,10 @@
 **** .program
 ** § 5.2 Server Assumptions About the Database
 *** § 5.2.2 Server Messages Set in the Database
-**** redirect_from_msg
 **** server_full_msg
 **** timeout_msg
 *** § 5.2.6 Player Input Handlers
 **** $do_command uncaught exceptions
-*** § 5.2.7 The First Tasks Run By the Server
-**** $user_disconnected()
 
 * Other
 ** Gather constants into a single location?
@@ -42,9 +39,6 @@
 
 * Before v1.0
 ** Fix read() and OOB
-** Log connected players
-** Finish built-in function implementations
-** $user_disconnected() on db users
 ** Emergency Wizard Mode
 ** L.server_options.connect_timeout
 ** Top-level Haskell exception handling
@@ -61,7 +55,7 @@
    - Bind built-in functions directly to implementations
 ** Alternative input languages?
 ** JIT compilation to LLVM?
-** Read and write queued tasks and active connections
+** Read and write queued tasks
 ** Intern strings on parsing and database load
 ** Rewrite database reading using Attoparsec
 ** Rewrite parser using Happy

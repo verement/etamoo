@@ -3,7 +3,9 @@
 
 module MOO.Database (
     Database
+  , Connected
   , ServerOptions(..)
+  , Persistence(..)
   , serverOptions
   , initDatabase
   , dbObjectRef
@@ -21,24 +23,23 @@ module MOO.Database (
   , getServerOption'
   , loadServerOptions
   , getServerMessage
-  , writeMagic
-  , checkMagic
-  , loadDatabase
+  , loadPersistence
+  , syncPersistence
   , saveDatabase
   ) where
 
-import Control.Applicative ((<$>))
-import Control.Monad (forM, forM_, when, unless, (>=>))
-import Data.ByteString (ByteString)
+import Control.Applicative ((<$>), (<*>))
+import Control.Monad (forM, forM_, when, (>=>))
 import Data.IntSet (IntSet)
 import Data.Maybe (isJust)
 import Data.Monoid ((<>))
 import Data.Text (Text)
+import Data.Time (getCurrentTime)
 import Data.Typeable (Typeable)
 import Data.Vector (Vector)
-import Database.VCache (VCache, VSpace, VTx,
-                        VCacheable(put, get), PVar, loadRootPVar,
-                        newPVarsIO, newPVar, readPVarIO, readPVar, writePVar)
+import Database.VCache (VCache, VSpace, VTx, VCacheable(put, get), vcache_space,
+                        PVar, loadRootPVarIO, newPVarsIO, newPVarIO, newPVar,
+                        readPVarIO, readPVar, writePVar, runVTx, markDurable)
 
 import qualified Data.HashMap.Lazy as HM
 import qualified Data.HashSet as HS
@@ -50,6 +51,7 @@ import MOO.Object
 import MOO.Task
 import MOO.Types
 import MOO.Util
+import MOO.Version
 
 import qualified MOO.List as Lst
 import qualified MOO.String as Str
@@ -58,7 +60,7 @@ data Database = Database {
     objects       :: Vector (PVar (Maybe Object))
   , players       :: IntSet
   , serverOptions :: ServerOptions
-} deriving Typeable
+  } deriving Typeable
 
 instance VCacheable Database where
   put db = do
@@ -74,7 +76,7 @@ initDatabase = Database {
     objects       = V.empty
   , players       = IS.empty
   , serverOptions = undefined
-}
+  }
 
 dbObjectRef :: ObjId -> Database -> Maybe (PVar (Maybe Object))
 dbObjectRef oid = (V.!? oid) . objects
@@ -311,31 +313,66 @@ getServerMessage oid msg def = do
     Just (Lst v) -> maybe (return []) return $ strings (Lst.toList v)
     Just _       -> return []
     Nothing      -> def
+
   where strings :: [Value] -> Maybe [Text]
         strings (v:vs) = case v of
           Str s -> (Str.toText s :) <$> strings vs
           _     -> Nothing
         strings [] = Just []
 
-dbMagic :: ByteString
-dbMagic = "EtaMOO database"
+type Connected = [(ObjId, ObjId)]
 
-magicPVar :: VCache -> PVar ByteString
-magicPVar vcache = loadRootPVar vcache "magic" ""
+data Persistence = Persistence {
+    persistenceVSpace     :: VSpace
+  , persistenceVersion    :: PVar VVersion
+  , persistenceDatabase   :: PVar Database
+  , persistenceConnected  :: PVar Connected
+  , persistenceCheckpoint :: PVar VUTCTime
+  } deriving Typeable
 
-writeMagic :: VCache -> VTx ()
-writeMagic vcache = writePVar (magicPVar vcache) dbMagic
+instance VCacheable Persistence where
+  put p = do
+    put $ persistenceVSpace     p
+    put $ persistenceVersion    p
+    put $ persistenceDatabase   p
+    put $ persistenceConnected  p
+    put $ persistenceCheckpoint p
 
-checkMagic :: VCache -> IO ()
-checkMagic vcache = do
-  magic <- readPVarIO (magicPVar vcache)
-  unless (magic == dbMagic) $ error "invalid database"
+  get = Persistence <$> get <*> get <*> get <*> get <*> get
 
-databasePVar :: VCache -> PVar Database
-databasePVar vcache = loadRootPVar vcache "database" initDatabase
+rootPVar :: VCache -> IO (PVar (Maybe Persistence))
+rootPVar vcache = loadRootPVarIO vcache "EtaMOO database" Nothing
 
-loadDatabase :: VCache -> IO Database
-loadDatabase vcache = readPVarIO (databasePVar vcache)
+saveDatabase :: VCache -> (Database, Connected) -> IO ()
+saveDatabase vcache (db, connected) = do
+  let vspace = vcache_space vcache
 
-saveDatabase :: VCache -> Database -> VTx ()
-saveDatabase vcache = writePVar (databasePVar vcache)
+  versionPVar    <- newPVarIO vspace (VVersion version)
+  databasePVar   <- newPVarIO vspace db
+  connectedPVar  <- newPVarIO vspace connected
+  checkpointPVar <- newPVarIO vspace . VUTCTime =<< getCurrentTime
+
+  let p = Persistence {
+          persistenceVSpace     = vspace
+        , persistenceVersion    = versionPVar
+        , persistenceDatabase   = databasePVar
+        , persistenceConnected  = connectedPVar
+        , persistenceCheckpoint = checkpointPVar
+        }
+
+  root <- rootPVar vcache
+  runVTx vspace $ do
+    writePVar root (Just p)
+    markDurable
+
+loadPersistence :: VCache -> IO Persistence
+loadPersistence vcache = rootPVar vcache >>= readPVarIO >>=
+                         maybe (error "invalid database") return
+
+syncPersistence :: Persistence -> IO ()
+syncPersistence p = do
+  now <- getCurrentTime
+  runVTx (persistenceVSpace p) $ do
+    writePVar (persistenceVersion    p) (VVersion version)
+    writePVar (persistenceCheckpoint p) (VUTCTime now)
+    markDurable

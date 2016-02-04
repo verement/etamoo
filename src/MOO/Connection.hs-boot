@@ -2,6 +2,7 @@
 
 module MOO.Connection (
     Connection
+  , connectionObject
   , firstConnectionId
   , sendToConnection
   , notify
@@ -16,6 +17,7 @@ import MOO.Types (ObjId, StrT)
 
 data Connection
 
+connectionObject :: Connection -> ObjId
 firstConnectionId :: ObjId
 sendToConnection :: Connection -> Text -> STM ()
 notify :: ObjId -> StrT -> MOO Bool

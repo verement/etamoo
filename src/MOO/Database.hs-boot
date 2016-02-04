@@ -2,6 +2,7 @@
 
 module MOO.Database ( Database
                     , ServerOptions
+                    , Persistence
                     , serverOptions
                     , getServerOption'
                     , initDatabase
@@ -16,10 +17,12 @@ module MOO.Database ( Database
                     , queuedTaskLimit
                     , protectProperty
                     , supportNumericVerbnameStrings
-                    , saveDatabase
+                    , persistenceVSpace
+                    , persistenceDatabase
+                    , persistenceConnected
                     ) where
 
-import Database.VCache (VCache, VTx)
+import Database.VCache (VSpace, PVar, VTx)
 
 import {-# SOURCE #-} MOO.Object (Object)
 import {-# SOURCE #-} MOO.Task (MOO)
@@ -27,6 +30,9 @@ import MOO.Types
 
 data Database
 data ServerOptions
+data Persistence
+
+type Connected = [(ObjId, ObjId)]
 
 serverOptions :: Database -> ServerOptions
 getServerOption' :: ObjId -> Id -> MOO (Maybe Value)
@@ -51,4 +57,6 @@ protectProperty :: ServerOptions -> Id -> Bool
 
 supportNumericVerbnameStrings :: ServerOptions -> Bool
 
-saveDatabase :: VCache -> Database -> VTx ()
+persistenceVSpace :: Persistence -> VSpace
+persistenceDatabase :: Persistence -> PVar Database
+persistenceConnected :: Persistence -> PVar Connected

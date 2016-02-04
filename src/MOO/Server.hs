@@ -18,13 +18,11 @@ import Data.Text (Text)
 import Data.Text.IO (hPutStrLn)
 import Data.Time (getCurrentTime, utcToLocalZonedTime, formatTime,
                   defaultTimeLocale)
-import Database.VCache (VCache, PVar, openVCache, vcache_space,
-                        loadRootPVarIO, loadRootPVar, readPVarIO, writePVar,
-                        runVTx, markDurable)
+import Database.VCache (openVCache, vcache_space, readPVarIO)
 import Network (withSocketsDo)
 import Pipes (Pipe, runEffect, (>->), for, cat, lift, yield)
 import Pipes.Concurrent (spawn', unbounded, send, fromInput)
-import System.IO (IOMode(AppendMode), BufferMode(LineBuffering),
+import System.IO (IOMode(ReadMode, AppendMode), BufferMode(LineBuffering),
                   openFile, stderr, hSetBuffering, hClose)
 import System.Posix (installHandler, sigPIPE, Handler(Ignore))
 
@@ -56,8 +54,8 @@ startServer logFile dbFile outboundNet pf = withSocketsDo $ do
 
   installHandler sigPIPE Ignore Nothing
 
+  openFile dbFile ReadMode >>= hClose  -- ensure file exists
   vcache <- openVCache maxVCacheSize dbFile
-  checkMagic vcache
 
   (stmLogger, stopLogger) <- startLogger logFile
   let writeLog = atomically . stmLogger
@@ -75,11 +73,19 @@ startServer logFile dbFile outboundNet pf = withSocketsDo $ do
       pluralize numCapabilities "processor core" <> ")"
     ]
 
-  checkpoint <- ctime =<< unVUTCTime <$> (readPVarIO =<< checkpointPVar vcache)
+  p <- loadPersistence vcache
+
+  checkpoint <- ctime . unVUTCTime =<< readPVarIO (persistenceCheckpoint p)
   writeLog $ "LOADING: Database checkpoint from " <> T.pack checkpoint
 
-  db <- loadDatabase vcache
-  world' <- newWorld stmLogger vcache db outboundNet
+  world' <- newWorld stmLogger p outboundNet
+
+  connected <- readPVarIO (persistenceConnected p)
+  unless (null connected) $ do
+    writeLog $ "Disconnecting formerly active connections: " <>
+      toLiteral (objectList $ map fst connected)
+    forM_ connected $ \(player, listener) ->
+      doDisconnected world' listener player Disconnected
 
   runTask =<< newTask world' nothing
     (resetLimits True >> callSystemVerb "server_started" [] >> return zero)
@@ -94,9 +100,9 @@ startServer logFile dbFile outboundNet pf = withSocketsDo $ do
   stopCheckpointer
   shutdownServer world' message
 
-  writeLog "DUMPING: Synchronizing database..."
-  syncDatabase vcache
-  writeLog "DUMPING finished"
+  writeLog "Synchronizing database..."
+  syncPersistence p
+  writeLog "Finished"
 
   stopLogger
 
@@ -148,7 +154,7 @@ startLogger dest = do
 
 startCheckpointer :: TVar World -> IO (STM (), IO ())
 startCheckpointer world' = do
-  (vcache, writeLog) <- atomically $ (vcache &&& writeLog) <$> readTVar world'
+  (writeLog, p) <- atomically $ (writeLog &&& persistence) <$> readTVar world'
   signal <- newEmptyTMVarIO
 
   let verbCall :: StrT -> [Value] -> IO ()
@@ -171,11 +177,13 @@ startCheckpointer world' = do
         case shouldExit of
           Right True -> return ()
           _          -> do
-            atomically $ writeLog "CHECKPOINTING database"
+            atomically $ writeLog "CHECKPOINTING database..."
             verbCall "checkpoint_started" []
             success <- either (\e -> let _ = e :: SomeException in False)
-                              (const True) <$> try (syncDatabase vcache)
+                              (const True) <$> try (syncPersistence p)
+            atomically $ writeLog "CHECKPOINTING finished"
             verbCall "checkpoint_finished" [truthValue success]
+
             checkpointerLoop
 
   checkpointer <- async checkpointerLoop
@@ -187,36 +195,22 @@ startCheckpointer world' = do
 
   return (checkpoint, stopCheckpointer)
 
-syncDatabase :: VCache -> IO ()
-syncDatabase vcache = do
-  checkpoint <- checkpointPVar vcache
-  timestamp <- VUTCTime <$> getCurrentTime
-  runVTx (vcache_space vcache) $ do
-    writePVar (versionPVar vcache) (VVersion version)
-    writePVar checkpoint timestamp
-    markDurable
-
-checkpointPVar :: VCache -> IO (PVar VUTCTime)
-checkpointPVar vcache =
-  loadRootPVarIO vcache "checkpoint" =<< VUTCTime <$> getCurrentTime
-
-versionPVar :: VCache -> PVar VVersion
-versionPVar vcache = loadRootPVar vcache "version" (VVersion version)
-
 importDatabase :: FilePath -> FilePath -> IO ()
 importDatabase lambdaDB etaDB = do
   vcache <- openVCache maxVCacheSize etaDB
   let vspace = vcache_space vcache
 
   let writeLog = putStrLn . T.unpack
-  db <- either (error . show) return =<< loadLMDatabase vspace lambdaDB writeLog
-
-  runVTx vspace $ saveDatabase vcache db >> writeMagic vcache
-  syncDatabase vcache
+  loadLMDatabase vspace lambdaDB writeLog >>=
+    either (error . show) (saveDatabase vcache)
 
 exportDatabase :: FilePath -> FilePath -> IO ()
 exportDatabase etaDB lambdaDB = do
-  vcache <- openVCache maxVCacheSize etaDB
-  checkMagic vcache
+  openFile etaDB ReadMode >>= hClose  -- ensure file exists
 
-  loadDatabase vcache >>= saveLMDatabase (vcache_space vcache) lambdaDB
+  p <- loadPersistence =<< openVCache maxVCacheSize etaDB
+
+  db        <- readPVarIO (persistenceDatabase  p)
+  connected <- readPVarIO (persistenceConnected p)
+
+  saveLMDatabase (persistenceVSpace p) lambdaDB (db, connected)
