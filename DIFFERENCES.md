@@ -38,6 +38,18 @@ differences include:
     when compiling verb code; instead, calling an unknown function raises an
     error at runtime. (This is subject to change.)
 
+  * In some cases the semantics of a language construct or built-in function
+    differ slightly from that of LambdaMOO. Because MOO tasks run inside of an
+    atomic transaction in EtaMOO, it is sometimes necessary to commit the
+    transaction prematurely in order to perform some I/O or schedule another
+    task. In these cases, the effect is the same as if `suspend(0)` had been
+    called. These cases include:
+
+        `fork`
+        `listen()`
+        `open_network_connection()`
+        `memory_usage()`
+
   * In both EtaMOO and LambdaMOO, the `crypt()` built-in is a thin wrapper
     around the host system's `crypt()` library function. LambdaMOO doesn't
     check the return value from this function to see if it failed; it ends up
@@ -91,3 +103,8 @@ differences include:
     `rmatch()` and may also be able to handle a greater range of patterns
     before encountering resource limitations.
 
+  * The numbers returned by the `value_bytes()` and `object_bytes()` built-in
+    functions, as well as the last number in each list returned by
+    `queued_tasks()`, are really vague estimates and probably not very
+    accurate or meaningful due to the nature of the Haskell run time
+    environment.

@@ -68,3 +68,5 @@
    - to govern whether violating new size limits causes out-of-seconds or
      E_QUOTA error
 ** LM-compatible bytecode generation and decompilation
+** Use PCRE 16-bit library (libpcre16)
+** Avoid space leaks on loop variables

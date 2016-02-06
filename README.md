@@ -2,14 +2,12 @@
 Important!
 ==========
 
-**This is experimental and (currently) incomplete software. It is not yet
-fully usable, although with further development it is hoped that it soon will
-be.**
+**This is experimental software. While it is now mostly functional, it is not
+  yet fully complete.**
 
-_At present, the code will load a database and listen for network
-connections. You can connect using `telnet` or your favorite MUD client and
-interact with the MOO environment, however no changes to the database will be
-saved, and a few other features have also yet to be implemented._
+_Until such time as the EtaMOO database format is well tested and considered
+stable, please make and keep LambdaMOO-format backup copies of your EtaMOO
+databases._
 
 About
 =====
@@ -102,6 +100,59 @@ expression matching, and, possibly, _libcrypt_ (often part of the standard
 libraries) for the MOO `crypt()` built-in function. You should ensure you have
 these available before installing EtaMOO (e.g. on Debian-derived systems,
 `sudo apt-get install liblmdb-dev libpcre3-dev`).
+
+Running
+-------
+
+`etamoo` is nearly a drop-in replacement for the LambdaMOO `moo` executable;
+the main difference is that `etamoo` takes a single database path, rather than
+both input and output paths. You can run `etamoo --help` for a command-line
+synopsis.
+
+EtaMOO uses a native binary database format that allows quick loading and
+checkpointing, and instantaneous crash recovery. You can create a native
+database from a LambdaMOO-format database by using `etamoo --import`. You can
+also go the other way and convert an EtaMOO database back to a
+LambdaMOO-format database with `etamoo --export`.
+
+If you don't already have a database, you can find LambdaMOO-format cores for
+various MOOs online -- for example there is the venerable [LambdaCore][], or
+you can request a character on [Waterpoint][] and then perform a live
+[JHCore extraction][]. (Note that Waterpoint's core extraction process
+requires running an actual LambdaMOO server executable on the precore database
+to obtain the final core database; EtaMOO cannot yet do this itself.)
+
+  [LambdaCore]: http://ftp.lambda.moo.mud.org/pub/MOO/
+  [Waterpoint]: http://waterpoint.moo.mud.org/
+  [JHCore extraction]: http://waterpoint.moo.mud.org:8080/core-extraction/
+
+By default, EtaMOO will make use of all available CPUs for maximum
+parallelism. If you'd rather limit the number of processors EtaMOO uses, you
+can use the command-line option `+RTS -N`_`n`_` -RTS` where _`n`_ is the
+number of processors to use.
+
+If you want to enable statistics from the `memory_usage()` built-in function,
+you will need to add `+RTS -T -RTS` to the command line options.
+
+Limitations
+-----------
+
+The following LambdaMOO features are currently unsupported:
+
+  * The `.program` intrinsic command
+  * The `verb_cache_stats()` and `log_cache_stats()` built-in functions
+  * Importing, exporting, or checkpointing of queued tasks in the database
+    file
+  * Task time limits (ticks are counted, but seconds are not)
+  * The `NP_SINGLE` and `NP_LOCAL` network protocols (i.e. stdin/stdout,
+    UNIX-domain sockets, and/or named pipes; only TCP/IP is supported)
+  * Customizing `OUT_OF_BAND_PREFIX` and `OUT_OF_BAND_QUOTE_PREFIX` (these are
+    currently fixed as `#$#` and `#$"`, respectively)
+  * The `IGNORE_PROP_PROTECTED` compilation option
+  * `$server_options.name_lookup_timeout`
+
+See also the `DIFFERENCES.md` file for other differences between EtaMOO and
+LambdaMOO.
 
 Hacking
 -------

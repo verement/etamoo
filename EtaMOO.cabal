@@ -1,6 +1,6 @@
 
 name:                EtaMOO
-version:             0.2.1.0
+version:             0.3.0.0
 
 synopsis:            A new implementation of the LambdaMOO server
 
@@ -11,13 +11,13 @@ description:
   conferencing systems, and other collaborative software.
   .
   EtaMOO is an experimental multithreaded implementation of LambdaMOO in
-  Haskell with anticipated ready support for 64-bit MOO integers and Unicode
-  MOO strings. The implementation follows the specifications of the LambdaMOO
-  Programmer's Manual, and should be compatible with most LambdaMOO databases
-  as of about version 1.8.3 of the LambdaMOO server code.
+  Haskell with LMDB-backed persistence and anticipated ready support for
+  Unicode MOO strings and 64-bit MOO integers. The implementation follows the
+  specifications of the LambdaMOO Programmer's Manual, and should be
+  compatible with most LambdaMOO databases as of about version 1.8.3 of the
+  LambdaMOO server code.
   .
-  /N.B./ This is (currently) incomplete software. It is not yet fully usable,
-  although with further development it is hoped that it soon will be.
+  /N.B./ This software is still under development and not fully complete.
 
 license:             BSD3
 license-file:        LICENSE
@@ -36,7 +36,10 @@ tested-with:         GHC == 7.10.3
 homepage:            http://verement.github.io/etamoo
 bug-reports:         https://github.com/verement/etamoo/issues
 
-extra-source-files:  README.md
+extra-source-files:  ACKNOWLEDGMENTS.md
+                     DIFFERENCES.md
+                     README.md
+                     TODO
                      src/cbits/match.h
 
 source-repository head
