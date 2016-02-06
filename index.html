@@ -6,7 +6,7 @@
     <title>EtaMOO by verement</title>
 
     <link rel="stylesheet" href="stylesheets/styles.css">
-    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <link rel="stylesheet" href="stylesheets/github-dark.css">
     <script src="javascripts/scale.fix.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 
@@ -28,19 +28,17 @@
       </header>
       <section>
         <h1>
-<a id="important" class="anchor" href="#important" aria-hidden="true"><span class="octicon octicon-link"></span></a>Important!</h1>
+<a id="important" class="anchor" href="#important" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Important!</h1>
 
-<p><strong>This is experimental and (currently) incomplete software. It is not yet
-fully usable, although with further development it is hoped that it soon will
-be.</strong></p>
+<p><strong>This is experimental software. While it is now mostly functional, it is not
+  yet fully complete.</strong></p>
 
-<p><em>At present, the code will load a database and listen for network
-connections. You can connect using any <code>telnet</code> client and interact with the
-MOO environment, however no changes to the database will be saved, and a few
-other features have also yet to be implemented.</em></p>
+<p><em>Until such time as the EtaMOO database format is well tested and considered
+stable, please make and keep LambdaMOO-format backup copies of your EtaMOO
+databases.</em></p>
 
 <h1>
-<a id="about" class="anchor" href="#about" aria-hidden="true"><span class="octicon octicon-link"></span></a>About</h1>
+<a id="about" class="anchor" href="#about" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>About</h1>
 
 <p>EtaMOO is a new implementation of the LambdaMOO server written in Haskell.</p>
 
@@ -57,22 +55,40 @@ committed only when not in conflict with any other transaction. (In cases
 of conflict, transactions are automatically retried.) Separate threads are
 also used for network connection management, so for example name lookups
 do not block the entire server.</p></li>
-<li><p>EtaMOO supports 64-bit MOO integers via compile-time build option.</p></li>
+<li><p>EtaMOO uses <a href="http://symas.com/mdb/">LMDB</a> as a persistent backing store for the MOO database.
+Changes are committed on an ongoing basis for instantaneous crash
+recovery; checkpoints merely perform a quick synchronization, and are
+otherwise unnecessary. EtaMOO provides mechanisms for importing and
+exporting LambdaMOO-format databases to and from the EtaMOO-native format.</p></li>
 <li><p>EtaMOO is Unicode-aware, and will eventually include support for Unicode
 MOO strings via compile-time build option.</p></li>
+<li><p>EtaMOO supports 64-bit MOO integers via compile-time build option.</p></li>
+<li><p>EtaMOO natively supports string-key association lists with efficient
+lookup and update operations; the list index syntax has been extended to
+allow <em><code>alist</code></em><code>[</code><em><code>key</code></em><code>]</code> and <em><code>alist</code></em><code>[</code><em><code>key</code></em><code>] =</code><em><code>value</code></em> for
+string <em><code>key</code></em>s whenever <em><code>alist</code></em> is a well-formed association list.</p></li>
+<li><p>EtaMOO supports several additional hashing algorithms besides MD5,
+including SHA-1, SHA-2, SHA-3, and RIPEMD-160, via optional argument to
+<code>string_hash()</code>, <code>binary_hash()</code>, and <code>value_hash()</code>. Hash digests may
+also optionally be returned as binary strings.</p></li>
+<li><p>EtaMOO internally handles binary strings in an efficient manner, and only
+translates to and from the special MOO <em>binary string</em> syntax upon demand.
+For example, passing a binary string read from the network directly to
+<code>decode_binary()</code> does not suffer a round trip through the <em>binary string</em>
+representation.</p></li>
+<li><p>EtaMOO supports fractional second delays in <code>suspend()</code> and <code>fork</code>.</p></li>
 <li><p>EtaMOO supports IPv6.</p></li>
 </ul>
 
-<p>The implementation of EtaMOO closely follows the specifications of the
-<a href="http://www.ipomoea.org/moo/#progman">LambdaMOO Programmer's Manual</a>, and should therefore be
-compatible with most LambdaMOO databases as of about version 1.8.3 of the
-LambdaMOO server code.</p>
+<p>The implementation of EtaMOO otherwise closely follows the specifications of
+the <a href="http://www.ipomoea.org/moo/#progman">LambdaMOO Programmer's Manual</a>, and should be compatible with most
+LambdaMOO databases as of about version 1.8.3 of the LambdaMOO server code.</p>
 
 <h2>
-<a id="installing" class="anchor" href="#installing" aria-hidden="true"><span class="octicon octicon-link"></span></a>Installing</h2>
+<a id="installing" class="anchor" href="#installing" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Installing</h2>
 
 <p>EtaMOO is built with <a href="http://www.haskell.org/cabal/">Cabal</a>, the Haskell package manager. In the simplest
-case, simply running:</p>
+case, running:</p>
 
 <pre><code>cabal install EtaMOO
 </code></pre>
@@ -83,14 +99,92 @@ after doing the same for all of its Haskell dependencies.</p>
 <p>Cabal itself is part of the <a href="http://www.haskell.org/platform/">Haskell Platform</a> which is available for many
 distributions and platforms.</p>
 
-<p>EtaMOO has non-Haskell dependencies on two external libraries: <em>libpcre</em> (with
-UTF-8 support enabled) for regular expression matching, and, possibly,
-<em>libcrypt</em> (often part of the standard libraries) for the MOO <code>crypt()</code>
-built-in function. You may need to ensure you have these available before
-installing EtaMOO.</p>
+<p>There are a few options you can give to <code>cabal install</code> to customize your
+build:</p>
+
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Feature</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-j</code></td>
+<td>Build in parallel using multiple processors</td>
+</tr>
+<tr>
+<td><code>-f llvm</code></td>
+<td>Use GHC's LLVM backend to compile the code</td>
+</tr>
+<tr>
+<td><code>-f 64bit</code></td>
+<td>Enable 64-bit MOO integers</td>
+</tr>
+</tbody>
+</table>
+
+<p>EtaMOO has non-Haskell dependencies on three external libraries: <em>liblmdb</em> for
+database persistence, <em>libpcre</em> (with UTF-8 support enabled) for regular
+expression matching, and, possibly, <em>libcrypt</em> (often part of the standard
+libraries) for the MOO <code>crypt()</code> built-in function. You should ensure you have
+these available before installing EtaMOO (e.g. on Debian-derived systems,
+<code>sudo apt-get install liblmdb-dev libpcre3-dev</code>).</p>
 
 <h2>
-<a id="hacking" class="anchor" href="#hacking" aria-hidden="true"><span class="octicon octicon-link"></span></a>Hacking</h2>
+<a id="running" class="anchor" href="#running" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Running</h2>
+
+<p><code>etamoo</code> is nearly a drop-in replacement for the LambdaMOO <code>moo</code> executable;
+the main difference is that <code>etamoo</code> takes a single database path, rather than
+both input and output paths. You can run <code>etamoo --help</code> for a command-line
+synopsis.</p>
+
+<p>EtaMOO uses a native binary database format that allows quick loading and
+checkpointing, and instantaneous crash recovery. You can create a native
+database from a LambdaMOO-format database by using <code>etamoo --import</code>. You can
+also go the other way and convert an EtaMOO database back to a
+LambdaMOO-format database with <code>etamoo --export</code>.</p>
+
+<p>If you don't already have a database, you can find LambdaMOO-format cores for
+various MOOs online -- for example there is the venerable <a href="http://ftp.lambda.moo.mud.org/pub/MOO/">LambdaCore</a>, or
+you can request a character on <a href="http://waterpoint.moo.mud.org/">Waterpoint</a> and then perform a live
+<a href="http://waterpoint.moo.mud.org:8080/core-extraction/">JHCore extraction</a>. (Note that Waterpoint's core extraction process
+requires running an actual LambdaMOO server executable on the precore database
+to obtain the final core database; EtaMOO cannot yet do this itself.)</p>
+
+<p>By default, EtaMOO will make use of all available CPUs for maximum
+parallelism. If you'd rather limit the number of processors EtaMOO uses, you
+can use the command-line option <code>+RTS -N</code><em><code>n</code></em><code>-RTS</code> where <em><code>n</code></em> is the
+number of processors to use.</p>
+
+<p>If you want to enable statistics from the <code>memory_usage()</code> built-in function,
+you will need to add <code>+RTS -T -RTS</code> to the command line options.</p>
+
+<h2>
+<a id="limitations" class="anchor" href="#limitations" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Limitations</h2>
+
+<p>The following LambdaMOO features are currently unsupported:</p>
+
+<ul>
+<li>The <code>.program</code> intrinsic command</li>
+<li>The <code>verb_cache_stats()</code> and <code>log_cache_stats()</code> built-in functions</li>
+<li>Importing, exporting, or checkpointing of queued tasks in the database
+file</li>
+<li>Task time limits (ticks are counted, but seconds are not)</li>
+<li>The <code>NP_SINGLE</code> and <code>NP_LOCAL</code> network protocols (i.e. stdin/stdout,
+UNIX-domain sockets, and/or named pipes; only TCP/IP is supported)</li>
+<li>Customizing <code>OUT_OF_BAND_PREFIX</code> and <code>OUT_OF_BAND_QUOTE_PREFIX</code> (these are
+currently fixed as <code>#$#</code> and <code>#$"</code>, respectively)</li>
+<li>The <code>IGNORE_PROP_PROTECTED</code> compilation option</li>
+<li><code>$server_options.name_lookup_timeout</code></li>
+</ul>
+
+<p>See also the <code>DIFFERENCES.md</code> file for other differences between EtaMOO and
+LambdaMOO.</p>
+
+<h2>
+<a id="hacking" class="anchor" href="#hacking" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Hacking</h2>
 
 <p><a href="http://verement.github.io/etamoo/doc/">Documentation</a> is available for the various types, data structures, and
 functions used internally by EtaMOO.</p>
