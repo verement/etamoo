@@ -34,11 +34,19 @@ module MOO.Types (
 
   , equal
   , comparable
+
   , truthOf
   , truthValue
-  , typeOf
 
+  , typeOf
   , typeCode
+
+  , intValue
+  , fltValue
+  , strValue
+  , objValue
+  , errValue
+  , lstValue
 
   , toText
   , toBuilder
@@ -358,7 +366,7 @@ truthValue :: Bool -> Value
 truthValue False = zero
 truthValue True  = Int 1
 
--- | Return a 'Type' indicating the type of the given value.
+-- | Return a 'Type' indicating the type of the given MOO value.
 typeOf :: Value -> Type
 typeOf Int{} = TInt
 typeOf Flt{} = TFlt
@@ -379,6 +387,36 @@ typeCode TStr =  2
 typeCode TErr =  3
 typeCode TLst =  4
 typeCode TFlt =  9
+
+-- | Extract an 'IntT' from a MOO value.
+intValue :: Value -> Maybe IntT
+intValue (Int x) = Just x
+intValue  _      = Nothing
+
+-- | Extract a 'FltT' from a MOO value.
+fltValue :: Value -> Maybe FltT
+fltValue (Flt x) = Just x
+fltValue  _      = Nothing
+
+-- | Extract a 'StrT' from a MOO value.
+strValue :: Value -> Maybe StrT
+strValue (Str x) = Just x
+strValue  _      = Nothing
+
+-- | Extract an 'ObjT' from a MOO value.
+objValue :: Value -> Maybe ObjT
+objValue (Obj x) = Just x
+objValue  _      = Nothing
+
+-- | Extract an 'ErrT' from a MOO value.
+errValue :: Value -> Maybe ErrT
+errValue (Err x) = Just x
+errValue  _      = Nothing
+
+-- | Extract a 'LstT' from a MOO value.
+lstValue :: Value -> Maybe LstT
+lstValue (Lst x) = Just x
+lstValue  _      = Nothing
 
 -- | Return a 'Text' representation of the given MOO value, using the same
 -- rules as the @tostr()@ built-in function.

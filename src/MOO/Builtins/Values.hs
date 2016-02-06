@@ -164,14 +164,6 @@ imumBuiltin name f = Builtin name 1 Nothing [TNum] TNum $ \args -> case args of
   where getValues :: (Value -> Maybe a) -> [Value] -> MOO [a]
         getValues f = maybe (raise E_TYPE) return . mapM f
 
-        intValue :: Value -> Maybe IntT
-        intValue (Int x) = Just x
-        intValue  _      = Nothing
-
-        fltValue :: Value -> Maybe FltT
-        fltValue (Flt x) = Just x
-        fltValue  _      = Nothing
-
 bf_min = imumBuiltin "min" minimum
 bf_max = imumBuiltin "max" maximum
 
