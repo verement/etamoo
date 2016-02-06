@@ -37,6 +37,7 @@ import Data.Text (Text)
 import Data.Time (getCurrentTime)
 import Data.Typeable (Typeable)
 import Data.Vector (Vector)
+import Data.Version (showVersion)
 import Database.VCache (VCache, VSpace, VTx, VCacheable(put, get), vcache_space,
                         PVar, loadRootPVarIO, newPVarsIO, newPVarIO, newPVar,
                         readPVarIO, readPVar, writePVar, runVTx, markDurable)
@@ -367,7 +368,15 @@ saveDatabase vcache (db, connected) = do
 
 loadPersistence :: VCache -> IO Persistence
 loadPersistence vcache = rootPVar vcache >>= readPVarIO >>=
-                         maybe (error "invalid database") return
+                         maybe (error "invalid database") checkVersion
+
+  where checkVersion :: Persistence -> IO Persistence
+        checkVersion p = do
+          dbVersion <- unVVersion <$> readPVarIO (persistenceVersion p)
+          when (dbVersion /= version) $ error $
+            "database version " ++ showVersion dbVersion ++
+            " does not match current version " ++ showVersion version
+          return p
 
 syncPersistence :: Persistence -> IO ()
 syncPersistence p = do
