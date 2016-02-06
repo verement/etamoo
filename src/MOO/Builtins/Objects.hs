@@ -6,8 +6,9 @@ module MOO.Builtins.Objects ( builtins ) where
 import Control.Applicative ((<$>))
 import Control.Monad (when, unless, void, forM_, foldM)
 import Data.Maybe (isJust, isNothing, fromJust)
+import Data.Monoid (mempty, mappend)
 import Data.Set (Set)
-import Data.Text (Text)
+import Data.Text.Lazy.Builder (Builder)
 import Database.VCache (VTx, PVar, newPVar, readPVar, writePVar)
 import Prelude hiding (getContents)
 
@@ -15,6 +16,7 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Builder as TLB
 
 import MOO.AST
 import MOO.Builtins.Common
@@ -683,7 +685,8 @@ bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
                    TLst $ \[Obj object, verb_desc, Lst code] -> do
   obj <- checkValid object
   verb <- getVerb obj verb_desc
-  text <- T.concat . ($ []) <$> Lst.foldM addLine id code
+  text <- builder2text . foldr addLine mempty <$>
+          maybe (raise E_TYPE) return (mapM strValue $ Lst.toList code)
   unless (verbPermW verb) $ checkPermission (verbOwner verb)
   checkProgrammer
 
@@ -694,9 +697,10 @@ bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
       return emptyList
     Left errors -> return $ fromListBy (Str . Str.fromString) errors
 
-  where addLine :: ([Text] -> [Text]) -> Value -> MOO ([Text] -> [Text])
-        addLine add (Str line) = return (add [Str.toText line, "\n"] ++)
-        addLine _    _         = raise E_TYPE
+  where addLine :: StrT -> Builder -> Builder
+        addLine line = mappend (Str.toBuilder line) . mappend newline
+
+        newline = TLB.singleton '\n' :: Builder
 
 bf_disassemble = Builtin "disassemble" 2 (Just 2)
                  [TObj, TAny] TLst $ \[Obj object, verb_desc] -> do
