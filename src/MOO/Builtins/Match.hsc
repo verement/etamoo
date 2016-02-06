@@ -328,6 +328,8 @@ matchResult subject subjectCharLen ovec rc
 -- | Return the current version of the linked PCRE library.
 pcreVersion :: String
 pcreVersion = "PCRE " ++ unsafePerformIO (peekCString =<< pcre_version)
+              ++ ", JIT target: " ++ fromMaybe "none" jittarget
+  where jittarget = unsafePerformIO (pcreStringConfig pcreConfigJittarget)
 
 newtype PCREConfig a = Config CInt
 

@@ -1,12 +1,15 @@
 
 {-# LANGUAGE ForeignFunctionInterface #-}
 
-module MOO.Version (version, serverVersion, lmdbVersion, pcreVersion) where
+module MOO.Version (version, serverVersion, lmdbVersion, pcreVersion,
+                    runtimeVersion) where
 
+import Data.Char (toUpper)
 import Data.Text (Text, pack)
 import Data.Version (showVersion)
 import Foreign (Ptr, nullPtr)
 import Foreign.C (CString, CInt, peekCString)
+import System.Info (compilerName, compilerVersion)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Paths_EtaMOO (version)
@@ -25,3 +28,7 @@ lmdbVersion :: String
 {-# NOINLINE lmdbVersion #-}
 lmdbVersion = unsafePerformIO
               (peekCString =<< mdb_version nullPtr nullPtr nullPtr)
+
+runtimeVersion :: String
+runtimeVersion = map toUpper compilerName ++ " runtime " ++
+                 showVersion compilerVersion

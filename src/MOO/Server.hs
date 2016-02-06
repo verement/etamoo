@@ -66,7 +66,7 @@ startServer logFile dbFile outboundNet pf = withSocketsDo $ do
     if outboundNet then "enabled." else "disabled."
 
   mapM_ writeLog [
-      "STARTING: Version " <> serverVersion <> " of the LambdaMOO server"
+      "STARTING: Server version " <> serverVersion
     , "          (Using TCP/IP with IPv6 support)"
     , "          (Task timeouts not measured)"
     , "          (Multithreading over " <>

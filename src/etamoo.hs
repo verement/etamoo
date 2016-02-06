@@ -12,8 +12,6 @@ import System.Console.GetOpt (OptDescr(Option), ArgDescr(NoArg, ReqArg),
                               ArgOrder(Permute), getOpt, usageInfo)
 import System.Environment (getArgs, getProgName)
 
-import Paths_EtaMOO (version)
-
 import MOO.Network
 import MOO.Server
 import MOO.Version
@@ -40,6 +38,7 @@ versionDetails = unlines [
     "EtaMOO " ++ showVersion version ++ ", using:"
   , "  " ++ lmdbVersion
   , "  " ++ pcreVersion
+  , "  " ++ runtimeVersion
   , ""
   , "Build options:"
 # ifdef MOO_64BIT_INTEGER
