@@ -1249,22 +1249,25 @@ continueLoop maybeName = do
 -- | The default collection of verb variables
 initVariables :: HashMap Id Value
 initVariables = HM.fromList $ [
-    ("player" , Obj nothing)
-  , ("this"   , Obj nothing)
-  , ("caller" , Obj nothing)
+    ("player" , noObject)
+  , ("this"   , noObject)
+  , ("caller" , noObject)
 
   , ("args"   , emptyList)
   , ("argstr" , emptyString)
 
   , ("verb"   , emptyString)
   , ("dobjstr", emptyString)
-  , ("dobj"   , Obj nothing)
+  , ("dobj"   , noObject)
   , ("prepstr", emptyString)
   , ("iobjstr", emptyString)
-  , ("iobj"   , Obj nothing)
+  , ("iobj"   , noObject)
   ] ++ typeVariables
 
-  where typeVariables = map (fmap $ Int . typeCode) [
+  where noObject = Obj nothing :: Value
+
+        typeVariables :: [(Id, Value)]
+        typeVariables = map (fmap $ Int . typeCode) [
             ("INT"  , TInt)
           , ("NUM"  , TInt)
           , ("FLOAT", TFlt)
