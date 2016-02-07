@@ -117,12 +117,14 @@ LambdaMOO-format database with `etamoo --export`.
 
 If you don't already have a database, you can find LambdaMOO-format cores for
 various MOOs online -- for example there is the venerable [LambdaCore][], or
-you can request a character on [Waterpoint][] and then perform a live
-[JHCore extraction][]. (Note that Waterpoint's core extraction process
-requires running an actual LambdaMOO server executable on the precore database
-to obtain the final core database; EtaMOO cannot yet do this itself.)
+an alternative [JHCore][]. You can also request a character on [Waterpoint][]
+and then perform a live [JHCore extraction][]. (Note that Waterpoint's core
+extraction process requires running an actual LambdaMOO server executable on
+the precore database to obtain the final core database; EtaMOO cannot yet do
+this itself.)
 
   [LambdaCore]: http://ftp.lambda.moo.mud.org/pub/MOO/
+  [JHCore]: http://jhcore.sourceforge.net
   [Waterpoint]: http://waterpoint.moo.mud.org/
   [JHCore extraction]: http://waterpoint.moo.mud.org:8080/core-extraction/
 
