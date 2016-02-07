@@ -3,7 +3,7 @@
 
 module MOO.Builtins.Objects (builtins) where
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (when, unless, void, forM_, foldM)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Monoid (mempty, mappend)
@@ -307,7 +307,10 @@ bf_object_bytes = Builtin "object_bytes" 1 (Just 1)
   return $ Int $ fromIntegral bytes
 
   where propTotal :: PVar (VRef Property) -> IO Int
-        propTotal var = storageBytes =<< readPVarIO var
+        propTotal var = do
+          ref <- readPVarIO var
+          (+) <$> storageBytes ref
+              <*> maybe (return 0) storageBytes (propertyValue $ deref' ref)
 
         verbTotal :: PVar (VRef Verb) -> IO Int
         verbTotal var = do
@@ -488,9 +491,10 @@ bf_add_property = Builtin "add_property" 4 (Just 4) [TObj, TStr, TAny, TLst]
   flip traverseDescendants object $ \obj ->
     when (isJust $ lookupPropertyRef obj prop_name) $ raise E_INVARG
 
+  vspace <- getVSpace
   let newProperty = initProperty {
           propertyName      = prop_name
-        , propertyValue     = Just value
+        , propertyValue     = Just (vref' vspace value)
         , propertyInherited = False
         , propertyOwner     = owner
         , propertyPermR     = 'r' `S.member` permSet

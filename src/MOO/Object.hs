@@ -158,7 +158,7 @@ deleteContent oid obj =
 
 data Property = Property {
     propertyName      :: StrT
-  , propertyValue     :: Maybe Value
+  , propertyValue     :: Maybe (VRef Value)
   , propertyInherited :: Bool
 
   , propertyOwner     :: ObjId

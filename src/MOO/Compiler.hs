@@ -8,6 +8,7 @@ import Control.Monad.Cont (callCC)
 import Control.Monad.Reader (asks, local)
 import Control.Monad.State (gets)
 import Data.Monoid ((<>))
+import Database.VCache (deref, vref)
 
 import qualified Data.HashMap.Lazy as HM
 
@@ -285,7 +286,7 @@ fetchProperty (oid, name) = do
           unless (skipPermCheck || propertyPermR prop) $
             checkPermission (propertyOwner prop)
           case propertyValue prop of
-            Just value -> return value
+            Just value -> return (deref value)
             Nothing    -> do
               parentObj <- maybe (return Nothing) getObject (objectParent obj)
               maybe (error $ "No inherited value for property " ++
@@ -303,7 +304,8 @@ storeProperty (oid, name) value = do
          setBuiltinProperty (oid, obj) name value
     else modifyProperty obj name $ \prop -> do
       unless (propertyPermW prop) $ checkPermission (propertyOwner prop)
-      return prop { propertyValue = Just value }
+      vspace <- getVSpace
+      return prop { propertyValue = Just (vref vspace value) }
   return value
 
 withIndexLength :: Value -> MOO a -> MOO a

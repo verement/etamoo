@@ -22,7 +22,7 @@ import Data.Text.Lazy.Builder.Int (decimal)
 import Data.Text.Lazy.Builder.RealFloat (realFloat)
 import Data.Word (Word)
 import Database.VCache (VSpace, VTx, runVTx, readPVar, modifyPVar,
-                        vref', deref')
+                        vref', deref', deref)
 import System.IO (Handle, withFile, IOMode(ReadMode, WriteMode),
                   hSetBuffering, BufferMode(BlockBuffering),
                   hSetNewlineMode, NewlineMode(NewlineMode, inputNL, outputNL),
@@ -200,28 +200,30 @@ installObjects dbObjs = do
           let Just def = dbArray ! oid
               propvals = objPropvals def
               verbdefs = objVerbdefs def
+              properties = mkProperties vspace False oid propvals
           in fmap Just $
-               setProperties vspace (mkProperties False oid propvals) obj >>=
-               setVerbs vspace (map (mkVerb vspace) verbdefs)
+             setProperties vspace properties obj >>=
+             setVerbs vspace (map (mkVerb vspace) verbdefs)
 
-        mkProperties :: Bool -> ObjId -> [PropVal] -> [Property]
-        mkProperties _ _ [] = []
-        mkProperties inherited oid propvals
+        mkProperties :: VSpace -> Bool -> ObjId -> [PropVal] -> [Property]
+        mkProperties _ _ _ [] = []
+        mkProperties vspace inherited oid propvals
           | inRange (bounds dbArray) oid =
             case maybeDef of
               Nothing  -> []
               Just def ->
                 let propdefs = objPropdefs def
                     (mine, others) = splitAt (length propdefs) propvals
-                    properties = zipWith (mkProperty inherited) propdefs mine
-                in properties ++ mkProperties True (objParent def) others
+                    properties = zipWith (mkProperty vspace inherited)
+                      propdefs mine
+                in properties ++ mkProperties vspace True (objParent def) others
           | otherwise = []
           where maybeDef = dbArray ! oid
 
-        mkProperty :: Bool -> PropDef -> PropVal -> Property
-        mkProperty inherited propdef propval = initProperty {
+        mkProperty :: VSpace -> Bool -> PropDef -> PropVal -> Property
+        mkProperty vspace inherited propdef propval = initProperty {
             propertyName      = Str.fromString propdef
-          , propertyValue     = either (const Nothing) id $
+          , propertyValue     = either (const Nothing) (fmap $ vref' vspace) $
                                 valueFromVar (propVar propval)
           , propertyInherited = inherited
           , propertyOwner     = propOwner propval
@@ -816,7 +818,7 @@ tellProperties objects obj (Just oid) = do
     Just property <- liftVTx $ lookupProperty obj propertyName
     case propertyValue property of
       Nothing    -> tellLn (decimal type_clear)
-      Just value -> tellValue value
+      Just value -> tellValue (deref value)
 
     tellLn (decimal $ propertyOwner property)
 

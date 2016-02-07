@@ -1001,7 +1001,7 @@ readProperty oid name = getObject oid >>= \maybeObj ->
                 parentObj <- maybe (return Nothing) getObject (objectParent obj)
                 maybe (error $ "No inherited value for property " ++
                        Str.toString name) search parentObj
-              just -> return just
+              just -> return (deref <$> just)
             Nothing -> return Nothing
 
 writeProperty :: ObjId -> StrT -> Value -> MOO ()
@@ -1010,10 +1010,11 @@ writeProperty oid name value = getObject oid >>= \maybeObj ->
     Just obj
       | isBuiltinProperty name -> setBuiltinProperty (oid, obj) name value
       | otherwise -> case lookupPropertyRef obj name of
-        Just propPVar -> liftVTx $ modifyPVar propPVar $
-          \prop -> vref (pvar_space propPVar) $
-                   (deref prop) { propertyValue = Just value }
-        Nothing -> return ()
+          Just propPVar -> liftVTx $ modifyPVar propPVar $ \prop ->
+            let vspace = pvar_space propPVar
+            in vref vspace $
+               (deref prop) { propertyValue = Just (vref vspace value) }
+          Nothing -> return ()
     Nothing -> return ()
 
 modifyObject' :: ObjId -> (Object -> Object) -> MOO ()
