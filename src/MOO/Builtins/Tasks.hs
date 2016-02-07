@@ -14,6 +14,7 @@ import Control.Monad.State (gets, modify, get)
 import Data.List (sort)
 import Data.Time (getCurrentTime, addUTCTime, diffUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
+import Database.VCache (vref)
 
 import qualified Data.HashMap.Lazy as HM
 import qualified Data.Set as S
@@ -84,11 +85,12 @@ bf_eval = Builtin "eval" 1 (Just 1) [TStr] TLst $ \[Str string] ->
     Right program -> do
       (programmer, this, player) <- frame $ \frame ->
         (permissions frame, initialThis frame, initialPlayer frame)
-      let verb = initVerb { verbNames   = "Input to EVAL"
-                          , verbProgram = program
-                          , verbOwner   = programmer
-                          , verbPermD   = True
-                          }
+      vspace <- getVSpace
+      let verb = (newVerb vspace) { verbNames   = "Input to EVAL"
+                                  , verbProgram = vref vspace program
+                                  , verbOwner   = programmer
+                                  , verbPermD   = True
+                                  }
           vars = mkVariables [ ("player", Obj player)
                              , ("caller", Obj this)
                              ]

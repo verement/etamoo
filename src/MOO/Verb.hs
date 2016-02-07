@@ -4,7 +4,7 @@
 module MOO.Verb ( Verb(..)
                 , ObjSpec(..)
                 , PrepSpec(..)
-                , initVerb
+                , newVerb
                 , obj2string
                 , string2obj
                 , objMatch
@@ -17,7 +17,7 @@ module MOO.Verb ( Verb(..)
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Typeable (Typeable)
-import Database.VCache (VCacheable(put, get))
+import Database.VCache (VCacheable(put, get), VSpace, VRef, vref', deref')
 
 import MOO.AST
 import {-# SOURCE #-} MOO.Object (nothing)
@@ -27,7 +27,7 @@ import qualified MOO.String as Str
 
 data Verb = Verb {
     verbNames          :: StrT
-  , verbProgram        :: Program
+  , verbProgram        :: VRef Program
 
   , verbOwner          :: ObjId
   , verbPermR          :: Bool
@@ -59,20 +59,21 @@ instance VCacheable Verb where
 
 instance Sizeable Verb where
   storageBytes verb =
-    storageBytes (verbNames          verb) +
-    storageBytes (verbProgram        verb) * 2 +
-    storageBytes (verbOwner          verb) +
-    storageBytes (verbPermR          verb) +
-    storageBytes (verbPermW          verb) +
-    storageBytes (verbPermX          verb) +
-    storageBytes (verbPermD          verb) +
-    storageBytes (verbDirectObject   verb) +
-    storageBytes (verbPreposition    verb) +
-    storageBytes (verbIndirectObject verb)
+    storageBytes (verbNames            verb) +
+    storageBytes (deref' $ verbProgram verb) +
+    storageBytes (verbOwner            verb) +
+    storageBytes (verbPermR            verb) +
+    storageBytes (verbPermW            verb) +
+    storageBytes (verbPermX            verb) +
+    storageBytes (verbPermD            verb) +
+    storageBytes (verbDirectObject     verb) +
+    storageBytes (verbPreposition      verb) +
+    storageBytes (verbIndirectObject   verb)
 
-initVerb = Verb {
+newVerb :: VSpace -> Verb
+newVerb vspace = Verb {
     verbNames          = ""
-  , verbProgram        = Program []
+  , verbProgram        = vref' vspace $ Program []
 
   , verbOwner          = nothing
   , verbPermR          = False

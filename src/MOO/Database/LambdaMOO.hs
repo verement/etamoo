@@ -202,7 +202,7 @@ installObjects dbObjs = do
               verbdefs = objVerbdefs def
           in fmap Just $
                setProperties vspace (mkProperties False oid propvals) obj >>=
-               setVerbs vspace (map mkVerb verbdefs)
+               setVerbs vspace (map (mkVerb vspace) verbdefs)
 
         mkProperties :: Bool -> ObjId -> [PropVal] -> [Property]
         mkProperties _ _ [] = []
@@ -230,8 +230,8 @@ installObjects dbObjs = do
           , propertyPermC     = propPerms propval .&. pf_chown /= 0
         }
 
-        mkVerb :: VerbDef -> Verb
-        mkVerb def = initVerb {
+        mkVerb :: VSpace -> VerbDef -> Verb
+        mkVerb vspace def = (newVerb vspace) {
             verbNames          = Str.fromString $ vbName def
           , verbOwner          = vbOwner def
           , verbPermR          = vbPerms def .&. vf_read  /= 0
@@ -302,7 +302,7 @@ installProgram (oid, vnum, program) = do
       Nothing            -> fail $ doesNotExist "Verb"
       Just (_, verbPVar) -> liftIO $ runVTx vspace $
         modifyPVar verbPVar $ \ref ->
-        vref' vspace (deref' ref) { verbProgram = program }
+        vref' vspace (deref' ref) { verbProgram = vref' vspace program }
 
   where doesNotExist what = what ++ " for program " ++ desc ++ " does not exist"
         desc = "#" ++ show oid ++ ":" ++ show vnum
@@ -847,5 +847,5 @@ tellVerbs (oid, verbs) = forM_ (zip [0..] verbs) $ \(vnum, verb) -> do
   tell (singleton ':')
   tellLn $ decimal (vnum :: Int)
 
-  tell (fromLazyText $ unparse True False $ verbProgram verb)
+  tell (fromLazyText $ unparse True False $ deref' $ verbProgram verb)
   tellLn (singleton '.')

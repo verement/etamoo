@@ -639,7 +639,8 @@ bf_add_verb = Builtin "add_verb" 3 (Just 3)
   unless (objectPermW obj) $ checkPermission (objectOwner obj)
   checkPermission owner
 
-  let definedVerb = initVerb {
+  vspace <- getVSpace
+  let definedVerb = (newVerb vspace) {
           verbNames          = names
         , verbOwner          = owner
         , verbPermR          = 'r' `S.member` permSet
@@ -680,7 +681,7 @@ bf_verb_code = Builtin "verb_code" 2 (Just 4) [TObj, TAny, TAny, TAny]
   unless (verbPermR verb) $ checkPermission (verbOwner verb)
 
   let code = init $ Str.splitOn "\n" $ Str.fromText $ TL.toStrict $
-             unparse fully_paren indent (verbProgram verb)
+             unparse fully_paren indent (deref' $ verbProgram verb)
   return (stringList code)
 
 bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
@@ -692,10 +693,11 @@ bf_set_verb_code = Builtin "set_verb_code" 3 (Just 3) [TObj, TAny, TLst]
   unless (verbPermW verb) $ checkPermission (verbOwner verb)
   checkProgrammer
 
+  vspace <- getVSpace
   case parseProgram text of
     Right program -> do
       modifyVerb (object, obj) verb_desc $ \verb ->
-        return verb { verbProgram = program }
+        return verb { verbProgram = vref' vspace program }
       return emptyList
     Left errors -> return $ fromListBy (Str . Str.fromString) errors
 
@@ -710,7 +712,7 @@ bf_disassemble = Builtin "disassemble" 2 (Just 2)
   verb <- getVerb obj verb_desc
   unless (verbPermR verb) $ checkPermission (verbOwner verb)
 
-  let Program statements = verbProgram verb
+  let Program statements = deref' (verbProgram verb)
   return $ fromListBy (Str . Str.fromString . show) statements
 
 -- § 4.4.3.5 Operations on Player Objects

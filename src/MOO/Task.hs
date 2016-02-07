@@ -936,7 +936,7 @@ runVerb verb verbFrame = do
     []      -> serverOption maxStackDepth
   unless (depthLeft' > 0) $ raise E_MAXREC
 
-  compile (verbProgram verb) `runInFrame` verbFrame {
+  compile (deref $ verbProgram verb) `runInFrame` verbFrame {
       depthLeft    = depthLeft' - 1
     , debugBit     = verbPermD verb
     , permissions  = verbOwner verb
