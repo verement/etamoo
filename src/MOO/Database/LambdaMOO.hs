@@ -1,7 +1,7 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Database.LambdaMOO ( loadLMDatabase, saveLMDatabase ) where
+module MOO.Database.LambdaMOO (loadLMDatabase, saveLMDatabase) where
 
 import Control.Applicative ((<$>))
 import Control.Monad (unless, when, forM, forM_, join)
@@ -562,7 +562,8 @@ read_activ = (<?> "activ") $ do
   char ' '
   i <- unsignedInt
   let bi_func_pc = i
-  _error_pc <- (lookAhead (char '\n') >> return pc) <|> (char ' ' >> unsignedInt)
+  _error_pc <- (lookAhead (char '\n') >> return pc) <|>
+               (char ' ' >> unsignedInt)
   char '\n'
 
   when (bi_func_pc /= 0) $ do

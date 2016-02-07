@@ -1,7 +1,7 @@
 
 {-# LANGUAGE CPP, OverloadedStrings #-}
 
-module MOO.Builtins.Misc ( builtins ) where
+module MOO.Builtins.Misc (builtins) where
 
 import Control.Applicative ((<$>))
 import Control.Monad.State (gets)

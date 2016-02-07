@@ -1,6 +1,6 @@
 
 -- | Compiling abstract syntax trees into 'MOO' computations
-module MOO.Compiler ( compile, evaluate ) where
+module MOO.Compiler (compile, evaluate) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (forM_, when, unless, void, join, (<=<))

@@ -1,7 +1,7 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Builtins.Tasks ( builtins ) where
+module MOO.Builtins.Tasks (builtins) where
 
 import Control.Applicative ((<$>))
 import Control.Arrow ((&&&))

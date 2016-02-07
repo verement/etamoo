@@ -3,7 +3,7 @@
 
 -- | Recovering MOO code from an abstract syntax tree for the @verb_code()@
 -- built-in function
-module MOO.Unparser ( unparse ) where
+module MOO.Unparser (unparse) where
 
 import Control.Applicative ((<$>))
 import Control.Monad (unless, (<=<))

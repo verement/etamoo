@@ -1,6 +1,6 @@
 -- -*- Haskell -*-
 
-module MOO.Builtins ( builtinFunctions, callBuiltin ) where
+module MOO.Builtins (builtinFunctions, callBuiltin) where
 
 import Data.HashMap.Lazy (HashMap)
 

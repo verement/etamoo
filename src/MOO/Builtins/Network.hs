@@ -1,7 +1,7 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Builtins.Network ( builtins ) where
+module MOO.Builtins.Network (builtins) where
 
 import Control.Applicative ((<$>))
 import Control.Concurrent.STM (readTVar)

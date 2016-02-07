@@ -146,9 +146,6 @@ initObject = Object {
   , objectVerbs      = []
 }
 
-instance Show Object where
-  show _ = "<object>"
-
 getParent :: Object -> ObjId
 getParent = objectForMaybe . objectParent
 

@@ -195,6 +195,8 @@ startCheckpointer world' = do
 
   return (checkpoint, stopCheckpointer)
 
+-- | Create a native EtaMOO database from an existing LambdaMOO-format
+-- database.
 importDatabase :: FilePath -> FilePath -> IO ()
 importDatabase lambdaDB etaDB = do
   vcache <- openVCache maxVCacheSize etaDB
@@ -204,6 +206,8 @@ importDatabase lambdaDB etaDB = do
   loadLMDatabase vspace lambdaDB writeLog >>=
     either (error . show) (saveDatabase vcache)
 
+-- | Write a LambdaMOO-format database corresponding to a native EtaMOO
+-- database.
 exportDatabase :: FilePath -> FilePath -> IO ()
 exportDatabase etaDB lambdaDB = do
   openFile etaDB ReadMode >>= hClose  -- ensure file exists

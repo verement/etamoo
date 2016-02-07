@@ -6,8 +6,10 @@ cabal.sandbox.config
 dist
 etamoo
 etamoo-*
+core
 hlint.html
 *.db
+*.edb
 *-lock
 *.prof
 *.hp

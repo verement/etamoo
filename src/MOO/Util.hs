@@ -26,6 +26,7 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
 import qualified Data.Vector as V
 
+-- | Return a string representation of a time value in standard MOO format.
 ctime :: UTCTime -> IO String
 ctime time = formatTime defaultTimeLocale "%a %b %_d %T %Y %Z" <$>
              utcToLocalZonedTime time

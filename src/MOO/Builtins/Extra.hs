@@ -1,7 +1,7 @@
 
 {-# LANGUAGE CPP #-}
 
-module MOO.Builtins.Extra ( builtins ) where
+module MOO.Builtins.Extra (builtins) where
 
 import MOO.Builtins.Common
 

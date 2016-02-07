@@ -1,5 +1,5 @@
 -- -*- Haskell -*-
 
-module MOO.Types ( Value ) where
+module MOO.Types (Value) where
 
 data Value

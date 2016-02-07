@@ -36,6 +36,7 @@
 ** Enhance version number with git commit info
 ** Unicode strings in database file
 ** Close stdin/stdout
+** User reconnecting to different listening points
 
 * Before v1.0
 ** Fix read() and OOB
@@ -70,3 +71,4 @@
 ** LM-compatible bytecode generation and decompilation
 ** Use PCRE 16-bit library (libpcre16)
 ** Avoid space leaks on loop variables
+** Plug-in architecture?

@@ -551,8 +551,8 @@ connectionRead conn = do
           message <- await
           lift $ case message of
             Line line -> do
-              options <- readTVarIO (connectionOptions conn)
-              let flushCmd = optionFlushCommand options
+              flushCmd <- optionFlushCommand <$>
+                          readTVarIO (connectionOptions conn)
               if not (T.null flushCmd) && line == flushCmd
                      then flushQueue else enqueue message
             Binary _ -> enqueue message
@@ -602,7 +602,7 @@ succConnectionId invalid = findNext
 withConnections :: (Map ObjId Connection -> MOO a) -> MOO a
 withConnections f = f . connections =<< getWorld
 
--- | Do something with the connection for given object, if any.
+-- | Do something with the connection for the given object, if any.
 withMaybeConnection :: ObjId -> (Maybe Connection -> MOO a) -> MOO a
 withMaybeConnection oid f = withConnections $ f . M.lookup oid
 

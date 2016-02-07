@@ -1,5 +1,5 @@
 -- -*- Haskell -*-
 
-module MOO.Verb ( Verb ) where
+module MOO.Verb (Verb) where
 
 data Verb

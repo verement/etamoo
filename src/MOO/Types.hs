@@ -297,18 +297,18 @@ emptyList = Lst Lst.empty
 
 -- | Test two MOO values for indistinguishable (case-sensitive) equality.
 equal :: Value -> Value -> Bool
-(Str x) `equal` (Str y) = x `Str.equal` y
-(Lst x) `equal` (Lst y) = x `Lst.equal` y
-x       `equal` y       = x == y
+Str x `equal` Str y = x `Str.equal` y
+Lst x `equal` Lst y = x `Lst.equal` y
+x     `equal` y     = x == y
 
 -- Case-insensitive ordering
 instance Ord Value where
-  (Int x) `compare` (Int y) = x `compare` y
-  (Flt x) `compare` (Flt y) = x `compare` y
-  (Str x) `compare` (Str y) = x `compare` y
-  (Obj x) `compare` (Obj y) = x `compare` y
-  (Err x) `compare` (Err y) = x `compare` y
-  _       `compare` _       = error "Illegal comparison"
+  Int x `compare` Int y = x `compare` y
+  Flt x `compare` Flt y = x `compare` y
+  Str x `compare` Str y = x `compare` y
+  Obj x `compare` Obj y = x `compare` y
+  Err x `compare` Err y = x `compare` y
+  _     `compare` _     = error "Illegal comparison"
 
 -- | Can the provided values be compared for relative ordering?
 comparable :: Value -> Value -> Bool

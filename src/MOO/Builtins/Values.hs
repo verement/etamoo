@@ -1,7 +1,7 @@
 
 {-# LANGUAGE OverloadedStrings, Rank2Types #-}
 
-module MOO.Builtins.Values ( builtins ) where
+module MOO.Builtins.Values (builtins) where
 
 import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Monad (unless, (<=<))
@@ -168,8 +168,8 @@ bf_min = imumBuiltin "min" minimum
 bf_max = imumBuiltin "max" maximum
 
 bf_abs = Builtin "abs" 1 (Just 1) [TNum] TNum $ \[arg] -> case arg of
-  Int x -> return $ Int $ abs x
-  Flt x -> return $ Flt $ abs x
+  Int x -> return (Int $ abs x)
+  Flt x -> return (Flt $ abs x)
 
 bf_floatstr = Builtin "floatstr" 2 (Just 3)
               [TFlt, TInt, TAny] TStr $ \(Flt x : Int precision : optional) ->

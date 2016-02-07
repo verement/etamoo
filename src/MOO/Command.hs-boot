@@ -1,5 +1,5 @@
 -- -*- Haskell -*-
 
-module MOO.Command ( Command ) where
+module MOO.Command (Command) where
 
 data Command

@@ -1,7 +1,7 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module MOO.Builtins.Objects ( builtins ) where
+module MOO.Builtins.Objects (builtins) where
 
 import Control.Applicative ((<$>))
 import Control.Monad (when, unless, void, forM_, foldM)

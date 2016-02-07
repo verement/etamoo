@@ -1,6 +1,6 @@
 -- -*- Haskell -*-
 
-module MOO.Compiler ( compile ) where
+module MOO.Compiler (compile) where
 
 import MOO.AST
 import {-# SOURCE #-} MOO.Task
