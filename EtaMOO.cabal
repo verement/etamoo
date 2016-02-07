@@ -41,6 +41,7 @@ extra-source-files:  ACKNOWLEDGMENTS.md
                      README.md
                      TODO
                      src/cbits/match.h
+                     stack.yaml
 
 source-repository head
   type:              git
