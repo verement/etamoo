@@ -38,9 +38,6 @@ instance VCacheable Program where
   put (Program smts) = put smts
   get = Program <$> get
 
-instance Sizeable Program where
-  storageBytes (Program stmts) = storageBytes stmts
-
 data Statement = Expression !LineNo Expr
                | If         !LineNo Expr Then [ElseIf] Else
                | ForList    !LineNo Id  Expr        [Statement]
@@ -112,42 +109,6 @@ instance VCacheable Except where
 instance VCacheable Finally where
   put (Finally smts) = put smts
   get = Finally <$> get
-
-instance Sizeable Statement where
-  storageBytes (Expression line expr) =
-    storageBytes () + storageBytes line + storageBytes expr
-  storageBytes (If line expr (Then thens) elseIfs (Else elses)) =
-    storageBytes () + storageBytes line + storageBytes expr +
-    storageBytes thens + storageBytes elseIfs + storageBytes elses
-  storageBytes (ForList line var expr body) =
-    storageBytes () + storageBytes line + storageBytes var +
-    storageBytes expr + storageBytes body
-  storageBytes (ForRange line var range body) =
-    storageBytes () + storageBytes line + storageBytes var +
-    storageBytes range + storageBytes body
-  storageBytes (While line var expr body) =
-    storageBytes () + storageBytes line + storageBytes var +
-    storageBytes expr + storageBytes body
-  storageBytes (Fork line var expr body) =
-    storageBytes () + storageBytes line + storageBytes var +
-    storageBytes expr + storageBytes body
-  storageBytes (Break    var) = storageBytes () + storageBytes var
-  storageBytes (Continue var) = storageBytes () + storageBytes var
-  storageBytes (Return line expr) =
-    storageBytes () + storageBytes line + storageBytes expr
-  storageBytes (TryExcept body excepts) =
-    storageBytes () + storageBytes body + storageBytes excepts
-  storageBytes (TryFinally body (Finally finally)) =
-    storageBytes () + storageBytes body + storageBytes finally
-
-instance Sizeable ElseIf where
-  storageBytes (ElseIf line expr body) =
-    storageBytes () + storageBytes line + storageBytes expr + storageBytes body
-
-instance Sizeable Except where
-  storageBytes (Except line var codes body) =
-    storageBytes () + storageBytes line + storageBytes var +
-    storageBytes codes + storageBytes body
 
 data Expr = Literal Value
           | List [Argument]
@@ -257,51 +218,6 @@ instance VCacheable Expr where
     29 -> Catch       <$> get <*> get <*> get
     _  -> unknownTag "Expr" tag
 
-instance Sizeable Expr where
-  storageBytes (Literal value) = storageBytes () + storageBytes value
-  storageBytes (List args)     = storageBytes () + storageBytes args
-  storageBytes (Variable var)  = storageBytes () + storageBytes var
-  storageBytes (PropertyRef obj name) =
-    storageBytes () + storageBytes obj + storageBytes name
-  storageBytes (Assign lhs rhs) =
-    storageBytes () + storageBytes lhs + storageBytes rhs
-  storageBytes (Scatter scats expr) =
-    storageBytes () + storageBytes scats + storageBytes expr
-  storageBytes (VerbCall obj name args) =
-    storageBytes () + storageBytes obj + storageBytes name + storageBytes args
-  storageBytes (BuiltinFunc name args) =
-    storageBytes () + storageBytes name + storageBytes args
-  storageBytes (Index  x y) = storageBytes () + storageBytes x + storageBytes y
-  storageBytes (Range  x y) = storageBytes () + storageBytes x + storageBytes y
-  storageBytes  Length      = storageBytes ()
-  storageBytes (In     x y) = storageBytes () + storageBytes x + storageBytes y
-  storageBytes (Plus   x y) = storageBytes () + storageBytes x + storageBytes y
-  storageBytes (Minus  x y) = storageBytes () + storageBytes x + storageBytes y
-  storageBytes (Times  x y) = storageBytes () + storageBytes x + storageBytes y
-  storageBytes (Divide x y) = storageBytes () + storageBytes x + storageBytes y
-  storageBytes (Remain x y) = storageBytes () + storageBytes x + storageBytes y
-  storageBytes (Power  x y) = storageBytes () + storageBytes x + storageBytes y
-  storageBytes (Negate x)   = storageBytes () + storageBytes x
-  storageBytes (Conditional x y z) =
-    storageBytes () + storageBytes x + storageBytes y + storageBytes z
-  storageBytes (And    x y) = storageBytes () + storageBytes x + storageBytes y
-  storageBytes (Or     x y) = storageBytes () + storageBytes x + storageBytes y
-  storageBytes (Not    x)   = storageBytes () + storageBytes x
-  storageBytes (CompareEQ x y) =
-    storageBytes () + storageBytes x + storageBytes y
-  storageBytes (CompareNE x y) =
-    storageBytes () + storageBytes x + storageBytes y
-  storageBytes (CompareLT x y) =
-    storageBytes () + storageBytes x + storageBytes y
-  storageBytes (CompareLE x y) =
-    storageBytes () + storageBytes x + storageBytes y
-  storageBytes (CompareGT x y) =
-    storageBytes () + storageBytes x + storageBytes y
-  storageBytes (CompareGE x y) =
-    storageBytes () + storageBytes x + storageBytes y
-  storageBytes (Catch expr codes (Default dv)) =
-    storageBytes () + storageBytes expr + storageBytes codes + storageBytes dv
-
 data    Codes   = ANY | Codes [Argument] deriving (Show, Typeable)
 newtype Default = Default (Maybe Expr)   deriving (Show, Typeable)
 
@@ -315,10 +231,6 @@ instance VCacheable Default where
   put (Default expr) = put expr
   get = Default <$> get
 
-instance Sizeable Codes where
-  storageBytes ANY          = storageBytes ()
-  storageBytes (Codes args) = storageBytes () + storageBytes args
-
 data Argument = ArgNormal Expr
               | ArgSplice Expr
               deriving (Show, Typeable)
@@ -328,10 +240,6 @@ instance VCacheable Argument where
     ArgNormal expr -> Left  expr
     ArgSplice expr -> Right expr
   get = either ArgNormal ArgSplice <$> get
-
-instance Sizeable Argument where
-  storageBytes (ArgNormal expr) = storageBytes () + storageBytes expr
-  storageBytes (ArgSplice expr) = storageBytes () + storageBytes expr
 
 data ScatterItem = ScatRequired Id
                  | ScatOptional Id (Maybe Expr)
@@ -349,12 +257,6 @@ instance VCacheable ScatterItem where
     1 -> ScatOptional <$> get <*> get
     2 -> ScatRest     <$> get
     _ -> unknownTag "ScatterItem" tag
-
-instance Sizeable ScatterItem where
-  storageBytes (ScatRequired var) = storageBytes () + storageBytes var
-  storageBytes (ScatOptional var expr) =
-    storageBytes () + storageBytes var + storageBytes expr
-  storageBytes (ScatRest     var) = storageBytes () + storageBytes var
 
 -- | Can the given expression be used on the left-hand side of an assignment?
 isLValue :: Expr -> Bool

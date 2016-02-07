@@ -3,6 +3,7 @@
 
 module MOO.Util (
     ctime
+  , storageBytes
   , VIntSet(..)
   , VHashMap(..)
   , VUTCTime(..)
@@ -20,7 +21,8 @@ import Data.Time (UTCTime(..), Day(..), DiffTime, utcToLocalZonedTime,
 import Data.Typeable (Typeable)
 import Data.Vector (Vector)
 import Data.Version (Version(..))
-import Database.VCache (VCacheable(put, get), putVarNat, getVarNat)
+import Database.VCache (VCacheable(put, get), putVarNat, getVarNat,
+                        VRef, unsafeVRefEncoding)
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntSet as IS
@@ -30,6 +32,11 @@ import qualified Data.Vector as V
 ctime :: UTCTime -> IO String
 ctime time = formatTime defaultTimeLocale "%a %b %_d %T %Y %Z" <$>
              utcToLocalZonedTime time
+
+-- | Return the number of bytes used to store a referenced value in the
+-- persistence layer.
+storageBytes :: VRef a -> IO Int
+storageBytes ref = unsafeVRefEncoding ref $ const return
 
 newtype VIntSet = VIntSet { unVIntSet :: IntSet } deriving Typeable
 

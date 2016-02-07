@@ -220,7 +220,7 @@ bf_queued_tasks = Builtin "queued_tasks" 0 (Just 0) [] TLst $ \[] -> do
           , Int . fromIntegral .
                   lineNumber   . activeFrame   -- line
           , Obj . initialThis  . activeFrame   -- this
-          , Int . fromIntegral . storageBytes  -- task-size
+          , Int . fromIntegral . taskSize      -- task-size
           ]
 
 bf_kill_task = Builtin "kill_task" 1 (Just 1) [TInt] TAny $ \[Int task_id] -> do

@@ -109,25 +109,6 @@ instance VCacheable Object where
                <*> get <*> get <*> get <*> get <*> get
                <*> (unVHashMap <$> get) <*> get
 
-instance Sizeable Object where
-  -- this does not capture the size of defined properties or verbs, as these
-  -- are tucked behind TVars and cannot be read outside the STM monad
-  storageBytes obj =
-    storageBytes (objectIsPlayer   obj) +
-    storageBytes (objectParent     obj) +
-    storageBytes (objectChildren   obj) +
-    storageBytes (objectName       obj) +
-    storageBytes (objectOwner      obj) +
-    storageBytes (objectLocation   obj) +
-    storageBytes (objectContents   obj) +
-    storageBytes (objectProgrammer obj) +
-    storageBytes (objectWizard     obj) +
-    storageBytes (objectPermR      obj) +
-    storageBytes (objectPermW      obj) +
-    storageBytes (objectPermF      obj) +
-    storageBytes (objectProperties obj) +
-    storageBytes (objectVerbs      obj)
-
 initObject = Object {
     objectIsPlayer   = False
   , objectParent     = Nothing
@@ -198,16 +179,6 @@ instance VCacheable Property where
 
   get = Property <$> get <*> get <*> get
                  <*> get <*> get <*> get <*> get
-
-instance Sizeable Property where
-  storageBytes prop =
-    storageBytes (propertyName      prop) +
-    storageBytes (propertyValue     prop) +
-    storageBytes (propertyInherited prop) +
-    storageBytes (propertyOwner     prop) +
-    storageBytes (propertyPermR     prop) +
-    storageBytes (propertyPermW     prop) +
-    storageBytes (propertyPermC     prop)
 
 initProperty = Property {
     propertyName      = ""

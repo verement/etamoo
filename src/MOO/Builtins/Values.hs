@@ -11,6 +11,7 @@ import Data.Monoid ((<>), mconcat)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word8)
+import Database.VCache (vref')
 import Text.Printf (printf)
 
 import qualified Data.ByteString as BS
@@ -22,6 +23,7 @@ import MOO.Builtins.Match
 import MOO.Parser (parseNum, parseObj)
 import MOO.Task
 import MOO.Types
+import MOO.Util
 
 import qualified MOO.List as Lst
 import qualified MOO.String as Str
@@ -141,8 +143,10 @@ bf_tofloat = Builtin "tofloat" 1 (Just 1)
 bf_equal = Builtin "equal" 2 (Just 2) [TAny, TAny] TInt $ \[value1, value2] ->
   return $ truthValue (value1 `equal` value2)
 
-bf_value_bytes = Builtin "value_bytes" 1 (Just 1) [TAny] TInt $ \[value] ->
-  return $ Int $ fromIntegral $ storageBytes value
+bf_value_bytes = Builtin "value_bytes" 1 (Just 1) [TAny] TInt $ \[value] -> do
+  vspace <- getVSpace
+  bytes <- unsafeIOtoMOO $ storageBytes (vref' vspace value)
+  return (Int $ fromIntegral bytes)
 
 bf_value_hash = Builtin "value_hash" 1 (Just 3)
                 [TAny, TStr, TAny] TStr $ \(value : optional) ->

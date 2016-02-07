@@ -24,7 +24,6 @@ module MOO.String (
   , null
   , length
   , compareLength
-  , storageBytes
   , equal
 
   -- * Transformations
@@ -67,12 +66,10 @@ import Data.Monoid (Monoid(mempty, mappend, mconcat))
 import Data.String (IsString(fromString))
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import Data.Text.Foreign (lengthWord16)
 import Data.Text.Lazy.Builder (Builder)
 import Data.Typeable (Typeable)
-import Data.Word (Word8, Word16)
+import Data.Word (Word8)
 import Database.VCache (VCacheable(put, get))
-import Foreign.Storable (sizeOf)
 import Prelude hiding (tail, null, length, foldr, concat, concatMap, take, drop,
                        splitAt, break, words, unwords)
 
@@ -205,10 +202,6 @@ validChar c = isAscii c && (isPrint c || c == '\t')
 
 singleton :: Char -> MOOString
 singleton = fromText . T.singleton
-
-storageBytes :: MOOString -> Int
-storageBytes str = sizeOf (undefined :: Word16) * lengthWord16 (toText str) +
-                   sizeOf (undefined :: Int) * 4
 
 -- | Test two strings for indistinguishable (case-sensitive) equality.
 equal :: MOOString -> MOOString -> Bool

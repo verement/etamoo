@@ -65,21 +65,13 @@ module MOO.Types (
   -- * Miscellaneous
   , endOfTime
 
-  -- * Estimating Haskell Storage Sizes
-  , Sizeable(..)
-
   ) where
 
 import Control.Applicative ((<$>))
-import Control.Concurrent (ThreadId)
-import Control.Concurrent.STM (TVar)
 import Data.CaseInsensitive (CI)
 import Data.Hashable (Hashable)
-import Data.HashMap.Strict (HashMap)
 import Data.Int (Int32, Int64)
-import Data.IntSet (IntSet)
 import Data.List (intersperse)
-import Data.Map (Map)
 import Data.Monoid (Monoid, (<>), mappend, mconcat)
 import Data.String (IsString)
 import Data.Text (Text)
@@ -88,14 +80,9 @@ import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable (Typeable)
-import Database.VCache (VCacheable(put, get), PVar)
-import Foreign.Storable (sizeOf)
-import System.Random (StdGen)
+import Database.VCache (VCacheable(put, get))
 
 import qualified Data.CaseInsensitive as CI
-import qualified Data.HashMap.Strict as HM
-import qualified Data.IntSet as IS
-import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Builder as TLB
@@ -107,95 +94,6 @@ import MOO.String (MOOString)
 
 import {-# SOURCE #-} qualified MOO.List as Lst
 import qualified MOO.String as Str
-
--- | The 'Sizeable' class is used to estimate the storage requirements of
--- various values, for use by several built-in functions which are supposed to
--- return the byte sizes of certain internal structures.
---
--- The sizes calculated by instances of this class are necessarily
--- approximate, since it may be difficult or impossible to measure them
--- precisely in the Haskell runtime environment.
-class Sizeable t where
-  -- | Return the estimated storage size of the given value, in bytes.
-  storageBytes :: t -> Int
-
-instance Sizeable () where
-  storageBytes _ = sizeOf (undefined :: Int)
-
-instance Sizeable Bool where
-  storageBytes = sizeOf
-
-instance Sizeable Int where
-  storageBytes = sizeOf
-
-instance Sizeable Int32 where
-  storageBytes = sizeOf
-
-instance Sizeable Int64 where
-  storageBytes = sizeOf
-
-instance Sizeable Double where
-  storageBytes = sizeOf
-
-instance Sizeable Text where
-  storageBytes t = sizeOf 'x' * (T.length t + 1)
-
-instance Sizeable MOOString where
-  storageBytes = Str.storageBytes
-
-instance Sizeable s => Sizeable (CI s) where
-  storageBytes = (* 2) . storageBytes . CI.original
-
-instance Sizeable MOOList where
-  storageBytes = Lst.storageBytes
-
-instance Sizeable a => Sizeable [a] where
-  storageBytes = foldr bytes (storageBytes ())
-    where bytes x s = s + storageBytes () + storageBytes x
-
-instance Sizeable a => Sizeable (Maybe a) where
-  storageBytes Nothing  = storageBytes ()
-  storageBytes (Just x) = storageBytes () + storageBytes x
-
-instance (Sizeable a, Sizeable b) => Sizeable (a, b) where
-  storageBytes (x, y) = storageBytes () + storageBytes x + storageBytes y
-
-instance (Sizeable k, Sizeable v) => Sizeable (Map k v) where
-  storageBytes =
-    M.foldrWithKey' (\k v s -> s + storageBytes k + storageBytes v) 0
-
-instance Sizeable StdGen where
-  storageBytes _ = storageBytes () + 2 * storageBytes (undefined :: Int32)
-
-instance Sizeable UTCTime where
-  storageBytes _ = 4 * storageBytes ()
-
-instance Sizeable ThreadId where
-  storageBytes _ = storageBytes ()
-
-instance Sizeable IntSet where
-  storageBytes x = storageBytes () + storageBytes (0 :: Int) * IS.size x
-
-instance (Sizeable k, Sizeable v) => Sizeable (HashMap k v) where
-  storageBytes = HM.foldrWithKey bytes (storageBytes ())
-    where bytes k v s = s + storageBytes k + storageBytes v
-
-instance Sizeable (TVar a) where
-  storageBytes _ = storageBytes ()
-
-instance Sizeable (PVar a) where
-  storageBytes _ = storageBytes ()
-
-{-
--- Unfortunately these can cause vcache deadlock
-
-instance VCacheable a => Sizeable (PVar a) where
-  storageBytes var = unsafePerformIO $
-                     storageBytes . vref (pvar_space var) <$> readPVarIO var
-
-instance Sizeable (VRef a) where
-  storageBytes ref = unsafePerformIO $ unsafeVRefEncoding ref $ const return
--}
 
 # ifdef MOO_64BIT_INTEGER
 type IntT = Int64
@@ -216,7 +114,7 @@ type LineNo = Int         -- ^ MOO code line number
 -- | MOO identifier (string lite)
 newtype Id = Id { unId :: CI Text }
            deriving (Eq, Ord, Show, Monoid, IsString,
-                     Hashable, Sizeable, Typeable)
+                     Hashable, Typeable)
 
 instance VCacheable Id where
   put = put . encodeUtf8 . fromId
@@ -272,16 +170,6 @@ instance VCacheable Value where
     TErr -> Err . toEnum <$> get
     TLst -> Lst <$> get
     _    -> fail $ "get: unknown Value type (" ++ show (fromEnum t) ++ ")"
-
-instance Sizeable Value where
-  storageBytes value = case value of
-    Int x -> box + storageBytes x
-    Flt x -> box + storageBytes x
-    Str x -> box + storageBytes x
-    Obj x -> box + storageBytes x
-    Err x -> box + storageBytes x
-    Lst x -> box + storageBytes x
-    where box = storageBytes ()
 
 -- | A default MOO value
 zero :: Value
@@ -349,9 +237,6 @@ data Error = E_NONE     -- ^ No error
            | E_QUOTA    -- ^ Resource limit exceeded
            | E_FLOAT    -- ^ Floating-point arithmetic error
            deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance Sizeable Error where
-  storageBytes _ = storageBytes ()
 
 -- | Is the given MOO value considered to be /true/ or /false/?
 truthOf :: Value -> Bool

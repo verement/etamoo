@@ -1,6 +1,6 @@
 -- -*- Haskell -*-
 
-module MOO.List ( MOOList, storageBytes
+module MOO.List ( MOOList
                 , empty, equal, null, toList, fromList ) where
 
 import Database.VCache (VCacheable)
@@ -14,8 +14,6 @@ data MOOList
 instance Eq MOOList
 instance Show MOOList
 instance VCacheable MOOList
-
-storageBytes :: MOOList -> Int
 
 empty :: MOOList
 equal :: MOOList -> MOOList -> Bool

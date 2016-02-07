@@ -38,6 +38,8 @@ module MOO.List (
   , elemIndex
 
   -- * Folding
+  , foldr'
+
   -- ** Monadic folds
   , foldM
 
@@ -47,7 +49,6 @@ module MOO.List (
   , fromList
 
   -- * MOO primitives
-  , storageBytes
   , equal
 
   -- * Association list interface
@@ -111,9 +112,6 @@ fromList = fromVector . V.fromList
 toList :: MOOList -> [Value]
 toList = V.toList . toVector
 
-storageBytes :: MOOList -> Int
-storageBytes = V.sum . V.map Value.storageBytes . toVector
-
 equal :: MOOList -> MOOList -> Bool
 equal = vectorEqual `on` toVector
 
@@ -162,6 +160,9 @@ elemIndex x = V.elemIndex x . toVector
 
 findIndex :: (Value -> Bool) -> MOOList -> Maybe Int
 findIndex p = V.findIndex p . toVector
+
+foldr' :: (Value -> a -> a) -> a -> MOOList -> a
+foldr' f z = V.foldr' f z . toVector
 
 foldM :: Monad m => (a -> Value -> m a) -> a -> MOOList -> m a
 foldM f acc = V.foldM f acc . toVector

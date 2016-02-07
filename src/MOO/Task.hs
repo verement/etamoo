@@ -34,7 +34,6 @@ module MOO.Task (
   , Resource(..)
   , initState
   , newState
-  , initTask
   , newTaskId
   , newTask
   , defaultMaxStackDepth
@@ -45,6 +44,7 @@ module MOO.Task (
   , getDelay
   , resetLimits
   , taskOwner
+  , taskSize
   , isQueued
   , queuedTasks
   , stepTask
@@ -185,6 +185,7 @@ import MOO.Object
 import MOO.Types
 import MOO.Verb
 
+import qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 -- | This is the basic MOO monad transformer stack. A computation of type
@@ -293,16 +294,6 @@ initTask = Task {
   , taskComputation = return zero
   }
 
-instance Sizeable Task where
-  storageBytes task =
-    storageBytes (taskId     task) +
-    storageBytes (taskThread task) +
-    storageBytes (taskWorld  task) +
-    storageBytes (taskPlayer task) +
-    storageBytes (taskStatus task) +
-    storageBytes (taskState  task)
-    -- storageBytes (taskComputation task)
-
 instance Eq Task where
   (==) = (==) `on` taskId
 
@@ -344,6 +335,42 @@ newTask world' player comp = do
 taskOwner :: Task -> ObjId
 taskOwner = permissions . activeFrame
 
+-- | (Grossly) estimate a task's size, in bytes.
+taskSize :: Task -> Int
+taskSize task = 64 + stateSize (taskState task)
+
+  where stateSize :: TaskState -> Int
+        stateSize state = 32 + stackSize (stack state)
+
+        stackSize :: CallStack -> Int
+        stackSize (Stack frames) = sum $ map frameSize frames
+
+        frameSize :: StackFrame -> Int
+        frameSize frame = 64 + sum (map contextSize $ contextStack frame) +
+          HM.foldrWithKey varFold 0 (variables frame) +
+          textSize (Str.toText $ verbName     frame) +
+          textSize (Str.toText $ verbFullName frame)
+
+          where varFold :: Id -> Value -> Int -> Int
+                varFold name value accum = accum +
+                  textSize (fromId name) + valueSize value
+
+        contextSize :: Context -> Int
+        contextSize Loop { loopName = name } = 16 +
+          maybe 0 (textSize . fromId) name
+        contextSize TryFinally{} = 8
+
+        textSize :: Text -> Int
+        textSize = T.length
+
+        valueSize :: Value -> Int
+        valueSize (Int _) = 8
+        valueSize (Flt _) = 12
+        valueSize (Str x) = Str.length x
+        valueSize (Obj _) = 8
+        valueSize (Err _) = 4
+        valueSize (Lst x) = Lst.foldr' (\v a -> a + valueSize v) 0 x
+
 -- | The running state of a task
 data TaskStatus = Pending | Running | Forked | Suspended Wake | Reading
 
@@ -358,10 +385,6 @@ isRunning _       = False
 
 queuedTasks :: MOO [Task]
 queuedTasks = filter (isQueued . taskStatus) . M.elems . tasks <$> getWorld
-
-instance Sizeable TaskStatus where
-  storageBytes (Suspended _) = 2 * storageBytes ()
-  storageBytes _             =     storageBytes ()
 
 -- | A function to call in order to wake a suspended task
 newtype Wake = Wake (Value -> IO ())
@@ -698,14 +721,6 @@ initState = State {
   , randomGen    = mkStdGen 0
   , delayedIO    = mempty
   }
-
-instance Sizeable TaskState where
-  storageBytes state =
-    storageBytes (ticksLeft state) +
-    storageBytes (stack     state) +
-    storageBytes (startTime state) +
-    storageBytes (randomGen state)
-    -- storageBytes (delayedIO state)
 
 newState :: IO TaskState
 newState = do
@@ -1046,14 +1061,8 @@ setBuiltinProperty _ _ _ = raise E_TYPE
 -- | The stack of verb and/or built-in function frames
 newtype CallStack = Stack [StackFrame]
 
-instance Sizeable CallStack where
-  storageBytes (Stack stack) = storageBytes stack
-
 -- | A local continuation for loop constructs
 newtype Continuation = Continuation (() -> MOO Value)
-
-instance Sizeable Continuation where
-  storageBytes _ = storageBytes ()
 
 -- | A structure describing a (possibly nested) context for the current frame,
 -- used to manage loop break/continue and try/finally interactions
@@ -1066,14 +1075,6 @@ data Context =
   TryFinally {
     finally      :: MOO Value
   }
-
-instance Sizeable Context where
-  storageBytes context@Loop{} =
-    storageBytes (loopName     context) +
-    storageBytes (loopBreak    context) +
-    storageBytes (loopContinue context)
-  storageBytes TryFinally{} = storageBytes ()
-    -- storageBytes (finally context)
 
 -- | The data tracked for each verb and/or built-in function call
 data StackFrame = Frame {
@@ -1112,21 +1113,6 @@ initFrame = Frame {
   , builtinFunc   = False
   , lineNumber    = 0
   }
-
-instance Sizeable StackFrame where
-  storageBytes frame =
-    storageBytes (depthLeft     frame) +
-    storageBytes (contextStack  frame) +
-    storageBytes (variables     frame) +
-    storageBytes (debugBit      frame) +
-    storageBytes (permissions   frame) +
-    storageBytes (verbName      frame) +
-    storageBytes (verbFullName  frame) +
-    storageBytes (verbLocation  frame) +
-    storageBytes (initialThis   frame) +
-    storageBytes (initialPlayer frame) +
-    storageBytes (builtinFunc   frame) +
-    storageBytes (lineNumber    frame)
 
 formatFrames :: Bool -> [StackFrame] -> Value
 formatFrames includeLineNumbers = fromListBy formatFrame

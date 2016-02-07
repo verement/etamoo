@@ -17,7 +17,7 @@ module MOO.Verb ( Verb(..)
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Typeable (Typeable)
-import Database.VCache (VCacheable(put, get), VSpace, VRef, vref', deref')
+import Database.VCache (VCacheable(put, get), VSpace, VRef, vref')
 
 import MOO.AST
 import {-# SOURCE #-} MOO.Object (nothing)
@@ -57,19 +57,6 @@ instance VCacheable Verb where
              <*> get <*> get <*> get <*> get <*> get
              <*> get <*> get <*> get
 
-instance Sizeable Verb where
-  storageBytes verb =
-    storageBytes (verbNames            verb) +
-    storageBytes (deref' $ verbProgram verb) +
-    storageBytes (verbOwner            verb) +
-    storageBytes (verbPermR            verb) +
-    storageBytes (verbPermW            verb) +
-    storageBytes (verbPermX            verb) +
-    storageBytes (verbPermD            verb) +
-    storageBytes (verbDirectObject     verb) +
-    storageBytes (verbPreposition      verb) +
-    storageBytes (verbIndirectObject   verb)
-
 newVerb :: VSpace -> Verb
 newVerb vspace = Verb {
     verbNames          = ""
@@ -95,9 +82,6 @@ data ObjSpec = ObjNone  -- ^ none
 instance VCacheable ObjSpec where
   put = put . fromEnum
   get = toEnum <$> get
-
-instance Sizeable ObjSpec where
-  storageBytes _ = storageBytes ()
 
 obj2string :: ObjSpec -> StrT
 obj2string ObjNone = "none"
@@ -137,9 +121,6 @@ data PrepSpec = PrepAny                     -- ^ any
 instance VCacheable PrepSpec where
   put = put . fromEnum
   get = toEnum <$> get
-
-instance Sizeable PrepSpec where
-  storageBytes _ = storageBytes ()
 
 prep2string :: PrepSpec -> StrT
 prep2string PrepAny                    = "any"

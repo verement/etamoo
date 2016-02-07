@@ -9,8 +9,8 @@ import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Monoid (mempty, mappend)
 import Data.Set (Set)
 import Data.Text.Lazy.Builder (Builder)
-import Database.VCache (VTx, PVar, newPVar, readPVar, modifyPVar, pvar_space,
-                        VRef, deref', vref', vref_space)
+import Database.VCache (VTx, PVar, newPVar, readPVar, readPVarIO, modifyPVar,
+                        pvar_space, vref_space, VRef, deref', vref')
 import Prelude hiding (getContents)
 
 import qualified Data.HashMap.Strict as HM
@@ -28,6 +28,7 @@ import MOO.Parser
 import MOO.Task
 import MOO.Types
 import MOO.Unparser
+import MOO.Util
 import MOO.Verb
 
 import qualified MOO.List as Lst
@@ -296,12 +297,23 @@ bf_object_bytes = Builtin "object_bytes" 1 (Just 1)
   checkWizard
   obj <- checkValid object
 
-  propertyBytes <- fmap storageBytes $ liftVTx $
-    mapM (fmap deref' . readPVar) $ HM.elems (objectProperties obj)
-  verbBytes     <- fmap storageBytes $ liftVTx $
-    mapM (fmap deref' . readPVar . snd) $ objectVerbs obj
+  vspace <- getVSpace
+  bytes <- unsafeIOtoMOO $ do
+    objectBytes   <- storageBytes (vref' vspace obj)
+    propertyBytes <- fmap sum . mapM propTotal $ HM.elems (objectProperties obj)
+    verbBytes     <- fmap sum . mapM (verbTotal . snd) $ objectVerbs obj
+    return $ objectBytes + propertyBytes + verbBytes
 
-  return $ Int $ fromIntegral $ storageBytes obj + propertyBytes + verbBytes
+  return $ Int $ fromIntegral bytes
+
+  where propTotal :: PVar (VRef Property) -> IO Int
+        propTotal var = storageBytes =<< readPVarIO var
+
+        verbTotal :: PVar (VRef Verb) -> IO Int
+        verbTotal var = do
+          ref <- readPVarIO var
+          (+) <$> storageBytes ref
+              <*> storageBytes (verbProgram $ deref' ref)
 
 bf_max_object = Builtin "max_object" 0 (Just 0) [] TObj $ \[] ->
   Obj . maxObject <$> getDatabase
