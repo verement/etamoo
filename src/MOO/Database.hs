@@ -8,7 +8,6 @@ module MOO.Database (
   , Persistence(..)
   , serverOptions
   , initDatabase
-  , dbObjectRef
   , dbObject
   , maxObject
   , resetMaxObject
@@ -40,7 +39,8 @@ import Data.Vector (Vector)
 import Data.Version (showVersion)
 import Database.VCache (VCache, VSpace, VTx, VCacheable(put, get), vcache_space,
                         PVar, loadRootPVarIO, newPVarsIO, newPVarIO, newPVar,
-                        readPVarIO, readPVar, writePVar, runVTx, markDurable)
+                        readPVarIO, readPVar, writePVar, runVTx, markDurable,
+                        VRef, deref, vref', getVTxSpace, pvar_space)
 
 import qualified Data.HashMap.Lazy as HM
 import qualified Data.HashSet as HS
@@ -58,7 +58,7 @@ import qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 data Database = Database {
-    objects       :: Vector (PVar (Maybe Object))
+    objects       :: Vector (PVar (Maybe (VRef Object)))
   , players       :: IntSet
   , serverOptions :: ServerOptions
   } deriving Typeable
@@ -79,11 +79,12 @@ initDatabase = Database {
   , serverOptions = undefined
   }
 
-dbObjectRef :: ObjId -> Database -> Maybe (PVar (Maybe Object))
+dbObjectRef :: ObjId -> Database -> Maybe (PVar (Maybe (VRef Object)))
 dbObjectRef oid = (V.!? oid) . objects
 
 dbObject :: ObjId -> Database -> VTx (Maybe Object)
-dbObject oid = maybe (return Nothing) readPVar . dbObjectRef oid
+dbObject oid = maybe (return Nothing) (fmap (fmap deref) . readPVar) .
+  dbObjectRef oid
 
 maxObject :: Database -> ObjId
 maxObject = pred . V.length . objects
@@ -110,9 +111,9 @@ renumber old db = do
       -- renumber database slot references
       let Just oldRef = dbObjectRef old db
           Just newRef = dbObjectRef new db
-      Just obj <- readPVar oldRef
+      Just obj <- fmap deref <$> readPVar oldRef
       writePVar oldRef Nothing
-      writePVar newRef (Just obj)
+      writePVar newRef (Just $ vref' (pvar_space newRef) obj)
 
       -- ask the object to fix up parent/children and location/contents
       renumberObject obj old new db
@@ -120,11 +121,12 @@ renumber old db = do
       -- fix up ownerships throughout entire database
       forM_ [0..maxObject db] $ \oid -> case dbObjectRef oid db of
         Just ref -> do
-          maybeObj <- readPVar ref
+          maybeObj <- fmap deref <$> readPVar ref
           case maybeObj of
             Just obj -> do
               maybeNew <- renumberOwnership old new obj
-              when (isJust maybeNew) $ writePVar ref maybeNew
+              when (isJust maybeNew) $
+                writePVar ref $ vref' (pvar_space ref) <$> maybeNew
             Nothing  -> return ()
         Nothing  -> return ()
 
@@ -141,12 +143,13 @@ renumber old db = do
 
 setObjects :: VSpace -> [Maybe Object] -> Database -> IO Database
 setObjects vspace objs db = do
-  refs <- newPVarsIO vspace objs
+  refs <- newPVarsIO vspace $ map (fmap $ vref' vspace) objs
   return db { objects = V.fromList refs }
 
 addObject :: Object -> Database -> VTx Database
 addObject obj db = do
-  ref <- newPVar (Just obj)
+  vspace <- getVTxSpace
+  ref <- newPVar $ Just (vref' vspace obj)
   return db { objects = V.snoc (objects db) ref }
 
 deleteObject :: ObjId -> Database -> VTx ()
@@ -158,7 +161,8 @@ deleteObject oid db =
 modifyObject :: ObjId -> Database -> (Object -> VTx Object) -> VTx ()
 modifyObject oid db f =
   case dbObjectRef oid db of
-    Just ref -> readPVar ref >>= maybe (return ()) (f >=> writePVar ref . Just)
+    Just ref -> readPVar ref >>= maybe (return ())
+      (f . deref >=> writePVar ref . Just . vref' (pvar_space ref))
     Nothing  -> return ()
 
 {-
