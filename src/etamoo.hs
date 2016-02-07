@@ -6,7 +6,7 @@ module Main (main) where
 import Control.Monad (foldM, unless, when)
 import Data.Char (isDigit)
 import Data.List (isInfixOf, isPrefixOf)
-import Data.Maybe (isJust, isNothing, fromJust)
+import Data.Maybe (isNothing, fromJust)
 import Data.Version (showVersion)
 import System.Console.GetOpt (OptDescr(Option), ArgDescr(NoArg, ReqArg),
                               ArgOrder(Permute), getOpt, usageInfo)
@@ -30,6 +30,7 @@ run opts
   | optEmergency opts = error "Emergency Wizard Mode not yet implemented"
   | otherwise         = startServer (optLogFile opts)
                         (fromJust $ optInputDB opts)
+                        (optCacheSize opts)
                         (optOutboundNetwork opts)
                         (const $ TCP (optBindAddress opts) (optPort opts))
 
@@ -66,6 +67,7 @@ data Options = Options {
   , optBindAddress     :: Maybe HostName
   , optPort            :: PortNumber
   , optPortSpecified   :: Bool
+  , optCacheSize       :: Int
   }
 
 defaultOptions = Options {
@@ -85,6 +87,7 @@ defaultOptions = Options {
   , optBindAddress     = Nothing
   , optPort            = 7777
   , optPortSpecified   = False
+  , optCacheSize       = 10
   }
 
 options :: [OptDescr (Options -> Options)]
@@ -110,6 +113,10 @@ options = [
       (ReqArg (\port opts -> opts { optPort = fromInteger $ read port
                                   , optPortSpecified = True }) "PORT")
       $ "Listening port (default: " ++ show (optPort defaultOptions) ++ ")"
+  , Option "C" ["cache-size"]
+      (ReqArg (\size opts -> opts { optCacheSize = read size }) "SIZE")
+      $ "Cache size in megabytes (default: " ++
+        show (optCacheSize defaultOptions) ++ ")"
   , Option "" ["import"]
       (NoArg (\opts -> opts { optImport = True }))
       "Import LambdaMOO-format database"

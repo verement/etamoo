@@ -19,6 +19,7 @@ import Data.Text.IO (hPutStrLn)
 import Data.Time (getCurrentTime, utcToLocalZonedTime, formatTime,
                   defaultTimeLocale)
 import Database.VCache (openVCache, vcache_space, readPVarIO)
+import Database.VCache.Cache (setVRefsCacheLimit)
 import Network (withSocketsDo)
 import Pipes (Pipe, runEffect, (>->), for, cat, lift, yield)
 import Pipes.Concurrent (spawn', unbounded, send, fromInput)
@@ -46,19 +47,21 @@ maxVCacheSize :: Int
 maxVCacheSize = 2000
 
 -- | Start the main server and create the first listening point.
-startServer :: Maybe FilePath -> FilePath ->
+startServer :: Maybe FilePath -> FilePath -> Int ->
                Bool -> (TVar World -> Point) -> IO ()
-startServer logFile dbFile outboundNet pf = withSocketsDo $ do
+startServer logFile dbFile cacheSize outboundNet pf = withSocketsDo $ do
   verifyPCRE
   either error return verifyBuiltins
 
   installHandler sigPIPE Ignore Nothing
 
+  (stmLogger, stopLogger) <- startLogger logFile
+  let writeLog = atomically . stmLogger
+
   openFile dbFile ReadMode >>= hClose  -- ensure file exists
   vcache <- openVCache maxVCacheSize dbFile
 
-  (stmLogger, stopLogger) <- startLogger logFile
-  let writeLog = atomically . stmLogger
+  setVRefsCacheLimit (vcache_space vcache) (cacheSize * 1000 * 1000)
 
   numCapabilities <- getNumCapabilities
 
@@ -71,6 +74,7 @@ startServer logFile dbFile outboundNet pf = withSocketsDo $ do
     , "          (Task timeouts not measured)"
     , "          (Multithreading over " <>
       pluralize numCapabilities "processor core" <> ")"
+    , "          (Using " <> T.pack (show cacheSize) <> " MB database cache)"
     ]
 
   p <- loadPersistence vcache
