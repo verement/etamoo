@@ -32,8 +32,10 @@ EtaMOO differs from LambdaMOO in a few significant ways:
   * EtaMOO uses [LMDB][] as a persistent backing store for the MOO database.
     Changes are committed on an ongoing basis for instantaneous crash
     recovery; checkpoints merely perform a quick synchronization, and are
-    otherwise unnecessary. EtaMOO provides mechanisms for importing and
-    exporting LambdaMOO-format databases to and from the EtaMOO-native format.
+    otherwise unnecessary. The persistence layer includes an automatic value
+    cache, so the entire database need not be in memory at once. EtaMOO
+    provides mechanisms for importing and exporting LambdaMOO-format databases
+    to and from the EtaMOO-native format.
 
   * EtaMOO is Unicode-aware, and will eventually include support for Unicode
     MOO strings via compile-time build option.

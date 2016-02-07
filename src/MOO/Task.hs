@@ -162,8 +162,9 @@ import Data.Text (Text)
 import Data.Text.Lazy.Builder (Builder)
 import Data.Time (UTCTime, getCurrentTime, addUTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import Database.VCache (VSpace, VTx, runVTx, getVTxSpace,
-                        PVar, readPVarIO, readPVar, writePVar, modifyPVar)
+import Database.VCache (VSpace, VTx, runVTx, getVTxSpace, deref, vref,
+                        PVar, readPVarIO, readPVar, writePVar, modifyPVar,
+                        pvar_space, VRef)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (nanosleep)
 import System.Random (Random, StdGen, newStdGen, mkStdGen, split,
@@ -815,9 +816,9 @@ findVerb acceptable name = findVerb'
                              findVerb' (objectParent obj)
             Nothing -> return (Nothing, Nothing)
 
-        searchVerbs :: [([StrT], PVar Verb)] -> VTx (Maybe Verb)
+        searchVerbs :: [([StrT], PVar (VRef Verb))] -> VTx (Maybe Verb)
         searchVerbs ((names,verbPVar):rest)
-          | verbNameMatch name names = readPVar verbPVar >>= \verb ->
+          | verbNameMatch name names = deref <$> readPVar verbPVar >>= \verb ->
             if acceptable verb then return (Just verb) else searchVerbs rest
           | otherwise = searchVerbs rest
         searchVerbs [] = return Nothing
@@ -951,9 +952,9 @@ runTick = do
 modifyProperty :: Object -> StrT -> (Property -> MOO Property) -> MOO ()
 modifyProperty obj name f = case lookupPropertyRef obj name of
   Just propPVar -> do
-    prop  <- liftVTx $ readPVar propPVar
+    prop  <- liftVTx $ deref <$> readPVar propPVar
     prop' <- f prop
-    liftVTx $ writePVar propPVar prop'
+    liftVTx $ writePVar propPVar $ vref (pvar_space propPVar) prop'
   Nothing -> raise E_PROPNF
 
 modifyVerb :: (ObjId, Object) -> Value -> (Verb -> MOO Verb) -> MOO ()
@@ -961,9 +962,9 @@ modifyVerb (oid, obj) desc f = do
   numericStrings <- serverOption supportNumericVerbnameStrings
   case lookupVerbRef numericStrings obj desc of
     Just (index, verbPVar) -> do
-      verb  <- liftVTx $ readPVar verbPVar
+      verb  <- liftVTx $ deref <$> readPVar verbPVar
       verb' <- f verb
-      liftVTx $ writePVar verbPVar verb'
+      liftVTx $ writePVar verbPVar $ vref (pvar_space verbPVar) verb'
       unless (verbNames verb `Str.equal` verbNames verb') $ do
         db <- getDatabase
         liftVTx $ modifyObject oid db $ replaceVerb index verb'
@@ -995,7 +996,8 @@ writeProperty oid name value = getObject oid >>= \maybeObj ->
       | isBuiltinProperty name -> setBuiltinProperty (oid, obj) name value
       | otherwise -> case lookupPropertyRef obj name of
         Just propPVar -> liftVTx $ modifyPVar propPVar $
-                         \prop -> prop { propertyValue = Just value }
+          \prop -> vref (pvar_space propPVar) $
+                   (deref prop) { propertyValue = Just value }
         Nothing -> return ()
     Nothing -> return ()
 

@@ -21,7 +21,8 @@ import Data.Text.Lazy.Builder (Builder, toLazyText,
 import Data.Text.Lazy.Builder.Int (decimal)
 import Data.Text.Lazy.Builder.RealFloat (realFloat)
 import Data.Word (Word)
-import Database.VCache (VSpace, VTx, runVTx, readPVar, writePVar)
+import Database.VCache (VSpace, VTx, runVTx, readPVar, modifyPVar,
+                        vref', deref')
 import System.IO (Handle, withFile, IOMode(ReadMode, WriteMode),
                   hSetBuffering, BufferMode(BlockBuffering),
                   hSetNewlineMode, NewlineMode(NewlineMode, inputNL, outputNL),
@@ -299,9 +300,9 @@ installProgram (oid, vnum, program) = do
     Nothing  -> fail $ doesNotExist "Object"
     Just obj -> case lookupVerbRef False obj (Int $ 1 + fromIntegral vnum) of
       Nothing            -> fail $ doesNotExist "Verb"
-      Just (_, verbPVar) -> liftIO $ runVTx vspace $ do
-        verb <- readPVar verbPVar
-        writePVar verbPVar verb { verbProgram = program }
+      Just (_, verbPVar) -> liftIO $ runVTx vspace $
+        modifyPVar verbPVar $ \ref ->
+        vref' vspace (deref' ref) { verbProgram = program }
 
   where doesNotExist what = what ++ " for program " ++ desc ++ " does not exist"
         desc = "#" ++ show oid ++ ":" ++ show vnum
@@ -763,7 +764,7 @@ tellObject objects (oid, Just obj) = do
   tellLn (decimal $ objectForMaybe $ listToMaybe children)
   tellLn (decimal $ nextLink objects oid objectChildren parent)
 
-  verbs <- liftVTx $ mapM (readPVar . snd) $ objectVerbs obj
+  verbs <- liftVTx $ mapM (fmap deref' . readPVar . snd) $ objectVerbs obj
   tellLn (decimal $ length verbs)
   forM_ verbs $ \verb -> do
     tellLn (Str.toBuilder $ verbNames verb)

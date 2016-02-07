@@ -48,7 +48,8 @@ import Data.IntSet (IntSet)
 import Data.List (find)
 import Data.Maybe (isJust)
 import Data.Typeable (Typeable)
-import Database.VCache (VCacheable(put, get), VSpace, VTx,
+import Database.VCache (VCacheable(put, get), VSpace, VTx, getVTxSpace,
+                        VRef, vref, vref', deref, deref',
                         PVar, newPVarIO, newPVar, readPVar, writePVar)
 import Prelude hiding (getContents)
 
@@ -62,7 +63,7 @@ import MOO.Verb
 
 import qualified MOO.String as Str
 
-type VerbDef = ([StrT], PVar Verb)
+type VerbDef = ([StrT], PVar (VRef Verb))
 
 data Object = Object {
   -- Attributes
@@ -82,7 +83,7 @@ data Object = Object {
   , objectPermF      :: Bool
 
   -- Definitions
-  , objectProperties :: HashMap StrT (PVar Property)
+  , objectProperties :: HashMap StrT (PVar (VRef Property))
   , objectVerbs      :: [VerbDef]
 } deriving Typeable
 
@@ -250,12 +251,12 @@ setProperties vspace props obj = do
   propHash <- mkHash props
   return obj { objectProperties = propHash }
 
-  where mkHash :: [Property] -> IO (HashMap StrT (PVar Property))
+  where mkHash :: [Property] -> IO (HashMap StrT (PVar (VRef Property)))
         mkHash = fmap HM.fromList . mapM mkAssoc
 
-        mkAssoc :: Property -> IO (StrT, PVar Property)
+        mkAssoc :: Property -> IO (StrT, PVar (VRef Property))
         mkAssoc prop = do
-          tvarProp <- newPVarIO vspace prop
+          tvarProp <- newPVarIO vspace (vref' vspace prop)
           return (propertyKey prop, tvarProp)
 
 propertyKey :: Property -> StrT
@@ -271,24 +272,25 @@ setVerbs vspace verbs obj = do
 
         mkVerb :: Verb -> IO VerbDef
         mkVerb verb = do
-          verbRef <- newPVarIO vspace verb
+          verbRef <- newPVarIO vspace (vref vspace verb)
           return (verbKey verb, verbRef)
 
 verbKey :: Verb -> [StrT]
 verbKey = Str.words . verbNames
 
-lookupPropertyRef :: Object -> StrT -> Maybe (PVar Property)
+lookupPropertyRef :: Object -> StrT -> Maybe (PVar (VRef Property))
 lookupPropertyRef obj name = HM.lookup name (objectProperties obj)
 
 lookupProperty :: Object -> StrT -> VTx (Maybe Property)
-lookupProperty obj name = maybe (return Nothing) (fmap Just . readPVar) $
-                          lookupPropertyRef obj name
+lookupProperty obj name = maybe (return Nothing)
+  (fmap (Just . deref) . readPVar) $ lookupPropertyRef obj name
 
 addProperty :: Property -> Object -> VTx Object
 addProperty prop obj = do
-  propPVar <- newPVar prop
+  vspace <- getVTxSpace
+  propPVar <- newPVar (vref vspace prop)
   return obj { objectProperties =
-                  HM.insert (propertyKey prop) propPVar $ objectProperties obj }
+                 HM.insert (propertyKey prop) propPVar $ objectProperties obj }
 
 addInheritedProperty :: Property -> Object -> VTx Object
 addInheritedProperty prop obj =
@@ -301,7 +303,7 @@ deleteProperty :: StrT -> Object -> VTx Object
 deleteProperty name obj =
   return obj { objectProperties = HM.delete name (objectProperties obj) }
 
-lookupVerbRef :: Bool -> Object -> Value -> Maybe (Int, PVar Verb)
+lookupVerbRef :: Bool -> Object -> Value -> Maybe (Int, PVar (VRef Verb))
 lookupVerbRef numericStrings obj (Str name) =
   second snd <$> find matchVerb (zip [0..] $ objectVerbs obj)
   where matchVerb :: (Int, VerbDef) -> Bool
@@ -320,18 +322,19 @@ lookupVerbRef _ _ _ = Nothing
 
 lookupVerb :: Bool -> Object -> Value -> VTx (Maybe Verb)
 lookupVerb numericStrings obj desc =
-  maybe (return Nothing) (fmap Just . readPVar . snd) $
+  maybe (return Nothing) (fmap (Just . deref) . readPVar . snd) $
   lookupVerbRef numericStrings obj desc
 
 replaceVerb :: Int -> Verb -> Object -> VTx Object
 replaceVerb index verb obj =
   return obj { objectVerbs = pre ++ [(verbKey verb, verbRef)] ++ tail post }
   where (pre, post) = splitAt index (objectVerbs obj) :: ([VerbDef], [VerbDef])
-        verbRef     = snd (head post)                 :: PVar Verb
+        verbRef     = snd (head post)                 :: PVar (VRef Verb)
 
 addVerb :: Verb -> Object -> VTx Object
 addVerb verb obj = do
-  verbPVar <- newPVar verb
+  vspace <- getVTxSpace
+  verbPVar <- newPVar (vref vspace verb)
   return obj { objectVerbs = objectVerbs obj ++ [(verbKey verb, verbPVar)] }
 
 deleteVerb :: Int -> Object -> VTx Object
@@ -340,12 +343,12 @@ deleteVerb index obj = return obj { objectVerbs = pre ++ tail post }
 
 definedProperties :: Object -> VTx [StrT]
 definedProperties obj = do
-  props <- mapM readPVar $ HM.elems (objectProperties obj)
+  props <- mapM (fmap deref . readPVar) $ HM.elems (objectProperties obj)
   return $ map propertyName $ filter (not . propertyInherited) props
 
 definedVerbs :: Object -> VTx [StrT]
 definedVerbs obj = do
-  verbs <- mapM (readPVar . snd) $ objectVerbs obj
+  verbs <- mapM (fmap deref . readPVar . snd) $ objectVerbs obj
   return $ map verbNames verbs
 
 renumberObject :: Object -> ObjId -> ObjId -> Database -> VTx ()
@@ -368,20 +371,26 @@ renumberObject obj old new db = do
 
 renumberOwnership :: ObjId -> ObjId -> Object -> VTx (Maybe Object)
 renumberOwnership old new obj = do
+  vspace <- getVTxSpace
+
   -- renumber property ownerships
   forM_ (HM.elems $ objectProperties obj) $ \propRef -> do
-    prop <- readPVar propRef
+    prop <- deref' <$> readPVar propRef
     case propertyOwner prop of
-      owner | owner == new -> writePVar propRef prop { propertyOwner = nothing }
-            | owner == old -> writePVar propRef prop { propertyOwner = new     }
+      owner | owner == new -> writePVar propRef $
+              vref' vspace prop { propertyOwner = nothing }
+            | owner == old -> writePVar propRef $
+              vref' vspace prop { propertyOwner = new     }
       _ -> return ()
 
   -- renumber verb ownerships
   forM_ (map snd $ objectVerbs obj) $ \verbRef -> do
-    verb <- readPVar verbRef
+    verb <- deref' <$> readPVar verbRef
     case verbOwner verb of
-      owner | owner == new -> writePVar verbRef verb { verbOwner = nothing }
-            | owner == old -> writePVar verbRef verb { verbOwner = new     }
+      owner | owner == new ->
+                writePVar verbRef $ vref' vspace verb { verbOwner = nothing }
+            | owner == old ->
+                writePVar verbRef $ vref' vspace verb { verbOwner = new     }
       _ -> return ()
 
   -- renumber object ownership

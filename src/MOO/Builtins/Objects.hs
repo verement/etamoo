@@ -9,7 +9,8 @@ import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Monoid (mempty, mappend)
 import Data.Set (Set)
 import Data.Text.Lazy.Builder (Builder)
-import Database.VCache (VTx, PVar, newPVar, readPVar, writePVar)
+import Database.VCache (VTx, PVar, newPVar, readPVar, modifyPVar, pvar_space,
+                        VRef, deref', vref', vref_space)
 import Prelude hiding (getContents)
 
 import qualified Data.HashMap.Strict as HM
@@ -119,16 +120,17 @@ bf_create = Builtin "create" 1 (Just 2)
       Just parent <- getObject oid
       HM.fromList <$> mapM mkProperty (HM.toList $ objectProperties parent)
 
-        where mkProperty :: (StrT, PVar Property) -> MOO (StrT, PVar Property)
+        where mkProperty :: (StrT, PVar (VRef Property)) ->
+                            MOO (StrT, PVar (VRef Property))
               mkProperty (name, propPVar) = liftVTx $ do
-                prop <- readPVar propPVar
+                prop <- deref' <$> readPVar propPVar
                 let prop' = prop {
                         propertyValue     = Nothing
                       , propertyInherited = True
                       , propertyOwner     = if propertyPermC prop then ownerOid
                                             else propertyOwner prop
                       }
-                propPVar' <- newPVar prop'
+                propPVar' <- newPVar $ vref' (pvar_space propPVar) prop'
                 return (name, propPVar')
 
   let newObj = initObject {
@@ -295,9 +297,9 @@ bf_object_bytes = Builtin "object_bytes" 1 (Just 1)
   obj <- checkValid object
 
   propertyBytes <- fmap storageBytes $ liftVTx $
-                   mapM readPVar $ HM.elems (objectProperties obj)
+    mapM (fmap deref' . readPVar) $ HM.elems (objectProperties obj)
   verbBytes     <- fmap storageBytes $ liftVTx $
-                   mapM (readPVar . snd) $ objectVerbs obj
+    mapM (fmap deref' . readPVar . snd) $ objectVerbs obj
 
   return $ Int $ fromIntegral $ storageBytes obj + propertyBytes + verbBytes
 
@@ -448,8 +450,8 @@ bf_set_property_info = Builtin "set_property_info" 3 (Just 3)
       db <- getDatabase
       flip (modifyDescendants db) object $ \obj -> do
         let Just propPVar = lookupPropertyRef obj oldName
-        prop <- readPVar propPVar
-        writePVar propPVar $ prop { propertyName = newName }
+        modifyPVar propPVar $ \ref ->
+          vref' (vref_space ref) $ (deref' ref) { propertyName = newName }
 
         return obj { objectProperties =
                         HM.insert newName propPVar $
