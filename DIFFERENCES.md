@@ -45,10 +45,10 @@ differences include:
     task. In these cases, the effect is the same as if `suspend(0)` had been
     called. These cases include:
 
-        `fork`
-        `listen()`
-        `open_network_connection()`
-        `memory_usage()`
+      * `fork`
+      * `listen()`
+      * `open_network_connection()`
+      * `memory_usage()`
 
   * In both EtaMOO and LambdaMOO, the `crypt()` built-in is a thin wrapper
     around the host system's `crypt()` library function. LambdaMOO doesn't
