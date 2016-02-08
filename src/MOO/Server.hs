@@ -24,10 +24,11 @@ import Network (withSocketsDo)
 import Pipes (Pipe, runEffect, (>->), for, cat, lift, yield)
 import Pipes.Concurrent (spawn', unbounded, send, fromInput)
 import System.IO (IOMode(ReadMode, AppendMode), BufferMode(LineBuffering),
-                  openFile, stderr, hSetBuffering, hClose)
-import System.Posix (installHandler,
+                  Handle, openFile, stderr, hSetBuffering, hClose)
+import System.Posix (handleToFd, dupTo, stdInput, stdOutput, stdError,
                      sigPIPE, sigHUP, sigINT, sigTERM, sigUSR1, sigUSR2,
-                     Handler(Ignore, Catch, CatchOnce))
+                     openFd, closeFd, OpenMode(ReadWrite), defaultFileFlags,
+                     installHandler, Handler(Ignore, Catch, CatchOnce))
 
 import qualified Data.Map as M
 import qualified Data.Text as T
@@ -85,6 +86,8 @@ startServer logFile dbFile cacheSize outboundNet pf = withSocketsDo $ do
   writeLog $ "LOADING: Database checkpoint from " <> T.pack checkpoint
 
   world' <- newWorld stmLogger p outboundNet
+
+  redirectStdFd
 
   (checkpoint, stopCheckpointer) <- startCheckpointer world'
   atomically $ modifyTVar world' $ \world -> world { checkpoint = checkpoint }
@@ -146,9 +149,16 @@ shutdownServer world' message = do
 
   return ()
 
+redirectStdFd :: IO ()
+redirectStdFd = do
+  devNull <- openFd "/dev/null" ReadWrite Nothing defaultFileFlags
+  devNull `dupTo` stdInput
+  devNull `dupTo` stdOutput
+  closeFd devNull
+
 startLogger :: Maybe FilePath -> IO (Text -> STM (), IO ())
 startLogger dest = do
-  handle <- maybe (return stderr) (`openFile` AppendMode) dest
+  handle <- maybe (return stderr) openLogFile dest
   hSetBuffering handle LineBuffering
 
   (output, input, seal) <- spawn' unbounded
@@ -163,7 +173,13 @@ startLogger dest = do
 
   return (writeLog, stopLogger)
 
-  where timestamp :: Pipe Text Text IO ()
+  where openLogFile :: FilePath -> IO Handle
+        openLogFile path = do
+          fd <- handleToFd =<< openFile path AppendMode
+          fd `dupTo` stdError >> closeFd fd
+          return stderr
+
+        timestamp :: Pipe Text Text IO ()
         timestamp = for cat $ \line -> do
           zonedTime <- lift $ utcToLocalZonedTime =<< getCurrentTime
           let timestamp = formatTime defaultTimeLocale "%b %_d %T: " zonedTime

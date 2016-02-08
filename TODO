@@ -35,7 +35,6 @@
 ** Revisit read() invariant
 ** Enhance version number with git commit info
 ** Unicode strings in database file
-** Close stdin/stdout
 ** User reconnecting to different listening points
 
 * Before v1.0
