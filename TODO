@@ -20,7 +20,6 @@
 ** § 5.2 Server Assumptions About the Database
 *** § 5.2.2 Server Messages Set in the Database
 **** server_full_msg
-**** timeout_msg
 *** § 5.2.6 Player Input Handlers
 **** $do_command uncaught exceptions
 
@@ -40,7 +39,6 @@
 * Before v1.0
 ** Fix read() and OOB
 ** Emergency Wizard Mode
-** L.server_options.connect_timeout
 ** Top-level Haskell exception handling
 ** open_network_connection()
 ** hold-input

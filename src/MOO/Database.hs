@@ -22,6 +22,7 @@ module MOO.Database (
   , getServerOption'
   , loadServerOptions
   , getServerMessage
+  , getConnectTimeout'
   , loadPersistence
   , syncPersistence
   , saveDatabase
@@ -185,7 +186,7 @@ data ServerOptions = Options {
   , bgTicks :: Int
     -- ^ The number of ticks allotted to background tasks
 
-  , connectTimeout :: IntT
+  , connectTimeout :: Maybe IntT
     -- ^ The maximum number of seconds to allow an un-logged-in in-bound
     -- connection to remain open
 
@@ -253,7 +254,7 @@ loadServerOptions = do
   maxStackDepth   <- option "max_stack_depth"
   queuedTaskLimit <- option "queued_task_limit"
 
-  connectTimeout         <- option "connect_timeout"
+  connectTimeout         <- getConnectTimeout systemObject
   outboundConnectTimeout <- option "outbound_connect_timeout"
   nameLookupTimeout      <- option "name_lookup_timeout"
 
@@ -285,9 +286,8 @@ loadServerOptions = do
              Just (Int limit) | limit >= 0 -> Just (fromIntegral limit)
              _                             -> Nothing
 
-        , connectTimeout = case connectTimeout of
-             Just (Int secs) | secs > 0 -> secs
-             _                          -> 300
+        , connectTimeout = connectTimeout
+
         , outboundConnectTimeout = case outboundConnectTimeout of
              Just (Int secs) | secs > 0 -> secs
              _                          -> 5
@@ -324,6 +324,18 @@ getServerMessage oid msg def = do
           Str s -> (Str.toText s :) <$> strings vs
           _     -> Nothing
         strings [] = Just []
+
+getConnectTimeout :: ObjId -> MOO (Maybe IntT)
+getConnectTimeout oid = do
+  connectTimeout <- getServerOption' oid "connect_timeout"
+  case connectTimeout of
+    Nothing         | oid /= systemObject -> getConnectTimeout systemObject
+    Just (Int secs) | secs > 0            -> return (Just secs)
+    Just  _                               -> return Nothing
+    Nothing                               -> return (Just 300)
+
+getConnectTimeout' :: ObjId -> MOO Value
+getConnectTimeout' oid = maybe zero Int <$> getConnectTimeout oid
 
 type Connected = [(ObjId, ObjId)]
 

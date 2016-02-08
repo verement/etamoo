@@ -40,7 +40,8 @@ module MOO.Connection (
   ) where
 
 import Control.Applicative ((<$>))
-import Control.Concurrent (forkIO)
+import Control.Concurrent (forkIO, newEmptyMVar, takeMVar, putMVar)
+import Control.Concurrent.Async (Async, async, cancel)
 import Control.Concurrent.STM (STM, TVar, TMVar, atomically, newTVar,
                                newEmptyTMVar, takeTMVar,
                                putTMVar, tryPutTMVar, tryTakeTMVar,
@@ -97,6 +98,7 @@ data Connection = Connection {
   , connectionName             :: ConnectionName
   , connectionConnectedTime    :: TVar (Maybe UTCTime)
   , connectionActivityTime     :: TVar UTCTime
+  , connectionTimeout          :: Async ()
 
   , connectionOutputDelimiters :: TVar (Text, Text)
   , connectionOptions          :: TVar ConnectionOptions
@@ -274,11 +276,32 @@ connectionHandler world' object printMessages connectionName (input, output) =
           now <- getCurrentTime
           vspace <- persistenceVSpace . persistence <$> readTVarIO world'
 
-          runVTx vspace $ do
+          timeoutConnection <- newEmptyMVar
+          timeoutAsync <- async $ do
+            conn <- takeMVar timeoutConnection
+            timeout <- runTask =<< newTask world' nothing
+              (getConnectTimeout' object)
+            case timeout >>= toMicroseconds of
+              Just usecs | usecs > 0 -> do
+                delay usecs
+                player <- readTVarIO (connectionPlayer conn)
+                let comp = do
+                      world <- getWorld
+                      connName <- liftSTM connectionName
+                      liftSTM $ writeLog world $ "TIMEOUT: #" <>
+                        T.pack (show player) <> " on " <> T.pack connName
+                      printMessage conn timeoutMsg
+                      liftSTM $ closeConnection conn
+                      liftVTx $ updateConnections world' $ M.delete player
+                      return zero
+                void $ runTask =<< newTask world' player comp
+              _ -> return ()
+
+          connection <- runVTx vspace $ do
             (world, connectionId, nextId,
              connection, inputQueue) <- DV.liftSTM $ do
-              world <- readTVar world'
 
+              world <- readTVar world'
               let connectionId = nextConnectionId world
 
               name <- connectionName
@@ -312,6 +335,7 @@ connectionHandler world' object printMessages connectionName (input, output) =
                     , connectionName             = connectionName
                     , connectionConnectedTime    = cTimeVar
                     , connectionActivityTime     = aTimeVar
+                    , connectionTimeout          = timeoutAsync
 
                     , connectionOutputDelimiters = delimsVar
                     , connectionOptions          = optionsVar
@@ -331,6 +355,9 @@ connectionHandler world' object printMessages connectionName (input, output) =
 
             return connection
 
+          putMVar timeoutConnection connection
+          return connection
+
         deleteConnection :: Connection -> IO ()
         deleteConnection conn = do
           how <- atomically $ takeTMVar (connectionDisconnect conn)
@@ -345,8 +372,7 @@ connectionHandler world' object printMessages connectionName (input, output) =
                     liftSTM $ writeLog world $ "CLIENT DISCONNECTED: " <>
                       Str.toText objectName <> " on " <> T.pack connName
                     return zero
-              void $ runTask =<< newTask world' player
-                (resetLimits True >> comp)
+              void $ runTask =<< newTask world' player comp
             _ -> return ()
 
 doDisconnected :: TVar World -> ObjId -> ObjId -> Disconnect -> IO ()
@@ -433,6 +459,7 @@ runConnection world' conn = loop
 
         connectPlayer :: ObjId -> ObjId -> IO ()
         connectPlayer player maxObject = do
+          cancel (connectionTimeout conn)
           now <- getCurrentTime
 
           oldPlayer <- atomically $ swapTVar (connectionPlayer conn) player
@@ -800,3 +827,4 @@ redirectToMsg   = msgFor "redirect_to_msg"
 serverFullMsg   = msgFor "server_full_msg"
   [ "*** Sorry, but the server cannot accept any more connections right now."
   , "*** Please try again later." ]
+timeoutMsg      = msgFor "timeout_msg" ["*** Timed-out waiting for login. ***"]
