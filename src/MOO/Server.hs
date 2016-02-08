@@ -5,7 +5,7 @@ module MOO.Server (startServer, importDatabase, exportDatabase) where
 
 import Control.Applicative ((<$>))
 import Control.Arrow ((&&&))
-import Control.Concurrent (takeMVar, getNumCapabilities, threadDelay)
+import Control.Concurrent (takeMVar, putMVar, getNumCapabilities, threadDelay)
 import Control.Concurrent.Async (async, withAsync, waitEither, wait)
 import Control.Concurrent.STM (STM, TVar, atomically, retry, newEmptyTMVarIO,
                                tryPutTMVar, putTMVar, tryTakeTMVar, takeTMVar,
@@ -25,7 +25,9 @@ import Pipes (Pipe, runEffect, (>->), for, cat, lift, yield)
 import Pipes.Concurrent (spawn', unbounded, send, fromInput)
 import System.IO (IOMode(ReadMode, AppendMode), BufferMode(LineBuffering),
                   openFile, stderr, hSetBuffering, hClose)
-import System.Posix (installHandler, sigPIPE, Handler(Ignore))
+import System.Posix (installHandler,
+                     sigPIPE, sigHUP, sigINT, sigTERM, sigUSR1, sigUSR2,
+                     Handler(Ignore, Catch, CatchOnce))
 
 import qualified Data.Map as M
 import qualified Data.Text as T
@@ -84,6 +86,19 @@ startServer logFile dbFile cacheSize outboundNet pf = withSocketsDo $ do
 
   world' <- newWorld stmLogger p outboundNet
 
+  (checkpoint, stopCheckpointer) <- startCheckpointer world'
+  atomically $ modifyTVar world' $ \world -> world { checkpoint = checkpoint }
+
+  let shutdownHandler = CatchOnce $ do
+        var <- shutdownMessage <$> readTVarIO world'
+        putMVar var "shutdown signal received"
+      checkpointHandler = Catch $ atomically checkpoint
+    in do installHandler sigHUP  Ignore            Nothing
+          installHandler sigINT  shutdownHandler   Nothing
+          installHandler sigTERM shutdownHandler   Nothing
+          installHandler sigUSR1 shutdownHandler   Nothing  -- remote shutdown
+          installHandler sigUSR2 checkpointHandler Nothing  -- remote checkpoint
+
   connected <- readPVarIO (persistenceConnected p)
   unless (null connected) $ do
     writeLog $ "Disconnecting formerly active connections: " <>
@@ -94,11 +109,9 @@ startServer logFile dbFile cacheSize outboundNet pf = withSocketsDo $ do
   runTask =<< newTask world' nothing
     (resetLimits True >> callSystemVerb "server_started" [] >> return zero)
 
-  (checkpoint, stopCheckpointer) <- startCheckpointer world'
-  atomically $ modifyTVar world' $ \world -> world { checkpoint = checkpoint }
-
   createListener world' systemObject (pf world') True
 
+  -- Normal server operation: wait for a shutdown signal
   message <- takeMVar . shutdownMessage =<< readTVarIO world'
 
   stopCheckpointer

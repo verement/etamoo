@@ -45,7 +45,6 @@
 ** Top-level Haskell exception handling
 ** open_network_connection()
 ** hold-input
-** Trap ^C interrupts
 
 * For v2.0 or later
 ** General Unicode support
