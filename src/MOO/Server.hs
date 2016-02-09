@@ -138,22 +138,22 @@ startServer logFile dbFile cacheSize emergency outboundNet pf =
 
 shutdownServer :: TVar World -> Text -> IO ()
 shutdownServer world' message = do
+  writeLog <- writeLog <$> readTVarIO world'
+
   atomically $ do
+    writeLog $ "SHUTDOWN: " <> message
+
     world <- readTVar world'
-
-    writeLog world $ "SHUTDOWN: " <> message
-
     forM_ (M.elems $ connections world) $ \conn -> do
       -- XXX probably not good to send to ALL connections
       sendToConnection conn $ "*** Shutting down: " <> message <> " ***"
       closeConnection conn
 
-  -- Wait for all connections to close
+  atomically $ writeLog "Waiting for connections to close..."
+
   atomically $ do
     world <- readTVar world'
     unless (M.null $ connections world) retry
-
-  return ()
 
 redirectStdFd :: IO ()
 redirectStdFd = do
