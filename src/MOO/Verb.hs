@@ -77,7 +77,7 @@ newVerb vspace = Verb {
 data ObjSpec = ObjNone  -- ^ none
              | ObjAny   -- ^ any
              | ObjThis  -- ^ this
-             deriving (Enum, Bounded, Typeable)
+             deriving (Eq, Enum, Bounded, Typeable)
 
 instance VCacheable ObjSpec where
   put = put . fromEnum

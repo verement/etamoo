@@ -37,21 +37,23 @@ module MOO.Connection (
 
   , setConnectionOption
   , getConnectionOptions
+
+  , proxyConnection
   ) where
 
 import Control.Applicative ((<$>))
 import Control.Concurrent (forkIO, newEmptyMVar, takeMVar, putMVar)
 import Control.Concurrent.Async (Async, async, cancel)
-import Control.Concurrent.STM (STM, TVar, TMVar, atomically, newTVar,
-                               newEmptyTMVar, takeTMVar,
+import Control.Concurrent.STM (STM, TVar, TMVar, atomically, newTVar, newTVarIO,
+                               newEmptyTMVar, newEmptyTMVarIO, takeTMVar,
                                putTMVar, tryPutTMVar, tryTakeTMVar,
                                readTVar, writeTVar, modifyTVar, swapTVar,
                                readTVarIO)
-import Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueue, closeTBMQueue,
+import Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueue, newTBMQueueIO,
                                         readTBMQueue, writeTBMQueue,
                                         tryReadTBMQueue, tryWriteTBMQueue,
                                         unGetTBMQueue, isEmptyTBMQueue,
-                                        freeSlotsTBMQueue)
+                                        freeSlotsTBMQueue, closeTBMQueue)
 import Control.Exception (SomeException, try, bracket, catch)
 import Control.Monad ((<=<), join, when, unless, foldM, forever, void)
 import Control.Monad.Cont (callCC)
@@ -828,3 +830,48 @@ serverFullMsg   = msgFor "server_full_msg"
   [ "*** Sorry, but the server cannot accept any more connections right now."
   , "*** Please try again later." ]
 timeoutMsg      = msgFor "timeout_msg" ["*** Timed-out waiting for login. ***"]
+
+-- | Create a proxy connection for console output (used by Emergency Wizard
+-- Mode).
+proxyConnection :: ObjId -> IO Connection
+proxyConnection player = do
+  player' <- newTVarIO player
+
+  input  <- newTBMQueueIO maxQueueLength
+  output <- newTBMQueueIO maxQueueLength
+
+  now <- getCurrentTime
+  connectedTime <- newTVarIO (Just now)
+  activityTime  <- newTVarIO now
+
+  timeout <- async $ return ()
+
+  outputDelimiters <- newTVarIO (T.empty, T.empty)
+  options <- newTVarIO initConnectionOptions
+
+  reader     <- newEmptyTMVarIO
+  disconnect <- newEmptyTMVarIO
+
+  let conn = Connection {
+          connectionObject           = systemObject
+        , connectionPlayer           = player'
+        , connectionPrintMessages    = True
+
+        , connectionInput            = input
+        , connectionOutput           = output
+
+        , connectionName             = return "console"
+        , connectionConnectedTime    = connectedTime
+        , connectionActivityTime     = activityTime
+        , connectionTimeout          = timeout
+
+        , connectionOutputDelimiters = outputDelimiters
+        , connectionOptions          = options
+
+        , connectionReader           = reader
+        , connectionDisconnect       = disconnect
+        }
+
+  forkIO $ runEffect $ connectionWrite conn >-> for cat (lift . BS.putStr)
+
+  return conn

@@ -11,7 +11,7 @@ import Control.Concurrent.STM (STM, TVar, atomically, retry, newEmptyTMVarIO,
                                tryPutTMVar, putTMVar, tryTakeTMVar, takeTMVar,
                                readTVarIO, readTVar, modifyTVar)
 import Control.Exception (SomeException, try)
-import Control.Monad (forM_, void, unless)
+import Control.Monad (forM_, void, when, unless)
 import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
 import Data.Text (Text)
@@ -38,6 +38,7 @@ import MOO.Builtins.Match (verifyPCRE)
 import MOO.Connection
 import MOO.Database
 import MOO.Database.LambdaMOO
+import MOO.Emergency
 import MOO.Network
 import MOO.Object
 import MOO.Task
@@ -50,9 +51,11 @@ maxVCacheSize :: Int
 maxVCacheSize = 2000
 
 -- | Start the main server and create the first listening point.
-startServer :: Maybe FilePath -> FilePath -> Int ->
+startServer :: Maybe FilePath -> FilePath -> Int -> Bool ->
                Bool -> (TVar World -> Point) -> IO ()
-startServer logFile dbFile cacheSize outboundNet pf = withSocketsDo $ do
+startServer logFile dbFile cacheSize emergency outboundNet pf =
+  withSocketsDo $ do
+
   verifyPCRE
   either error return verifyBuiltins
 
@@ -86,6 +89,9 @@ startServer logFile dbFile cacheSize outboundNet pf = withSocketsDo $ do
   writeLog $ "LOADING: Database checkpoint from " <> T.pack checkpoint
 
   world' <- newWorld stmLogger p outboundNet
+
+  -- Emergency Wizard Mode
+  when emergency $ emergencyMode world'
 
   redirectStdFd
 

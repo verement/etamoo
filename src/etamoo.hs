@@ -27,10 +27,10 @@ run opts
                                        (fromJust $ optOutputDB opts)
   | optExport    opts = exportDatabase (fromJust $ optInputDB  opts)
                                        (fromJust $ optOutputDB opts)
-  | optEmergency opts = error "Emergency Wizard Mode not yet implemented"
   | otherwise         = startServer (optLogFile opts)
                         (fromJust $ optInputDB opts)
                         (optCacheSize opts)
+                        (optEmergency opts)
                         (optOutboundNetwork opts)
                         (const $ TCP (optBindAddress opts) (optPort opts))
 

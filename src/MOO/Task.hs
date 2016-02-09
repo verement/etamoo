@@ -112,6 +112,7 @@ module MOO.Task (
   , passException
   , handleDebug
   , timeoutException
+  , formatTraceback
 
   -- * Utility Check Functions
   , isWizard

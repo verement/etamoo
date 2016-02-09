@@ -1,5 +1,5 @@
 
-module MOO.Parser ( parseProgram, parseNum, parseObj, keywords ) where
+module MOO.Parser (parseProgram, parseExpr, parseNum, parseObj, keywords) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ((&&&))
@@ -569,6 +569,9 @@ parseProgram input = either (Left . errors) Right $
 
         indent :: String -> String
         indent = ("  " ++)
+
+parseExpr :: Text -> Either ParseError Expr
+parseExpr = runParser (between whiteSpace eof expression) initParserState ""
 
 -- Auxiliary parser interface
 

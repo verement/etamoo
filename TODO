@@ -38,7 +38,6 @@
 
 * Before v1.0
 ** Fix read() and OOB
-** Emergency Wizard Mode
 ** Top-level Haskell exception handling
 ** open_network_connection()
 ** hold-input

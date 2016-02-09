@@ -86,6 +86,7 @@ executable etamoo
                        MOO.Connection
                        MOO.Database
                        MOO.Database.LambdaMOO
+                       MOO.Emergency
                        MOO.List
                        MOO.Network
                        MOO.Network.Console
