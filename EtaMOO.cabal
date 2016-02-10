@@ -89,7 +89,6 @@ executable etamoo
                        MOO.Emergency
                        MOO.List
                        MOO.Network
-                       MOO.Network.Console
                        MOO.Network.TCP
                        MOO.Object
                        MOO.Parser

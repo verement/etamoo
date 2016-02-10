@@ -22,7 +22,6 @@ import Data.Text (Text)
 import System.IO.Error (isPermissionError)
 
 import MOO.Connection (connectionHandler)
-import MOO.Network.Console (createConsoleListener)
 import MOO.Network.TCP (HostName, PortNumber, createTCPListener)
 import MOO.Object
 import {-# SOURCE #-} MOO.Task
@@ -31,14 +30,11 @@ import MOO.Types
 import qualified Data.Map as M
 import qualified Data.Text as T
 
-data Point = Console (TVar World) | TCP (Maybe HostName) PortNumber
+data Point = TCP (Maybe HostName) PortNumber
            deriving (Eq)
 
 instance Ord Point where
   TCP _ port1 `compare` TCP _ port2 = port1 `compare` port2
-  TCP{}       `compare` _           = GT
-  Console{}   `compare` Console{}   = EQ
-  Console{}   `compare` _           = LT
 
 data Listener = Listener {
     listenerObject        :: ObjId
@@ -60,19 +56,16 @@ value2point :: Value -> MOO Point
 value2point value = do
   world <- getWorld
   case value of
-    Int port      -> return $ TCP (bindAddress world) (fromIntegral port)
-    Str "Console" -> Console <$> getWorld'
-    _             -> raise E_TYPE
+    Int port -> return $ TCP (bindAddress world) (fromIntegral port)
+    _        -> raise E_TYPE
 
 point2value :: Point -> Value
 point2value point = case point of
   TCP _ port -> Int (fromIntegral port)
-  Console{}  -> Str "Console"
 
 point2text :: Point -> Text
 point2text point = case point of
   TCP _ port -> "port " <> T.pack (show port)
-  Console{}  -> "console"
 
 createListener :: TVar World -> ObjId -> Point -> Bool -> IO Listener
 createListener world' object point printMessages = do
@@ -84,8 +77,7 @@ createListener world' object point printMessages = do
       handler = connectionHandler world' object printMessages
 
   listener <- case point of
-    TCP{}     -> createTCPListener     listener handler
-    Console{} -> createConsoleListener listener handler
+    TCP{} -> createTCPListener listener handler
 
   world <- readTVarIO world'
   let canon = listenerPoint listener

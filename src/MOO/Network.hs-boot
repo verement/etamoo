@@ -14,7 +14,7 @@ import Network.Socket (HostName, PortNumber)
 import {-# SOURCE #-} MOO.Task
 import MOO.Types (ObjId)
 
-data Point = Console (TVar World) | TCP (Maybe HostName) PortNumber
+data Point = TCP (Maybe HostName) PortNumber
 
 data Listener = Listener {
     listenerObject        :: ObjId
