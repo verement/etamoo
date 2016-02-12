@@ -1,7 +1,6 @@
 -*- Outline -*-
 
 * § 3 The Built-in Command Parser
-** hold-input connection option
 ** .program built-in command
 ** L.do_command() suspending?
    - re-examine all possible results
@@ -9,7 +8,6 @@
 ** § 4.4 Built-in Functions
 *** § 4.4.4 Operations on Network Connections
 **** open_network_connection()
-**** hold-input
 *** § 4.4.8 Server Statistics and Miscellaneous Information
 **** verb_cache_stats()
 **** log_cache_stats()
@@ -37,10 +35,8 @@
 ** User reconnecting to different listening points
 
 * Before v1.0
-** Fix read() and OOB
 ** Top-level Haskell exception handling
 ** open_network_connection()
-** hold-input
 
 * For v2.0 or later
 ** General Unicode support

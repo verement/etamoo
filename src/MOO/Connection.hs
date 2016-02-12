@@ -48,7 +48,7 @@ import Control.Concurrent.STM (STM, TVar, TMVar, atomically, newTVar, newTVarIO,
                                newEmptyTMVar, newEmptyTMVarIO, takeTMVar,
                                putTMVar, tryPutTMVar, tryTakeTMVar,
                                readTVar, writeTVar, modifyTVar, swapTVar,
-                               readTVarIO)
+                               readTVarIO, check)
 import Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueue, newTBMQueueIO,
                                         readTBMQueue, writeTBMQueue,
                                         tryReadTBMQueue, tryWriteTBMQueue,
@@ -61,8 +61,9 @@ import Control.Monad.Reader (asks)
 import Control.Monad.State (get, modify)
 import Control.Monad.Trans (lift)
 import Data.ByteString (ByteString)
+import Data.Either (isRight)
 import Data.Map (Map)
-import Data.Maybe (fromMaybe, isNothing)
+import Data.Maybe (fromMaybe, isJust, isNothing)
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import Data.Text.Encoding (Decoding(Some), encodeUtf8, streamDecodeUtf8With)
@@ -390,41 +391,43 @@ doDisconnected world' object player how = do
 
 runConnection :: TVar World -> Connection -> IO ()
 runConnection world' conn = loop
-  where loop = do
-          (line, reader) <- atomically $ do
-            line <- readTBMQueue (connectionInput conn)
-            reader <- tryTakeTMVar (connectionReader conn)
-            return (line, reader)
 
-          case (reader, line) of
-            (Nothing,          Just line) -> processLine' line   >> loop
-            (Just (Wake wake), Just line) -> wake (Str line)     >> loop
-            (Just (Wake wake), Nothing)   -> wake (Err E_INVARG)
-            (Nothing,          Nothing)   -> return ()
+  where loop :: IO ()
+        loop = do
+          (options, band, reader) <- atomically $ do
+            options <- readTVar     (connectionOptions conn)
+            input   <- readTBMQueue (connectionInput   conn)
 
-        processLine' :: StrT -> IO ()
-        processLine' line = do
-          options <- readTVarIO (connectionOptions conn)
-          if optionDisableOOB options
-            then processLine        options line
-            else processLineWithOOB options line
+            let band = maybe (Right Nothing)
+                             (fmap Just . inputBand options) input
+            reader <- if isRight band then tryTakeTMVar (connectionReader conn)
+                      else return Nothing
 
-        processLineWithOOB :: ConnectionOptions -> StrT -> IO ()
-        processLineWithOOB options line
-          | isOOBQuoted line' = processLine options (unquote line)
-          | isOOB       line' = processOOB                   line
-          | otherwise         = processLine options          line
-          where line'   = Str.toText line
-                unquote = Str.drop (T.length outOfBandQuotePrefix)
+            when (isJust input && isRight band && isNothing reader) $
+              check (not $ optionHoldInput options)
+            return (options, band, reader)
 
-        processOOB :: StrT -> IO ()
-        processOOB line =
-          void $ runServerVerb' "do_out_of_band_command" (cmdWords line) line
+          either processOutOfBand (processInBand options reader) band
 
-        processLine :: ConnectionOptions -> StrT -> IO ()
-        processLine options line = do
+        processOutOfBand :: StrT -> IO ()
+        processOutOfBand input = doOutOfBandCommand input >> loop
+
+        processInBand :: ConnectionOptions -> Maybe Wake -> Maybe StrT -> IO ()
+        processInBand options reader input =
+          case (input, reader) of
+            (Just input, Nothing         ) -> doCommand options input  >> loop
+            (Just input, Just (Wake wake)) -> wake         (Str input) >> loop
+            (Nothing   , Just (Wake wake)) -> wake         (Err E_INVARG)
+            (Nothing   , Nothing         ) -> return ()
+
+        doOutOfBandCommand :: StrT -> IO ()
+        doOutOfBandCommand input = void $
+          runServerVerb' "do_out_of_band_command" (cmdWords input) input
+
+        doCommand :: ConnectionOptions -> StrT -> IO ()
+        doCommand options line = do
           player <- readTVarIO (connectionPlayer conn)
-          if player < 0 then processUnLoggedIn line
+          if player < 0 then doLoginCommand line
             else do
             let cmd = parseCommand (Str.toText line)
             case M.lookup (Str.toText $ commandVerb cmd)
@@ -446,8 +449,8 @@ runConnection world' conn = loop
                     Just value | truthOf value -> return zero
                     _                          -> runCommand cmd
 
-        processUnLoggedIn :: StrT -> IO ()
-        processUnLoggedIn line = do
+        doLoginCommand :: StrT -> IO ()
+        doLoginCommand line = do
           result <- runServerTask $ do
             maxObject <- maxObject <$> getDatabase
             player <- fromMaybe zero <$>
@@ -520,6 +523,16 @@ runConnection world' conn = loop
 
         cmdWords :: StrT -> [Value]
         cmdWords = map Str . parseWords . Str.toText
+
+-- | Classify input as out-of-band (Left) or in-band (Right).
+inputBand :: ConnectionOptions -> StrT -> Either StrT StrT
+inputBand options input
+  | optionDisableOOB options = Right          input
+  | isOOB       input'       = Left           input
+  | isOOBQuoted input'       = Right (unquote input)
+  | otherwise                = Right          input
+  where input'  = Str.toText input
+        unquote = Str.drop (T.length outOfBandQuotePrefix)
 
 -- | Connection reading thread: deliver messages from the network to our input
 -- 'TBMQueue' until EOF, handling binary mode and the flush command, if any.
@@ -664,13 +677,21 @@ serverMessage conn msg =
 
 readFromConnection :: ObjId -> Bool -> MOO Value
 readFromConnection oid nonBlocking = withConnection oid $ \conn -> do
-  input <- liftSTM $ tryReadTBMQueue (connectionInput conn)
+  let queue  = connectionInput conn
+      unRead = liftSTM . unGetTBMQueue queue
+
+  input   <- liftSTM $ tryReadTBMQueue queue
+  options <- liftSTM $ readTVar (connectionOptions conn)
+
   case input of
-    Just (Just line) -> return (Str line)
+    Just (Just input) -> case inputBand options input of
+      Right input     -> return (Str input)
+      _ | nonBlocking -> unRead input >> return zero
+      _               -> unRead input >> suspend conn
     Just Nothing
-      | nonBlocking  -> return zero
-      | otherwise    -> suspend conn
-    Nothing          -> raise E_INVARG
+      | nonBlocking   -> return zero
+      | otherwise     -> suspend conn
+    Nothing           -> raise E_INVARG
 
   where suspend :: Connection -> MOO Value
         suspend conn = do
