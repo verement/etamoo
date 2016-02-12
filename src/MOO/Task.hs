@@ -768,7 +768,7 @@ updateConnections world' f = do
   DV.liftSTM $ writeTVar world' world { connections = connections' }
 
   writePVar (persistenceConnected $ persistence world) $ M.foldMapWithKey
-    (\player conn -> [(player, connectionObject conn)]) connections'
+    (\player conn -> [(player, connectionListener conn)]) connections'
 
 getTask :: TaskId -> MOO (Maybe Task)
 getTask taskId = M.lookup taskId . tasks <$> getWorld

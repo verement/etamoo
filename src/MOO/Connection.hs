@@ -6,7 +6,7 @@ module MOO.Connection (
   , ConnectionHandler
   , Disconnect(..)
   , connectionHandler
-  , connectionObject
+  , connectionListener
   , doDisconnected
 
   , firstConnectionId
@@ -91,7 +91,7 @@ import qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 data Connection = Connection {
-    connectionObject           :: ObjId
+    connectionListener         :: ObjId
   , connectionPlayer           :: TVar ObjId
   , connectionPrintMessages    :: Bool
 
@@ -258,7 +258,7 @@ type ConnectionHandler = ConnectionName -> (Producer ByteString IO (),
 data Disconnect = Disconnected | ClientDisconnected
 
 connectionHandler :: TVar World -> ObjId -> Bool -> ConnectionHandler
-connectionHandler world' object printMessages connectionName (input, output) =
+connectionHandler world' listener printMessages connectionName (input, output) =
   bracket newConnection deleteConnection $ \conn -> do
     forkIO $ runConnection world' conn
 
@@ -283,7 +283,7 @@ connectionHandler world' object printMessages connectionName (input, output) =
           timeoutAsync <- async $ do
             conn <- takeMVar timeoutConnection
             timeout <- runTask =<< newTask world' nothing
-              (getConnectTimeout' object)
+              (getConnectTimeout' listener)
             case timeout >>= toMicroseconds of
               Just usecs | usecs > 0 -> do
                 delay usecs
@@ -328,7 +328,7 @@ connectionHandler world' object printMessages connectionName (input, output) =
               disconnectVar <- newEmptyTMVar
 
               let connection = Connection {
-                      connectionObject           = object
+                      connectionListener         = listener
                     , connectionPlayer           = playerVar
                     , connectionPrintMessages    = printMessages
 
@@ -365,7 +365,7 @@ connectionHandler world' object printMessages connectionName (input, output) =
         deleteConnection conn = do
           how <- atomically $ takeTMVar (connectionDisconnect conn)
           player <- readTVarIO (connectionPlayer conn)
-          doDisconnected world' object player how
+          doDisconnected world' listener player how
           case how of
             ClientDisconnected -> do
               let comp = do
@@ -379,14 +379,14 @@ connectionHandler world' object printMessages connectionName (input, output) =
             _ -> return ()
 
 doDisconnected :: TVar World -> ObjId -> ObjId -> Disconnect -> IO ()
-doDisconnected world' object player how = do
+doDisconnected world' listener player how = do
   let systemVerb = case how of
         Disconnected       -> "user_disconnected"
         ClientDisconnected -> "user_client_disconnected"
       comp = do
         liftVTx $ updateConnections world' $ M.delete player
         fromMaybe zero <$>
-          callSystemVerb' object systemVerb [Obj player] Str.empty
+          callSystemVerb' listener systemVerb [Obj player] Str.empty
   void $ runTask =<< newTask world' player (resetLimits True >> comp)
 
 runConnection :: TVar World -> Connection -> IO ()
@@ -505,12 +505,12 @@ runConnection world' conn = loop
             return zero
 
         callSystemVerb :: StrT -> [Value] -> StrT -> MOO (Maybe Value)
-        callSystemVerb = callSystemVerb' (connectionObject conn)
+        callSystemVerb = callSystemVerb' (connectionListener conn)
 
         runServerVerb' :: StrT -> [Value] -> StrT -> IO (Maybe Value)
         runServerVerb' vname args argstr = runServerTask $
-          fromMaybe zero <$> callSystemVerb' object vname args argstr
-          where object = connectionObject conn
+          fromMaybe zero <$> callSystemVerb' listener vname args argstr
+          where listener = connectionListener conn
 
         runServerTask :: MOO Value -> IO (Maybe Value)
         runServerTask comp = do
@@ -673,7 +673,7 @@ printMessage conn msg
 
 serverMessage :: Connection -> ServerMessage -> MOO (STM ())
 serverMessage conn msg =
-  mapM_ (sendToConnection conn) <$> msg (connectionObject conn)
+  mapM_ (sendToConnection conn) <$> msg (connectionListener conn)
 
 readFromConnection :: ObjId -> Bool -> MOO Value
 readFromConnection oid nonBlocking = withConnection oid $ \conn -> do
@@ -874,7 +874,7 @@ proxyConnection player = do
   disconnect <- newEmptyTMVarIO
 
   let conn = Connection {
-          connectionObject           = systemObject
+          connectionListener         = systemObject
         , connectionPlayer           = player'
         , connectionPrintMessages    = True
 
