@@ -113,8 +113,10 @@ type LineNo = Int         -- ^ MOO code line number
 
 -- | MOO identifier (string lite)
 newtype Id = Id { unId :: CI Text }
-           deriving (Eq, Ord, Show, Monoid, IsString,
-                     Hashable, Typeable)
+           deriving (Eq, Ord, Monoid, IsString, Hashable, Typeable)
+
+instance Show Id where
+  show = show . unId
 
 instance VCacheable Id where
   put = put . encodeUtf8 . fromId
