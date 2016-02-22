@@ -35,3 +35,6 @@ these people and their contributions, with my gratitude...
 
   * __Dylan Simon__ provided several useful suggestions and feedback on this
     Haskell implementation of EtaMOO.
+
+  * __Konsta Ranta__ provided early feedback and helpfully reported erroneous
+    behavior during EtaMOO development.

@@ -541,8 +541,8 @@ parseProgram input = either (Left . errors) Right $
   where errors :: ParseError -> Errors
         errors err =
           let (line, column) = (sourceLine &&& sourceColumn) $ errorPos err
-              (source, point) = illustrate column $
-                                Text.unpack $ Text.lines input !! (line - 1)
+              (source, point) = illustrate column $ Text.unpack $
+                (Text.lines input ++ [Text.empty]) !! (line - 1)
               message = find isMessage $ errorMessages err
           in [ "Line " ++ show line ++ ":  " ++
                maybe "syntax error" messageString message
