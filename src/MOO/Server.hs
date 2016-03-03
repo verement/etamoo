@@ -12,6 +12,7 @@ import Control.Concurrent.STM (STM, TVar, atomically, check, newEmptyTMVarIO,
                                readTVarIO, readTVar, modifyTVar)
 import Control.Exception (SomeException, try)
 import Control.Monad (forM_, void, when, unless, join)
+import Data.Either (isRight)
 import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
 import Data.Text (Text)
@@ -55,25 +56,20 @@ startServer :: Maybe FilePath -> FilePath -> Int -> Bool ->
                Bool -> (TVar World -> Point) -> IO ()
 startServer logFile dbFile cacheSize emergency outboundNet pf =
   withSocketsDo $ do
+  installHandler sigPIPE Ignore Nothing
 
   verifyPCRE
   either error return verifyBuiltins
 
-  installHandler sigPIPE Ignore Nothing
+  openFile dbFile ReadMode >>= hClose  -- ensure file exists
 
   (stmLogger, stopLogger) <- startLogger logFile
   let writeLog = atomically . stmLogger
 
-  openFile dbFile ReadMode >>= hClose  -- ensure file exists
-  vcache <- openVCache maxVCacheSize dbFile
-
-  setVRefsCacheLimit (vcache_space vcache) (cacheSize * 1000 * 1000)
-
-  numCapabilities <- getNumCapabilities
-
   writeLog $ "CMDLINE: Outbound network connections " <>
     if outboundNet then "enabled." else "disabled."
 
+  numCapabilities <- getNumCapabilities
   mapM_ writeLog [
       "STARTING: Server version " <> serverVersion
     , "          (Using TCP/IP with IPv6 support)"
@@ -83,10 +79,13 @@ startServer logFile dbFile cacheSize emergency outboundNet pf =
     , "          (Using " <> T.pack (show cacheSize) <> " MB database cache)"
     ]
 
+  vcache <- openVCache maxVCacheSize dbFile
+  setVRefsCacheLimit (vcache_space vcache) (cacheSize * 1000 * 1000)
+
   p <- loadPersistence vcache
 
   checkpoint <- ctime . unVUTCTime =<< readPVarIO (persistenceCheckpoint p)
-  writeLog $ "LOADING: Database checkpoint from " <> T.pack checkpoint
+  writeLog $ "LOADED: Database checkpoint from " <> T.pack checkpoint
 
   world' <- newWorld stmLogger p outboundNet
 
@@ -157,8 +156,8 @@ shutdownServer world' message = do
 redirectStdFd :: IO ()
 redirectStdFd = do
   devNull <- openFd "/dev/null" ReadWrite Nothing defaultFileFlags
-  devNull `dupTo` stdInput
-  devNull `dupTo` stdOutput
+  devNull  `dupTo` stdInput
+  stdError `dupTo` stdOutput
   closeFd devNull
 
 startLogger :: Maybe FilePath -> IO (Text -> STM (), IO ())
@@ -217,10 +216,11 @@ startCheckpointer world' = do
           _          -> do
             atomically $ writeLog "CHECKPOINTING database..."
             verbCall "checkpoint_started" []
-            success <- either (\e -> let _ = e :: SomeException in False)
-                              (const True) <$> try (syncPersistence p)
-            atomically $ writeLog "CHECKPOINTING finished"
-            verbCall "checkpoint_finished" [truthValue success]
+            result <- try (syncPersistence p)
+            atomically $ writeLog $ "CHECKPOINTING " <> either
+              (T.pack . ("failed: " ++) . show :: SomeException -> Text)
+              (const "finished") result
+            verbCall "checkpoint_finished" [truthValue $ isRight result]
 
             checkpointerLoop
 
@@ -238,9 +238,10 @@ startCheckpointer world' = do
 importDatabase :: FilePath -> FilePath -> IO ()
 importDatabase lambdaDB etaDB = do
   vcache <- openVCache maxVCacheSize etaDB
-  let vspace = vcache_space vcache
 
-  let writeLog = putStrLn . T.unpack
+  let vspace   = vcache_space vcache
+      writeLog = putStrLn . T.unpack
+
   loadLMDatabase vspace lambdaDB writeLog >>=
     either (error . show) (saveDatabase vcache)
 
@@ -252,7 +253,9 @@ exportDatabase etaDB lambdaDB = do
 
   p <- loadPersistence =<< openVCache maxVCacheSize etaDB
 
+  let vspace = persistenceVSpace p
+
   db        <- readPVarIO (persistenceDatabase  p)
   connected <- readPVarIO (persistenceConnected p)
 
-  saveLMDatabase (persistenceVSpace p) lambdaDB (db, connected)
+  saveLMDatabase vspace lambdaDB (db, connected)
