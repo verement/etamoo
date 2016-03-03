@@ -108,3 +108,15 @@ differences include:
     `queued_tasks()`, are really vague estimates and probably not very
     accurate or meaningful due to the nature of the Haskell run time
     environment.
+
+  * The Emergency Wizard Mode provided by EtaMOO works differently than it
+    does in LambdaMOO. Firstly, in EtaMOO it is not possible to discard the
+    changes made in this mode; be sure to operate on a database copy if there
+    is a possibility of making unwanted changes. Secondly, the built-in MOO
+    code/expression evaluator in EtaMOO maintains a single environment for
+    variables throughout the mode, so for example it is possible to reference
+    the values assigned to variables in previous evaluations. Thirdly, EtaMOO
+    incorporates a full MOO command parser, so it is possible to execute
+    arbitrary MOO commands from the database in addition to the mode's special
+    built-in commands. Fourthly, EtaMOO provides line editing, history, and
+    command completion (based on database contents) for convenience.

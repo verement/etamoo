@@ -97,9 +97,13 @@ mooCompletion :: TVar World -> ObjId -> CompletionFunc IO
 mooCompletion world' player = completeWordWithPrev Nothing sep completions
   where sep = " \t.:$"
 
-        completions ":" word = return $ map simpleCompletion $
+        completions ":" word = return $ map finishCompletion $
           filter (word `isPrefixOf`) $ sort
-          ["debug", "player", "wizard", "continue", "quit", "help", "?"]
+          ["debug", "player", "wizard", "continue", "shutdown", "help", "?"]
+          where finishCompletion :: String -> Completion
+                finishCompletion comp@"wizard" =
+                  (simpleCompletion comp) { isFinished = False }
+                finishCompletion comp = simpleCompletion comp
 
         completions prev word =
           fmap (mkCompletions $ null prev) $
@@ -207,8 +211,11 @@ mooCompletion world' player = completeWordWithPrev Nothing sep completions
 repLoop :: TVar World -> TaskState -> InputT IO ()
 repLoop world' state@State { stack = Stack [frame] } = do
   let player = initialPlayer frame
-      prompt | debugBit frame = "[#" ++ show player ++ "] "
-             | otherwise      = "[#" ++ show player ++ " !d] "
+      perms  = permissions   frame
+      who    | player == perms = "#" ++ show player
+             | otherwise       = "#" ++ show player ++ "/#" ++ show perms
+      prompt | debugBit frame  = "[" ++ who ++    "] "
+             | otherwise       = "[" ++ who ++ " !d] "
   maybeLine <- getInputLine prompt
   case maybeLine of
     Nothing   -> return ()
@@ -231,9 +238,9 @@ execute _ help _ state
         , "COMMAND       Execute an arbitrary MOO command"
         , ":debug        Toggle the evaluation debug bit"
         , ":player #OBJ  Execute future commands as player #OBJ"
-        , ":wizard       Set the current player's wizard bit"
+        , ":wizard!      Set the current player's wizard bit"
         , ":continue     Leave emergency mode and continue start-up"
-        , ":quit         Exit the server (saving database changes)"
+        , ":shutdown     Exit the server (saving database changes)"
         , ":help, :?     Print this text"
         , ""
         , "Press TAB for completions"
@@ -257,7 +264,7 @@ execute world' (':':'p':'l':'a':'y':'e':'r':' ':obj) _ state
 
   where obj' = parseObj (T.pack obj)
 
-execute world' ":wizard" _ state = do
+execute world' ":wizard!" _ state = do
   let player = currentPlayer state
   (vspace, db) <- (persistenceVSpace . persistence &&&
                    database) <$> readTVarIO world'
@@ -267,7 +274,7 @@ execute world' ":wizard" _ state = do
   return (Just state)
 
 execute _      ":continue" _ _ = return Nothing
-execute world' ":quit"     _ _ = do
+execute world' ":shutdown" _ _ = do
   putStrLn "Synchronizing database and exiting..."
   syncPersistence . persistence =<< readTVarIO world'
   exitSuccess
@@ -284,13 +291,19 @@ execute world' _          line  state = evalC world' line state
 pause :: IO ()
 pause = delay 50000
 
+-- Check that we have not been disconnected
+checkConnected :: TVar World -> TaskState -> IO (Maybe TaskState)
+checkConnected world' state = do
+  conns <- connections <$> readTVarIO world'
+  return $ if currentPlayer state `M.member` conns then Just state else Nothing
+
 evalC :: TVar World -> String -> TaskState -> IO (Maybe TaskState)
 evalC world' line state@State { stack = Stack [frame] } = do
   let player  = initialPlayer frame
       command = parseCommand (T.pack line)
   runTask =<< newTask world' player (runCommand command)
   pause
-  return (Just state)
+  checkConnected world' state
 
 evalE :: TVar World -> String -> TaskState -> IO (Maybe TaskState)
 evalE world' line state@State { stack = Stack [frame] } =
@@ -317,7 +330,7 @@ eval state task = do
   atomically $ modifyTVar (taskWorld task) $ \world ->
     world { tasks = M.delete (taskId task) $ tasks world }
 
-  return (Just state')
+  checkConnected (taskWorld task) state'
 
 evalPrint :: Task -> IO Task
 evalPrint task = do
