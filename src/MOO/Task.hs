@@ -1494,5 +1494,4 @@ formatTraceback except@Exception { exceptionCallStack = Stack frames } =
 shutdown :: StrT -> MOO ()
 shutdown message = do
   world <- getWorld
-  mapM_ unlisten (M.keys $ listeners world)
   delayIO $ void $ tryPutMVar (shutdownMessage world) (Str.toText message)

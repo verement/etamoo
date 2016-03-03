@@ -7,11 +7,11 @@ import Control.Applicative ((<$>))
 import Control.Arrow ((&&&))
 import Control.Concurrent (takeMVar, putMVar, getNumCapabilities, threadDelay)
 import Control.Concurrent.Async (async, withAsync, waitEither, wait)
-import Control.Concurrent.STM (STM, TVar, atomically, retry, newEmptyTMVarIO,
+import Control.Concurrent.STM (STM, TVar, atomically, check, newEmptyTMVarIO,
                                tryPutTMVar, putTMVar, tryTakeTMVar, takeTMVar,
                                readTVarIO, readTVar, modifyTVar)
 import Control.Exception (SomeException, try)
-import Control.Monad (forM_, void, when, unless)
+import Control.Monad (forM_, void, when, unless, join)
 import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
 import Data.Text (Text)
@@ -140,20 +140,19 @@ shutdownServer :: TVar World -> Text -> IO ()
 shutdownServer world' message = do
   writeLog <- writeLog <$> readTVarIO world'
 
-  atomically $ do
+  join $ atomically $ do
     writeLog $ "SHUTDOWN: " <> message
+    shutdownListeners world'
 
+  atomically $ do
     world <- readTVar world'
     forM_ (M.elems $ connections world) $ \conn -> do
-      -- XXX probably not good to send to ALL connections
-      sendToConnection conn $ "*** Shutting down: " <> message <> " ***"
+      when (connectionPrintMessages conn) $
+        sendToConnection conn $ "*** Shutting down: " <> message <> " ***"
       closeConnection conn
+    writeLog "Waiting for connections to close..."
 
-  atomically $ writeLog "Waiting for connections to close..."
-
-  atomically $ do
-    world <- readTVar world'
-    unless (M.null $ connections world) retry
+  atomically $ check . M.null . connections =<< readTVar world'
 
 redirectStdFd :: IO ()
 redirectStdFd = do

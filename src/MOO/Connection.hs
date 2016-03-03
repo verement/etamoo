@@ -16,6 +16,7 @@ module MOO.Connection (
   , withMaybeConnection
 
   , connectionName
+  , connectionPrintMessages
   , connectionConnectedTime
   , connectionActivityTime
   , connectionOutputDelimiters

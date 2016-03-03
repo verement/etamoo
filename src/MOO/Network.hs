@@ -11,10 +11,12 @@ module MOO.Network (
   , createListener
   , listen
   , unlisten
+  , shutdownListeners
   ) where
 
 import Control.Applicative ((<$>))
-import Control.Concurrent.STM (TVar, atomically, modifyTVar, readTVarIO)
+import Control.Concurrent.STM (STM, TVar, atomically, modifyTVar, readTVarIO,
+                               readTVar, writeTVar)
 import Control.Exception (try, finally)
 import Control.Monad (when)
 import Data.Monoid ((<>))
@@ -115,3 +117,10 @@ unlisten point = do
       putWorld world { listeners = M.delete point (listeners world) }
       delayIO cancelListener
     Nothing -> raise E_INVARG
+
+shutdownListeners :: TVar World -> STM (IO ())
+shutdownListeners world' = do
+  world <- readTVar world'
+  writeTVar world' world { listeners = M.empty }
+  return $ M.fold (\listener io -> listenerCancel listener >> io) (return ()) $
+    listeners world
