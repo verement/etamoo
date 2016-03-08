@@ -19,7 +19,7 @@ import Data.Text (Text)
 import Data.Text.IO (hPutStrLn)
 import Data.Time (getCurrentTime, utcToLocalZonedTime, formatTime,
                   defaultTimeLocale)
-import Database.VCache (openVCache, vcache_space, readPVarIO)
+import Database.VCache (openVCache, vcache_space, readPVarIO, vcacheSync)
 import Database.VCache.Cache (setVRefsCacheLimit)
 import Network (withSocketsDo)
 import Pipes (Pipe, runEffect, (>->), for, cat, lift, yield)
@@ -259,3 +259,4 @@ exportDatabase etaDB lambdaDB = do
   connected <- readPVarIO (persistenceConnected p)
 
   saveLMDatabase vspace lambdaDB (db, connected)
+  vcacheSync vspace

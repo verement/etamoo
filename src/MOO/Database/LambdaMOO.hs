@@ -6,11 +6,13 @@ module MOO.Database.LambdaMOO (loadLMDatabase, saveLMDatabase) where
 import Control.Applicative ((<$>))
 import Control.Monad (unless, when, forM, forM_, join)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (ReaderT, runReaderT, local, asks, ask)
+import Control.Monad.State (StateT, evalStateT, modify, get, gets)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (WriterT, execWriterT, tell)
 import Data.Array (Array, listArray, inRange, bounds, (!), elems, assocs)
 import Data.Bits (shiftL, shiftR, (.&.), (.|.))
+import Data.HashMap.Strict (HashMap)
+import Data.IntMap (IntMap)
 import Data.IntSet (IntSet)
 import Data.List (sort, foldl', elemIndex)
 import Data.Maybe (catMaybes, listToMaybe)
@@ -33,6 +35,7 @@ import Text.Parsec (ParseError, ParsecT, runParserT, string, count,
                     (<|>), (<?>))
 
 import qualified Data.HashMap.Strict as HM
+import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 import qualified Data.Text as T
 import qualified Data.Text.Lazy.IO as TL
@@ -45,7 +48,7 @@ import MOO.Types
 import MOO.Unparser
 import MOO.Verb
 # ifdef MOO_WAIF
-import MOO.WAIF (WAIF)
+import MOO.WAIF
 # endif
 
 import qualified MOO.List as Lst
@@ -66,16 +69,19 @@ loadLMDatabase vspace dbFile writeLog =
   withDBFile dbFile ReadMode $ \handle -> do
     writeLog $ "IMPORTING: " <> T.pack dbFile
     contents <- TL.hGetContents handle
-    runReaderT (runParserT lmDatabase initDatabase dbFile contents)
+    evalStateT (runParserT lmDatabase initDatabase dbFile contents)
       (initDBEnv writeLog vspace)
 
-type DBParser = ParsecT Text Database (ReaderT DBEnv IO)
+type DBParser = ParsecT Text Database (StateT DBEnv IO)
 
 data DBEnv = DBEnv {
     logger        :: T.Text -> IO ()
   , input_version :: Word
   , users         :: IntSet
   , vspace        :: VSpace
+# ifdef MOO_WAIF
+  , waifRefs      :: IntMap WaifDef
+# endif
 }
 
 initDBEnv logger vspace = DBEnv {
@@ -83,10 +89,13 @@ initDBEnv logger vspace = DBEnv {
   , input_version = undefined
   , users         = IS.empty
   , vspace        = vspace
+# ifdef MOO_WAIF
+  , waifRefs      = IM.empty
+# endif
 }
 
 writeLog :: String -> DBParser ()
-writeLog line = asks logger >>= \writeLog ->
+writeLog line = gets logger >>= \writeLog ->
   liftIO (writeLog $ "LOADING: " <> T.pack line)
 
 header_format_string = ("** LambdaMOO Database, Format Version ", " **")
@@ -101,34 +110,36 @@ lmDatabase = do
   unless (dbVersion < num_db_versions) $
     fail $ "Unsupported database format (version " ++ show dbVersion ++ ")"
 
-  connected <- local (\r -> r { input_version = dbVersion }) $ do
-    nobjs  <- line signedInt
-    nprogs <- line signedInt
-    _dummy <- line signedInt
-    nusers <- line signedInt
+  modify $ \state -> state { input_version = dbVersion }
 
-    writeLog $ show nobjs ++ " objects, "
-      ++ show nprogs ++ " programs, "
-      ++ show nusers ++ " users"
+  nobjs  <- line signedInt
+  nprogs <- line signedInt
+  _dummy <- line signedInt
+  nusers <- line signedInt
 
-    users <- count nusers read_objid
-    installUsers users
+  writeLog $ show nobjs ++ " objects, "
+    ++ show nprogs ++ " programs, "
+    ++ show nusers ++ " users"
 
-    writeLog $ "Players: " ++
-      T.unpack (toLiteral $ objectList $ sort users)
+  users <- count nusers read_objid
+  installUsers users
 
-    local (\r -> r { users = IS.fromList users }) $ do
-      writeLog $ "Reading " <> show nobjs <> " objects..."
-      installObjects =<< count nobjs read_object
+  writeLog $ "Players: " ++
+    T.unpack (toLiteral $ objectList $ sort users)
 
-      writeLog $ "Reading " <> show nprogs <> " MOO verb programs..."
-      mapM_ installProgram =<< count nprogs dbProgram
+  modify $ \state -> state { users = IS.fromList users }
 
-      writeLog "Reading forked and suspended tasks..."
-      read_task_queue
+  writeLog $ "Reading " <> show nobjs <> " objects..."
+  installObjects =<< count nobjs read_object
 
-      writeLog "Reading list of formerly active connections..."
-      read_active_connections
+  writeLog $ "Reading " <> show nprogs <> " MOO verb programs..."
+  mapM_ installProgram =<< count nprogs dbProgram
+
+  writeLog "Reading forked and suspended tasks..."
+  read_task_queue
+
+  writeLog "Reading list of formerly active connections..."
+  connected <- read_active_connections
 
   eof
 
@@ -183,10 +194,27 @@ installObjects dbObjs = do
   -- Check sequential object ordering
   mapM_ checkObjId (zip [0..] dbObjs)
 
-  vspace <- asks vspace
+  vspace <- gets vspace
 
   objs <- liftIO (mapM (installPropsAndVerbs vspace) preObjs) >>= setPlayerFlags
   getState >>= liftIO . setObjects vspace objs >>= putState
+
+# ifdef MOO_WAIF
+  -- Set final WAIF property values
+  waifDefs <- IM.elems <$> gets waifRefs
+  liftIO $ runVTx vspace $ forM_ waifDefs $ \waifDef -> do
+    let waif = waifWaif waifDef :: WafT
+
+        propDefs :: ObjId -> [PropDef]
+        propDefs oid
+          | inRange (bounds dbArray) oid = case dbArray ! oid of
+              Just def -> objPropdefs def ++ propDefs (objParent def)
+              Nothing  -> []
+          | otherwise  =  []
+
+    setWaifPropertyValues waif
+      (propDefs $ waifClass waif) (waifPropVals waifDef)
+# endif
 
   where dbArray = listArray (0, length dbObjs - 1) $ map valid dbObjs
         preObjs = map (objectForDBObject dbArray) dbObjs
@@ -211,17 +239,15 @@ installObjects dbObjs = do
         mkProperties :: VSpace -> Bool -> ObjId -> [PropVal] -> [Property]
         mkProperties _ _ _ [] = []
         mkProperties vspace inherited oid propvals
-          | inRange (bounds dbArray) oid =
-            case maybeDef of
-              Nothing  -> []
+          | inRange (bounds dbArray) oid = case dbArray ! oid of
               Just def ->
                 let propdefs = objPropdefs def
                     (mine, others) = splitAt (length propdefs) propvals
                     properties = zipWith (mkProperty vspace inherited)
                       propdefs mine
                 in properties ++ mkProperties vspace True (objParent def) others
-          | otherwise = []
-          where maybeDef = dbArray ! oid
+              Nothing -> []
+          | otherwise =  []
 
         mkProperty :: VSpace -> Bool -> PropDef -> PropVal -> Property
         mkProperty vspace inherited propdef propval = initProperty {
@@ -252,7 +278,7 @@ installObjects dbObjs = do
 
         setPlayerFlags :: [Maybe Object] -> DBParser [Maybe Object]
         setPlayerFlags objs = do
-          players <- asks users
+          players <- gets users
           return $ map (setPlayerFlag players) $ zip [0..] objs
 
         setPlayerFlag :: IntSet -> (ObjId, Maybe Object) -> Maybe Object
@@ -298,7 +324,7 @@ objectForDBObject dbArray dbObj = (oid dbObj, mkObject <$> valid dbObj)
 
 installProgram :: (Int, Int, Program) -> DBParser ()
 installProgram (oid, vnum, program) = do
-  vspace <- asks vspace
+  vspace <- gets vspace
   db <- getState
   maybeObj <- liftIO $ runVTx vspace $ dbObject oid db
   case maybeObj of
@@ -432,6 +458,60 @@ data LMVar = LMClear
            | LMFinally Int
            | LMFloat   FltT
            | LMList    [LMVar]
+# ifdef MOO_WAIF
+           | LMWaif    WafT
+
+data WaifDef = WaifDef {
+    waifWaif           :: WafT
+  , waifPropDefsLength :: Int
+  , waifPropVals       :: [(Int, Value)]
+  }
+
+read_waif :: DBParser WafT
+read_waif = do
+  waif <- createWaif <|> referenceWaif
+  line (char '.')
+  return waif
+
+  where createWaif :: DBParser WafT
+        createWaif = do
+          index <- line $ char 'c' >> char ' ' >> unsignedInt
+          waifClass <- read_objid
+          waifOwner <- read_objid
+          propdefs_length <- read_num
+
+          propVals <- waifPropVals []
+
+          vspace <- gets vspace
+          waif <- liftIO $ runVTx vspace $ newWaif waifClass waifOwner
+
+          let waifDef = WaifDef {
+                  waifWaif           = waif
+                , waifPropDefsLength = fromIntegral propdefs_length
+                , waifPropVals       = propVals
+                }
+          modify $ \state ->
+            state { waifRefs = IM.insert (fromIntegral index) waifDef
+                    (waifRefs state) }
+
+          return waif
+
+        waifPropVals :: [(Int, Value)] -> DBParser [(Int, Value)]
+        waifPropVals propVals = do
+          cur <- read_num
+          if cur < 0 then return propVals else do
+            var <- read_var
+            waifPropVals $ case valueFromVar var of
+              Right (Just val) -> (fromIntegral cur, val) : propVals
+              _                -> propVals
+
+        referenceWaif :: DBParser WafT
+        referenceWaif = do
+          index <- line $ char 'r' >> char ' ' >> unsignedInt
+          waifs <- gets waifRefs
+          maybe (fail "invalid WAIF reference") (return . waifWaif) $
+            IM.lookup (fromIntegral index) waifs
+# endif
 
 valueFromVar :: LMVar -> Either LMVar (Maybe Value)
 valueFromVar LMClear       = Right Nothing
@@ -443,13 +523,16 @@ valueFromVar (LMFloat flt) = Right $ Just (Flt flt)
 valueFromVar (LMList list) = do
   elems <- mapM valueFromVar list
   return $ Just (fromList $ catMaybes elems)
+# ifdef MOO_WAIF
+valueFromVar (LMWaif waif) = Right $ Just (Waf waif)
+# endif
 valueFromVar var           = Left var
 
 read_var :: DBParser LMVar
 read_var = (<?> "var") $ do
   l <- read_num
   l <- if l == type_any
-       then do input_version <- asks input_version
+       then do input_version <- gets input_version
                return $ if input_version == dbv_prehistory
                         then type_none else l
        else return l
@@ -470,6 +553,9 @@ read_var = (<?> "var") $ do
       | l == _type_list   = do
           l <- read_num
           LMList <$> count (fromIntegral l) read_var
+# ifdef MOO_WAIF
+      | l == _type_waif   =        LMWaif                   <$> read_waif
+# endif
 
     cases l = fail $ "Unknown type (" ++ show l ++ ")"
 
@@ -548,7 +634,7 @@ default_max_stack_depth = 50
 
 read_activ :: DBParser ()
 read_activ = (<?> "activ") $ do
-  input_version <- asks input_version
+  input_version <- gets input_version
   version <- if input_version < dbv_float then return input_version
              else string "language version " >> unsignedInt
   unless (version < num_db_versions) $
@@ -642,6 +728,9 @@ type_none    = 6
 type_catch   = 7
 type_finally = 8
 _type_float  = 9
+# ifdef MOO_WAIF
+_type_waif   = 10
+# endif
 
 type_any     = -1
 -- type_numeric = -2
@@ -680,7 +769,18 @@ objMask   = 0x3
 
 -- Database writing ...
 
-type DBWriter = ReaderT Database (WriterT Builder VTx)
+# ifdef MOO_WAIF
+data StateType = State {
+    stateDatabase :: Database
+  , stateWaifMap  :: (Word, HashMap WafT Word)
+  }
+initState = State undefined (0, HM.empty) :: StateType
+# else
+type StateType = ()
+initState = () :: StateType
+# endif
+
+type DBWriter = StateT StateType (WriterT Builder VTx)
 
 liftVTx :: VTx a -> DBWriter a
 liftVTx = lift . lift
@@ -689,21 +789,23 @@ saveLMDatabase :: VSpace -> FilePath -> (Database, Connected) -> IO ()
 saveLMDatabase vspace dbFile (database, connected) = do
   putStrLn $ "EXPORTING: " ++ dbFile
   withDBFile dbFile WriteMode $ \handle -> do
-    let writer = runReaderT (writeDatabase connected) database
+    let writer = evalStateT (writeDatabase database connected) initState
         vtx    = execWriterT writer
     TL.hPutStr handle . toLazyText =<< runVTx vspace vtx
 
 tellLn :: Builder -> DBWriter ()
 tellLn line = tell line >> tell (singleton '\n')
 
-writeDatabase :: Connected -> DBWriter ()
-writeDatabase connected = do
+writeDatabase :: Database -> Connected -> DBWriter ()
+writeDatabase db connected = do
+# ifdef MOO_WAIF
+  modify $ \state -> state { stateDatabase = db }
+# endif
   let (before, after) = header_format_string
   tell (fromString before)
   tell (decimal $ num_db_versions - 1)
   tellLn (fromString after)
 
-  db <- ask
   let nobjs = maxObject db + 1
   tellLn (decimal nobjs)
 
@@ -845,10 +947,34 @@ tellValue value = case value of
   Lst x -> tellLn (decimal _type_list)  >> tellLn (decimal $ Lst.length x) >>
            Lst.forM_ x tellValue
 # ifdef MOO_WAIF
-  Waf x -> tellWaif x
+  Waf x -> tellLn (decimal _type_waif)  >> writeWaif x
 
-tellWaif :: WAIF -> DBWriter ()
-tellWaif _ = error "exporting WAIF values not yet implemented"
+writeWaif :: WafT -> DBWriter ()
+writeWaif w = do
+  State db (index, map) <- get
+  case HM.lookup w map of
+    Nothing -> do
+      tell "c " >> tellLn (decimal index)
+      modify $ \state ->
+        state { stateWaifMap = (succ index, HM.insert w index map) }
+      tellWaif w db
+    Just index -> tell "r " >> tellLn (decimal index)
+  tellLn (singleton '.')
+
+tellWaif :: WafT -> Database -> DBWriter ()
+tellWaif w db = do
+  tellLn (decimal $ waifClass w)
+  tellLn (decimal $ waifOwner w)
+  props <- liftVTx $ waifProperties w db
+  tellLn (decimal $ length props)
+  forM_ (zip [0..] props) $ \(i, name) -> do
+    maybeValue <- liftVTx $ readWaifProperty w name
+    case maybeValue of
+      Just v -> do
+        tellLn $ decimal (i :: Int)
+        tellValue v
+      Nothing -> return ()  -- clear
+  tellLn $ decimal (-1 :: Int)
 # endif
 
 tellVerbs :: (ObjId, [Verb]) -> DBWriter ()

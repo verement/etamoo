@@ -6,7 +6,12 @@ module MOO.WAIF (
   , newWaif
 
   , waifClass
+  , waifOwner
 
+  , waifProperties
+  , setWaifPropertyValues
+
+  , readWaifProperty
   , fetchWaifProperty
   , storeWaifProperty
 
@@ -16,14 +21,18 @@ module MOO.WAIF (
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad ((>=>), unless)
+import Data.Hashable (Hashable(hashWithSalt))
+import Data.IntMap (IntMap)
 import Data.Monoid ((<>))
 import Data.Typeable (Typeable)
-import Database.VCache (PVar, VRef, VCacheable(put, get), VTx, deref, vref,
-                        pvar_space, newPVar, readPVar, modifyPVar,
-                        unsafePVarAddr, VSpace)
+import Database.VCache (PVar, VRef, VCacheable(put, get), VTx, VSpace,
+                        unsafePVarAddr, deref, vref, vref',
+                        pvar_space, newPVar, readPVar, modifyPVar)
 
 import qualified Data.HashMap.Lazy as HM
+import qualified Data.IntMap as IM
 
+import MOO.Database
 import MOO.Object
 import MOO.Task
 import MOO.Types
@@ -53,6 +62,9 @@ instance VCacheable WAIF where
 
   get = WAIF <$> get <*> get <*> get
 
+instance Hashable WAIF where
+  hashWithSalt salt = hashWithSalt salt . unsafePVarAddr . waifData
+
 newWaif :: ObjId -> ObjId -> VTx WAIF
 newWaif waifClass waifOwner = do
   waifData <- newPVar (VHashMap HM.empty)
@@ -66,6 +78,35 @@ waifClassObject :: WAIF -> MOO Object
 waifClassObject = getObject . waifClass >=> maybe (raise E_INVIND) return
 
 prefix = ":" :: StrT
+
+waifProperties :: WAIF -> Database -> VTx [StrT]
+waifProperties waif db = enumerate (waifClass waif)
+  where enumerate :: ObjId -> VTx [StrT]
+        enumerate oid = do
+          maybeObj <- dbObject oid db
+          case maybeObj of
+            Just obj -> do
+              props <- map (Str.drop $ Str.length prefix) .
+                filter (prefix `Str.isPrefixOf`) <$> definedProperties obj
+              case objectParent obj of
+                Just parent -> (props ++) <$> enumerate parent
+                Nothing -> return props
+            Nothing -> return []
+
+setWaifPropertyValues :: WAIF -> [String] -> [(Int, Value)] -> VTx ()
+setWaifPropertyValues waif propDefs propVals =
+  modifyPVar (waifData waif) $ flip (foldr insertValue) propVals
+
+  where insertValue :: (Int, Value) -> PropertyMap -> PropertyMap
+        insertValue (key, value) = VHashMap .
+          HM.insert (waifPropDefs IM.! key) (vref' vspace value) . unVHashMap
+
+        waifPropDefs :: IntMap StrT
+        waifPropDefs = IM.fromList $ zip [0..] $
+          map (Str.drop $ Str.length prefix) $
+          filter (prefix `Str.isPrefixOf`) $ map Str.fromString propDefs
+
+        vspace = pvar_space (waifData waif) :: VSpace
 
 waifProperty :: StrT -> Object -> MOO Property
 waifProperty name obj = getProperty obj (prefix <> name)
@@ -83,8 +124,7 @@ fetchWaifProperty waif name = do
   prop <- waifProperty name classObj
   unless (propertyPermR prop) $ checkPermission (waifPropertyOwner waif prop)
 
-  maybe (search classObj prop) (return . deref) .
-    HM.lookup name . unVHashMap =<< liftVTx (readPVar $ waifData waif)
+  maybe (search classObj prop) return =<< liftVTx (readWaifProperty waif name)
 
   where search :: Object -> Property -> MOO Value
         search obj prop = case propertyValue prop of
@@ -96,6 +136,10 @@ fetchWaifProperty waif name = do
               Just parent -> getProperty parent name >>= search parent
               Nothing     -> error $
                 "No inherited value for property " ++ Str.toString name
+
+readWaifProperty :: WAIF -> StrT -> VTx (Maybe Value)
+readWaifProperty waif name =
+  fmap deref . HM.lookup name . unVHashMap <$> readPVar (waifData waif)
 
 storeWaifProperty :: WAIF -> StrT -> Value -> MOO Value
 storeWaifProperty _ "class" _ = raise E_PERM
