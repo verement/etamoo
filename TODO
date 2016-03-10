@@ -33,7 +33,6 @@
 ** Enhance version number with git commit info
 ** Unicode strings in database file
 ** User reconnecting to different listening points
-** Circular WAIF references
 ** Deepen value_bytes(waif)
 
 * Before v1.0

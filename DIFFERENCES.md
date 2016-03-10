@@ -161,11 +161,3 @@ differences compared with LambdaMOO:
 
   * EtaMOO defines the variable `WAIF` within MOO verbs to have the same value
     as `typeof(new_waif())`.
-
-  * Currently EtaMOO allows WAIFs to contain circular references. While this
-    is by itself not a problem, it can cause a space leak in the database file
-    if the cyclic references are not broken before the WAIFs are garbage
-    collected. Note that LambdaMOO does not allow WAIFs to contain circular
-    references, so exporting a database with such references and loading it
-    into LambdaMOO may result in undefined behavior. (This is basically a bug
-    and subject to change.)

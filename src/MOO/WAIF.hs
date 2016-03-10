@@ -26,7 +26,7 @@ import Data.IntMap (IntMap)
 import Data.Monoid ((<>))
 import Data.Typeable (Typeable)
 import Database.VCache (PVar, VRef, VCacheable(put, get), VTx, VSpace,
-                        unsafePVarAddr, deref, vref, vref',
+                        unsafePVarAddr, deref, deref', vref, vref',
                         pvar_space, newPVar, readPVar, modifyPVar)
 
 import qualified Data.HashMap.Lazy as HM
@@ -38,6 +38,7 @@ import MOO.Task
 import MOO.Types
 import MOO.Util
 
+import qualified MOO.List as Lst
 import qualified MOO.String as Str
 
 type PropertyMap = VHashMap StrT (VRef Value)
@@ -148,6 +149,9 @@ storeWaifProperty waif name value = do
   prop <- waifProperty name =<< waifClassObject waif
   unless (propertyPermW prop) $ checkPermission (waifPropertyOwner waif prop)
 
+  -- disallow circular references
+  checkCyclic waif value
+
   let var    = waifData waif  :: PVar PropertyMap
       vspace = pvar_space var :: VSpace
 
@@ -155,6 +159,16 @@ storeWaifProperty waif name value = do
     VHashMap . HM.insert name (vref vspace value) . unVHashMap
 
   return value
+
+checkCyclic :: WAIF -> Value -> MOO ()
+checkCyclic waif = checkCyclic'
+  where checkCyclic' value = case value of
+          Lst x -> Lst.forM_ x checkCyclic'
+          Waf x | x == waif -> raise E_RECMOVE
+                | otherwise ->
+                    mapM_ (checkCyclic' . deref') . HM.elems . unVHashMap =<<
+                    liftVTx (readPVar $ waifData x)
+          _ -> return ()
 
 callWaifVerb :: Value -> WAIF -> StrT -> [Value] -> MOO Value
 callWaifVerb this waif name = callVerb this (waifClass waif) (prefix <> name)
